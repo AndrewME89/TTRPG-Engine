@@ -11,8 +11,11 @@ The plugin is currently focused on clean layout, stable persistence, saved-conte
 ## Current Status
 
 > **Development status:** Active early development
+> 
 > **Stability:** Experimental / work-in-progress
+> 
 > **Recommended use:** Testing, development vaults, and controlled campaign notes
+> 
 > **Production use:** Not yet recommended without backups
 
 This plugin is being developed in phases. Features are added incrementally, tested, and refined before heavier styling, automation, and compendium integration are layered on top.
