@@ -1,9 +1,9 @@
 {
   "id": "ttrpg-table",
   "name": "TTRPG Table",
-  "version": "1.139.0",
+  "version": "1.141.0",
   "minAppVersion": "1.5.0",
-  "description": "TTRPG Table Phase 139: fixes Generators & DM Calculators routing and adds campaign-linked Adventure, Quest, and Encounter creation.",
+  "description": "TTRPG Table Phase 141: Live Combat theme cleanup; removes leftover hard-coded parchment/red/gold colouring from live combat cards.",
   "author": "Andrew Edwards",
   "authorUrl": "",
   "isDesktopOnly": false
