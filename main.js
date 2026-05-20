@@ -1,0 +1,8178 @@
+const { Plugin, ItemView, Modal, Notice, Setting, normalizePath } = require('obsidian');
+
+const VIEW_TYPE = 'ttrpg-table-main-view';
+const PLUGIN_VERSION = '1.34.0';
+const EXPORT_ROOT = 'TTRPG/Exports';
+
+const NAV = [
+  ['dashboard', '🏰', 'Dashboard'],
+  ['campaign', '📜', 'Campaign Wizard'],
+  ['world', '🌌', 'World & Lore'],
+  ['geography', '🗺️', 'Geography & Maps'],
+  ['npcs', '👤', 'NPCs & Creatures'],
+  ['adventure', '📝', 'Adventures & Quests'],
+  ['generators', '🎲', 'Generators'],
+  ['rules', '⚙️', 'Rules & Mechanics'],
+  ['downtime', '⏳', 'Downtime & Bases'],
+  ['sessions', '📅', 'Sessions & Timeline'],
+  ['secrets', '🔒', 'Secrets & Reveals'],
+  ['library', '📚', 'Library & Compendium'],
+  ['player', '👁️', 'Player View']
+];
+
+const ENTITY_LABELS = {
+  campaigns: 'Campaign', worlds: 'World', factions: 'Faction', deities: 'Deity', languages: 'Language', cultures: 'Race / Culture', myths: 'Legend / Myth / Rumour', regions: 'Region', settlements: 'Settlement', pois: 'Point of Interest', maps: 'Map', npcs: 'NPC', creatures: 'Creature', adventures: 'Adventure', quests: 'Quest', encounters: 'Encounter', rules: 'Rule', conditions: 'Condition', damageTypes: 'Damage Type', downtime: 'Downtime Activity', projects: 'Project', bastions: 'Bastion / Stronghold', hirelings: 'Hireling', sessions: 'Session Log', milestones: 'Milestone', secrets: 'Secret', handouts: 'Handout', compendium: 'Compendium Entry', homebrew: 'Homebrew Entry', tables: 'Rollable Table'
+};
+
+function createDefaultState() {
+  return {
+    version: PLUGIN_VERSION,
+    mode: 'DM',
+    activeSection: 'dashboard',
+    search: '',
+    activeCampaignId: '',
+    settings: {
+      campaignFolder: 'TTRPG/Campaigns',
+      exportFolder: EXPORT_ROOT,
+      compact: false,
+      wide: true,
+      highContrast: false,
+      theme: 'Parchment & Leather'
+    },
+    wizardDraft: {},
+    entities: {
+      campaigns: [], worlds: [], factions: [], deities: [], languages: [], cultures: [], myths: [],
+      regions: [], settlements: [], pois: [], maps: [], npcs: [], creatures: [], adventures: [], quests: [], encounters: [],
+      rules: seedRules(), conditions: seedConditions(), damageTypes: seedDamageTypes(), downtime: [], projects: [], bastions: [], hirelings: [],
+      sessions: [], milestones: [], secrets: [], handouts: [], compendium: seedCompendium(), homebrew: [], tables: []
+    },
+    generatorHistory: [],
+    diceHistory: []
+  };
+}
+
+function seedRules() {
+  return [
+    { id: uid('rule'), name: 'Advantage & Disadvantage', category: 'Core', enabled: true, optional: false, summary: 'Roll two d20s and use the higher or lower result.', examples: 'Stealth in darkness may grant advantage.', tags: ['srd', 'dice'] },
+    { id: uid('rule'), name: 'Concentration', category: 'Magic', enabled: true, optional: false, summary: 'Taking damage can force a Constitution save to maintain a spell.', examples: 'DC is 10 or half damage, whichever is higher.', tags: ['srd', 'magic'] },
+    { id: uid('rule'), name: 'Travel Pace', category: 'Exploration', enabled: true, optional: false, summary: 'Fast, normal, and slow travel change distance and awareness.', examples: 'Slow travel may permit stealth.', tags: ['srd', 'travel'] }
+  ];
+}
+function seedConditions() {
+  return ['Blinded','Charmed','Deafened','Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified','Poisoned','Prone','Restrained','Stunned','Unconscious','Exhaustion'].map(name => ({ id: uid('condition'), name, category: 'Condition', enabled: true, duration: 'Until removed', summary: `${name} condition tracker entry.`, removal: 'Set by DM ruling, spell, save, rest, or effect text.', tags: ['condition'] }));
+}
+function seedDamageTypes() {
+  return ['Acid','Bludgeoning','Cold','Fire','Force','Lightning','Necrotic','Piercing','Poison','Psychic','Radiant','Slashing','Thunder'].map(name => ({ id: uid('damage'), name, category: 'Damage Type', summary: `Tracks resistance, immunity, vulnerability, and damage calculation notes for ${name}.`, tags: ['damage'] }));
+}
+function seedCompendium() {
+  return [
+    { id: uid('spell'), name: 'Fire Bolt', type: 'Spell', source: 'SRD-compatible seed', level: 'Cantrip', summary: 'Ranged spell attack; fire damage.', tags: ['spell', 'evocation'] },
+    { id: uid('item'), name: 'Longsword', type: 'Weapon', source: 'SRD-compatible seed', summary: 'Martial melee weapon; slashing damage.', tags: ['weapon'] },
+    { id: uid('monster'), name: 'Goblin', type: 'Creature', source: 'SRD-compatible seed', summary: 'Small humanoid skirmisher, useful for low-level encounters.', tags: ['creature'] }
+  ];
+}
+function uid(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+let __ttrpgSearchSaveTimer = null;
+function persistSearchSilently(plugin) {
+  if (__ttrpgSearchSaveTimer) window.clearTimeout(__ttrpgSearchSaveTimer);
+  __ttrpgSearchSaveTimer = window.setTimeout(() => {
+    plugin.state.version = PLUGIN_VERSION;
+    plugin.saveData(plugin.state);
+  }, 250);
+}
+function attachStableSearch(search, view, main) {
+  const state = view.plugin.state;
+  search.addEventListener('input', e => {
+    const input = e.target;
+    state.search = input.value;
+    persistSearchSilently(view.plugin);
+    if (main) {
+      clear(main);
+      if (state.mode === 'PLAYER') renderPlayerView(main, view.plugin);
+      else renderSection(main, view.plugin, state.activeSection || 'dashboard');
+    }
+  });
+}
+
+function safeArray(value) { return Array.isArray(value) ? value : []; }
+function activeCampaign(state) { return safeArray(state.entities.campaigns).find(c => c.id === state.activeCampaignId) || safeArray(state.entities.campaigns)[0]; }
+function slugify(value) { return String(value || 'Untitled').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim().replace(/\s+/g, '-').slice(0, 80) || 'Untitled'; }
+function tagsFromText(value) { return String(value || '').split(',').map(v => v.trim()).filter(Boolean); }
+function matchesSearch(item, query) { if (!query) return true; return JSON.stringify(item).toLowerCase().includes(query.toLowerCase()); }
+function moneyText(entry) { return entry && entry.gp ? `${entry.gp} gp` : ''; }
+function modifier(score) { const n = Number(score || 10); return Math.floor((n - 10) / 2); }
+function proficiency(level) { const l = Math.max(1, Number(level || 1)); return Math.ceil(l / 4) + 1; }
+function xpThreshold(level) { const l = Math.max(1, Number(level || 1)); return { easy: l * 25, medium: l * 50, hard: l * 75, deadly: l * 100 }; }
+function ce(parent, tag, cls, text) { const el = document.createElement(tag); if (cls) el.className = cls; if (text !== undefined && text !== null) el.textContent = String(text); parent.appendChild(el); return el; }
+function btn(parent, text, cls, onClick) { const b = ce(parent, 'button', cls || 'ttrpg-btn', text); b.type = 'button'; b.addEventListener('click', onClick); return b; }
+function clear(el) { el.replaceChildren(); }
+function getStore(state, key) { if (!state.entities[key]) state.entities[key] = []; return state.entities[key]; }
+function upsert(state, key, item) { const store = getStore(state, key); const i = store.findIndex(x => x.id === item.id); if (i >= 0) store[i] = item; else store.unshift(item); }
+function remove(state, key, id) { state.entities[key] = getStore(state, key).filter(x => x.id !== id); }
+
+class TTRPGTablePlugin extends Plugin {
+  async onload() {
+    this.state = Object.assign(createDefaultState(), await this.loadData());
+    this.state.entities = Object.assign(createDefaultState().entities, this.state.entities || {});
+    this.addRibbonIcon('castle', 'Open TTRPG Table', () => this.activateView());
+    this.addCommand({ id: 'open-ttrpg-table', name: 'Open TTRPG Table', callback: () => this.activateView() });
+    this.addCommand({ id: 'new-campaign-wizard', name: 'Open Campaign Builder Wizard', callback: () => new CampaignWizardModal(this.app, this).open() });
+    this.addCommand({ id: 'roll-dice', name: 'Roll Dice', callback: () => new DiceModal(this.app, this).open() });
+    this.addCommand({ id: 'export-player-safe-packet', name: 'Export Player-Safe Packet', callback: () => exportPlayerSafePacket(this) });
+    this.registerView(VIEW_TYPE, leaf => new TTRPGMainView(leaf, this));
+  }
+  onunload() { this.app.workspace.detachLeavesOfType(VIEW_TYPE); }
+  async saveState() { this.state.version = PLUGIN_VERSION; await this.saveData(this.state); this.refreshViews(); }
+  refreshViews() { this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach(leaf => { if (leaf.view && leaf.view.render) leaf.view.render(); }); }
+  async activateView() {
+    let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+    if (!leaf) { leaf = this.app.workspace.getLeaf(true); await leaf.setViewState({ type: VIEW_TYPE, active: true }); }
+    this.app.workspace.revealLeaf(leaf);
+  }
+}
+
+class TTRPGMainView extends ItemView {
+  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; }
+  getViewType() { return VIEW_TYPE; }
+  getDisplayText() { return 'TTRPG Table'; }
+  getIcon() { return 'castle'; }
+  async onOpen() { this.render(); }
+  render() {
+    const root = this.containerEl.children[1]; clear(root);
+    const state = this.plugin.state;
+    root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${ttrpgClassThemeClass(state)}`;
+    const top = ce(root, 'header', 'ttrpg-topbar');
+    ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+    const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+    btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; await this.plugin.saveState(); });
+    btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; state.activeSection = 'player'; await this.plugin.saveState(); });
+    const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search campaigns, NPCs, quests, rules…'; search.value = state.search || ''; search.title = 'Search saved entries without losing focus';
+    btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary', () => new CampaignWizardModal(this.app, this.plugin).open());
+    btn(top, 'Settings', 'ttrpg-btn', () => new SettingsModal(this.app, this.plugin).open());
+    const body = ce(root, 'div', 'ttrpg-body');
+    const side = ce(body, 'aside', 'ttrpg-sidebar');
+    NAV.forEach(([id, icon, label]) => {
+      const item = btn(side, `${icon} ${label}`, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; await this.plugin.saveState(); });
+      item.dataset.section = id;
+    });
+    const main = ce(body, 'main', 'ttrpg-main');
+    if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin); else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+  }
+}
+
+function renderSection(main, plugin, section) {
+  const map = { dashboard: renderDashboard, campaign: renderCampaign, world: renderWorld, geography: renderGeography, npcs: renderNpcs, adventure: renderAdventure, generators: renderGenerators, rules: renderRules, downtime: renderDowntime, sessions: renderSessions, secrets: renderSecrets, library: renderLibrary, player: renderPlayerView };
+  (map[section] || renderDashboard)(main, plugin);
+}
+function header(main, title, subtitle, actions) {
+  const h = ce(main, 'div', 'ttrpg-page-header');
+  const text = ce(h, 'div'); ce(text, 'h1', '', title); if (subtitle) ce(text, 'p', 'ttrpg-muted', subtitle);
+  const a = ce(h, 'div', 'ttrpg-actions'); (actions || []).forEach(action => btn(a, action.label, action.primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', action.onClick));
+}
+function grid(parent, cls) { return ce(parent, 'div', cls || 'ttrpg-grid'); }
+function card(parent, title, text, icon, actions) {
+  const c = ce(parent, 'section', 'ttrpg-card');
+  const head = ce(c, 'div', 'ttrpg-card-head'); ce(head, 'div', 'ttrpg-card-icon', icon || '📜'); ce(head, 'h3', '', title || 'Untitled');
+  if (text) ce(c, 'p', 'ttrpg-muted', text);
+  if (actions && actions.length) { const row = ce(c, 'div', 'ttrpg-card-actions'); actions.forEach(a => btn(row, a.label, a.primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', a.onClick)); }
+  return c;
+}
+function itemCards(parent, plugin, key, opts) {
+  const state = plugin.state; const items = getStore(state, key).filter(x => matchesSearch(x, state.search));
+  if (!items.length) { empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.'); return; }
+  const g = grid(parent);
+  items.forEach(item => {
+    const c = card(g, item.name || item.title || ENTITY_LABELS[key], item.summary || item.description || item.notes || item.type || '', opts && opts.icon || '📜');
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, item).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key]} deleted.`); });
+  });
+}
+function empty(parent, title, text) { const e = ce(parent, 'div', 'ttrpg-empty'); ce(e, 'div', 'ttrpg-empty-icon', '✨'); ce(e, 'h2', '', title); ce(e, 'p', '', text); }
+function stats(main, plugin) {
+  const e = plugin.state.entities; const s = grid(main, 'ttrpg-stat-grid');
+  [['Campaigns', e.campaigns.length], ['NPCs', e.npcs.length], ['Quests', e.quests.length], ['Encounters', e.encounters.length], ['Secrets', e.secrets.length], ['Sessions', e.sessions.length]].forEach(([label, value]) => { const c = ce(s, 'div', 'ttrpg-stat-card'); ce(c, 'div', 'ttrpg-big-number', value); ce(c, 'div', 'ttrpg-muted', label); });
+}
+function renderDashboard(main, plugin) {
+  header(main, 'Dungeon Master Console', 'One box for campaign building, prep, session tracking, secrecy, and running the table.', [
+    { label: 'New Campaign', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  stats(main, plugin);
+  const g = grid(main);
+  card(g, 'Campaign Builder Wizard', 'Multi-step modal: basic info, world, calendar, factions, geography, NPCs, quests, encounters, and finalise.', '🧙', [{ label: 'Launch Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() }]);
+  card(g, 'Built-in DM Tools', 'Generators, dice, rules, conditions, downtime projects, session logs, secrets, and player-facing exports.', '🎲', [{ label: 'Open Generators', onClick: async () => { plugin.state.activeSection = 'generators'; await plugin.saveState(); } }]);
+  card(g, 'Active Campaign', activeCampaign(plugin.state)?.name || 'No active campaign selected yet.', '📜', [{ label: 'Campaigns', onClick: async () => { plugin.state.activeSection = 'campaign'; await plugin.saveState(); } }]);
+}
+function renderCampaign(main, plugin) {
+  header(main, 'Campaign Creation & Wizard', 'Create campaigns, save wizard progress, finalise folder structures, and manage campaign settings.', [
+    { label: 'Open Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'New Campaign Card', onClick: () => new EntityModal(plugin.app, plugin, 'campaigns').open() }
+  ]);
+  itemCards(main, plugin, 'campaigns', { icon: '📜', empty: 'Launch the wizard to generate a full campaign structure.' });
+}
+function renderWorld(main, plugin) {
+  header(main, 'World, Lore & Cosmology', 'World overview, planes, timelines, calendars, deities, cultures, languages, factions, magic/tech rules, legends, myths, and rumours.', [
+    { label: 'World Overview', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'worlds').open() },
+    { label: 'Faction', onClick: () => new EntityModal(plugin.app, plugin, 'factions').open() },
+    { label: 'Deity', onClick: () => new EntityModal(plugin.app, plugin, 'deities').open() },
+    { label: 'Language', onClick: () => new EntityModal(plugin.app, plugin, 'languages').open() },
+    { label: 'Culture', onClick: () => new EntityModal(plugin.app, plugin, 'cultures').open() },
+    { label: 'Myth/Rumour', onClick: () => new EntityModal(plugin.app, plugin, 'myths').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }
+  ]);
+  ['worlds','factions','deities','languages','cultures','myths'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: k === 'deities' ? '☀️' : '🌌' }); });
+}
+function renderGeography(main, plugin) {
+  header(main, 'Geography, Settlements & Maps', 'Regions, settlements, points of interest, map pins, fog/reveal states, wilderness rules, terrain, hazards, and location linking.', [
+    { label: 'Region', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'regions').open() },
+    { label: 'Settlement', onClick: () => new EntityModal(plugin.app, plugin, 'settlements').open() },
+    { label: 'POI', onClick: () => new EntityModal(plugin.app, plugin, 'pois').open() },
+    { label: 'Map', onClick: () => new MapModal(plugin.app, plugin).open() }
+  ]);
+  ['regions','settlements','pois','maps'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '🗺️' }); });
+}
+function renderNpcs(main, plugin) {
+  header(main, 'NPC, Creature & Monster Management', 'Full NPC builder, creature compendium, custom monsters, CR tuning, relationships, secrets, schedules, ecology, tactics, and dialogue hooks.', [
+    { label: 'NPC Builder', primary: true, onClick: () => new NPCModal(plugin.app, plugin).open() },
+    { label: 'Creature Builder', onClick: () => new CreatureModal(plugin.app, plugin).open() }
+  ]);
+  ce(main, 'h2', 'ttrpg-section-title', 'NPCs'); itemCards(main, plugin, 'npcs', { icon: '👤' });
+  ce(main, 'h2', 'ttrpg-section-title', 'Creatures'); itemCards(main, plugin, 'creatures', { icon: '🐉' });
+}
+function renderAdventure(main, plugin) {
+  header(main, 'Adventures, Quests & Encounters', 'Adventure hubs, acts, story beats, branching outcomes, quests, reward tracking, skill/social/exploration encounters, and combat launch prep.', [
+    { label: 'Adventure', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'adventures').open() },
+    { label: 'Quest', onClick: () => new QuestModal(plugin.app, plugin).open() },
+    { label: 'Encounter', onClick: () => new EncounterModal(plugin.app, plugin).open() }
+  ]);
+  ['adventures','quests','encounters'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: k === 'encounters' ? '⚔️' : '📝' }); });
+}
+function renderGenerators(main, plugin) {
+  header(main, 'Generators & Random Tools', 'NPC names, encounters, loot, taverns, shops, travel events, rumours, plot hooks, weighted rollable tables, and local AI prompt packs.', [
+    { label: 'Open Generator', primary: true, onClick: () => new GeneratorModal(plugin.app, plugin).open() },
+    { label: 'Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Rollable Table', onClick: () => new RollableTableModal(plugin.app, plugin).open() }
+  ]);
+  const g = grid(main);
+  ['NPC Name','Balanced Encounter','Loot','Tavern / Shop','Travel Event','Rumour / Plot Hook','Local AI Prompt'].forEach(type => card(g, type, 'Opens in a modal and can save results into notes or plugin state.', '🎲', [{ label: 'Generate', onClick: () => new GeneratorModal(plugin.app, plugin, type).open() }]));
+  ce(main, 'h2', 'ttrpg-section-title', 'Generator History');
+  const hist = plugin.state.generatorHistory || []; if (!hist.length) empty(main, 'No generated results yet.', 'Use a generator above and save anything worth keeping.'); else itemHistory(main, hist);
+}
+function itemHistory(parent, hist) { const g = grid(parent); hist.slice(0, 20).forEach(x => card(g, x.type || 'Generated Result', x.result || '', '✨')); }
+function renderRules(main, plugin) {
+  header(main, 'Rules, Mechanics & Automation', 'Rule compendium, custom/optional rules, condition tracker, damage interactions, dice history, auto-calculations, level-up helper, XP, inventory, and economy.', [
+    { label: 'Custom Rule', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'rules').open() },
+    { label: 'Condition', onClick: () => new EntityModal(plugin.app, plugin, 'conditions').open() },
+    { label: 'Damage Calculator', onClick: () => new DamageModal(plugin.app, plugin).open() },
+    { label: 'Level/XP Helper', onClick: () => new LevelModal(plugin.app, plugin).open() }
+  ]);
+  ['rules','conditions','damageTypes'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '⚙️' }); });
+}
+function renderDowntime(main, plugin) {
+  header(main, 'Downtime, Crafting & Base Management', 'Downtime, crafting, research, bastions, strongholds, hirelings, income/upkeep ledgers, progress clocks, milestones, staff, and storage.', [
+    { label: 'Downtime Activity', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'downtime').open() },
+    { label: 'Project / Crafting', onClick: () => new ProjectModal(plugin.app, plugin).open() },
+    { label: 'Bastion', onClick: () => new EntityModal(plugin.app, plugin, 'bastions').open() },
+    { label: 'Hireling', onClick: () => new EntityModal(plugin.app, plugin, 'hirelings').open() }
+  ]);
+  ['downtime','projects','bastions','hirelings'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '⏳' }); });
+}
+function renderSessions(main, plugin) {
+  header(main, 'Session, Time & Campaign Tracking', 'Session logs, current campaign time, timeline events, player actions, world changes, milestone tracking, achievements, and unlockables.', [
+    { label: 'Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
+    { label: 'Milestone', onClick: () => new EntityModal(plugin.app, plugin, 'milestones').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }
+  ]);
+  ['sessions','milestones'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '📅' }); });
+}
+function renderSecrets(main, plugin) {
+  header(main, 'Secrecy, Visibility & Collaboration', 'DM-only notes, player-visible reveals, secret storage, reveal dates, player map control, handouts, and player-safe exports.', [
+    { label: 'New Secret', primary: true, onClick: () => new SecretModal(plugin.app, plugin).open() },
+    { label: 'Handout', onClick: () => new EntityModal(plugin.app, plugin, 'handouts').open() },
+    { label: 'Scan Vault Tags', onClick: () => scanVisibilityTags(plugin) },
+    { label: 'Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  ['secrets','handouts'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: k === 'secrets' ? '🔒' : '📣' }); });
+}
+function renderLibrary(main, plugin) {
+  header(main, 'Compendium & Library Management', 'SRD-compatible seed library, user-supplied local data, homebrew, import/export, search/filter, and auto-linking hooks.', [
+    { label: 'Homebrew Entry', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'homebrew').open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() },
+    { label: 'Export Backup', onClick: () => exportBackup(plugin) }
+  ]);
+  ['compendium','homebrew','tables'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '📚' }); });
+}
+function renderPlayerView(main, plugin) {
+  header(main, 'Player View', 'Player-safe summary only. DM-only, secret, and unrevealed content is hidden.', [ { label: 'Back to DM Mode', onClick: async () => { plugin.state.mode = 'DM'; plugin.state.activeSection = 'dashboard'; await plugin.saveState(); } }, { label: 'Export Player Packet', primary: true, onClick: () => exportPlayerSafePacket(plugin) } ]);
+  const g = grid(main);
+  safeArray(plugin.state.entities.campaigns).forEach(c => card(g, c.name, c.summary || c.description || 'Campaign overview.', '📜'));
+  safeArray(plugin.state.entities.quests).filter(q => q.visibility !== 'dm-only' && q.visibility !== 'secret').forEach(q => card(g, q.name || q.title, q.summary || q.objectives || '', '📝'));
+  safeArray(plugin.state.entities.handouts).filter(h => h.visibility !== 'dm-only' && h.visibility !== 'secret').forEach(h => card(g, h.name, h.summary || h.description || '', '📣'));
+  if (!g.children.length) empty(main, 'No player-visible content yet.', 'Reveal quests, handouts, maps, or notes from DM mode.');
+}
+
+class EntityModal extends Modal {
+  constructor(app, plugin, key, item) { super(app); this.plugin = plugin; this.key = key; this.item = item || {}; this.values = Object.assign({ id: uid(key), name: '', type: '', status: '', summary: '', description: '', notes: '', tags: [], visibility: 'dm-only' }, this.item); }
+  onOpen() { const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} ${ENTITY_LABELS[this.key] || 'Entry'}` });
+    addText(contentEl, 'Name / Title', this.values.name || this.values.title, v => { this.values.name = v; this.values.title = v; });
+    addText(contentEl, 'Type / Category', this.values.type || this.values.category, v => { this.values.type = v; this.values.category = v; });
+    addSelect(contentEl, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+    addTextArea(contentEl, 'Summary', this.values.summary || '', v => this.values.summary = v);
+    addTextArea(contentEl, 'Description / Notes', this.values.description || this.values.notes || '', v => { this.values.description = v; this.values.notes = v; });
+    addText(contentEl, 'Tags (comma separated)', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+    modalButtons(contentEl, this, async () => { upsert(this.plugin.state, this.key, this.values); await this.plugin.saveState(); new Notice(`${ENTITY_LABELS[this.key] || 'Entry'} saved.`); this.close(); }); }
+}
+class NPCModal extends EntityModal {
+  constructor(app, plugin, item) { super(app, plugin, 'npcs', item); this.values = Object.assign({ race:'', role:'', status:'Alive', ac:10, hp:10, speed:'30 ft', str:10,dex:10,con:10,int:10,wis:10,cha:10, attacks:'', spells:'', equipment:'', traits:'', ideals:'', bonds:'', flaws:'', quirks:'', voice:'', appearance:'', secrets:'', motives:'', relationships:'', dialogue:'', attitude:'Indifferent', schedule:'' }, this.values); }
+  onOpen() { const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Full NPC Builder' });
+    addText(contentEl,'Name',this.values.name,v=>this.values.name=v); addText(contentEl,'Race / Ancestry',this.values.race,v=>this.values.race=v); addText(contentEl,'Role / Job / Rank',this.values.role,v=>this.values.role=v); addSelect(contentEl,'Status',this.values.status,['Alive','Dead','Missing','Captured','Retired'],v=>this.values.status=v);
+    addNumber(contentEl,'AC',this.values.ac,v=>this.values.ac=v); addNumber(contentEl,'HP',this.values.hp,v=>this.values.hp=v); addText(contentEl,'Speed',this.values.speed,v=>this.values.speed=v);
+    ['str','dex','con','int','wis','cha'].forEach(a=>addNumber(contentEl,`${a.toUpperCase()} (${modifier(this.values[a]) >= 0 ? '+' : ''}${modifier(this.values[a])})`,this.values[a],v=>this.values[a]=v));
+    ['attacks','spells','equipment','traits','ideals','bonds','flaws','quirks','voice','appearance','motives','secrets','relationships','dialogue','schedule'].forEach(f=>addTextArea(contentEl, nice(f), this.values[f] || '', v=>this.values[f]=v));
+    addSelect(contentEl,'Starting / Current Attitude',this.values.attitude,['Friendly','Indifferent','Hostile'],v=>this.values.attitude=v); addText(contentEl,'Tags', (this.values.tags||[]).join(', '), v=>this.values.tags=tagsFromText(v));
+    modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'npcs',this.values); await this.plugin.saveState(); new Notice('NPC saved.'); this.close(); }); }
+}
+class CreatureModal extends EntityModal {
+  constructor(app, plugin, item) { super(app, plugin, 'creatures', item); this.values = Object.assign({ size:'Medium', creatureType:'Humanoid', cr:'1', ac:12, hp:7, traits:'', actions:'', reactions:'', lairActions:'', regionalEffects:'', ecology:'', tactics:'', template:'None' }, this.values); }
+  onOpen() { const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Custom Creature Builder'}); addText(contentEl,'Name',this.values.name,v=>this.values.name=v); addSelect(contentEl,'Size',this.values.size,['Tiny','Small','Medium','Large','Huge','Gargantuan'],v=>this.values.size=v); addText(contentEl,'Creature Type',this.values.creatureType,v=>this.values.creatureType=v); addText(contentEl,'CR',this.values.cr,v=>this.values.cr=v); addNumber(contentEl,'AC',this.values.ac,v=>this.values.ac=v); addNumber(contentEl,'HP',this.values.hp,v=>this.values.hp=v); addSelect(contentEl,'Template / Variant',this.values.template,['None','Undead','Fiendish','Elite','Minion','Legendary'],v=>this.values.template=v); ['traits','actions','reactions','lairActions','regionalEffects','ecology','tactics','summary'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'creatures',this.values); await this.plugin.saveState(); new Notice('Creature saved.'); this.close(); }); }
+}
+class QuestModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'quests', item); this.values = Object.assign({ questType:'Side', status:'Not Started', giver:'', location:'', objectives:'', rewards:'', deadline:'', prerequisites:'', nextQuests:'', secrets:'' }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Quest Management'}); addText(contentEl,'Quest Name',this.values.name,v=>this.values.name=v); addSelect(contentEl,'Type',this.values.questType,['Main','Side','Personal','Faction'],v=>this.values.questType=v); addSelect(contentEl,'Status',this.values.status,['Not Started','Active','Completed','Failed','Abandoned'],v=>this.values.status=v); ['giver','location','deadline','prerequisites','nextQuests'].forEach(f=>addText(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); ['summary','objectives','rewards','secrets','notes'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); addSelect(contentEl,'Visibility',this.values.visibility,['dm-only','player-visible','secret','reveal-date'],v=>this.values.visibility=v); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'quests',this.values); await this.plugin.saveState(); new Notice('Quest saved.'); this.close(); }); } }
+class EncounterModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'encounters', item); this.values = Object.assign({ difficulty:'Medium', partyLevel:1, partySize:4, environment:'Dungeon', creatures:'', traps:'', hazards:'', terrain:'', lighting:'Bright', weather:'', objectives:'', tactics:'', loot:'', skillChallenge:'', socialTools:'', explorationTools:'', xpBudget:'' }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Encounter Builder'}); addText(contentEl,'Encounter Name',this.values.name,v=>this.values.name=v); addNumber(contentEl,'Party Level',this.values.partyLevel,v=>{this.values.partyLevel=v; this.values.xpBudget=JSON.stringify(xpThreshold(v));}); addNumber(contentEl,'Party Size',this.values.partySize,v=>this.values.partySize=v); addSelect(contentEl,'Difficulty',this.values.difficulty,['Easy','Medium','Hard','Deadly'],v=>this.values.difficulty=v); addText(contentEl,'Environment',this.values.environment,v=>this.values.environment=v); addSelect(contentEl,'Lighting',this.values.lighting,['Bright','Dim','Dark'],v=>this.values.lighting=v); ['creatures','traps','hazards','terrain','weather','objectives','tactics','loot','skillChallenge','socialTools','explorationTools'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); addText(contentEl,'XP Budget / CR Notes',this.values.xpBudget||JSON.stringify(xpThreshold(this.values.partyLevel)),v=>this.values.xpBudget=v); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'encounters',this.values); await this.plugin.saveState(); new Notice('Encounter saved.'); this.close(); }); } }
+class ProjectModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'projects', item); this.values = Object.assign({ projectType:'Crafting', progress:0, total:8, timeSpent:0, cost:'', materials:'', assignedTo:'', active:true, completed:false }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Project / Crafting / Research'}); addText(contentEl,'Name',this.values.name,v=>this.values.name=v); addSelect(contentEl,'Type',this.values.projectType,['Crafting','Research','Training','Construction','Other'],v=>this.values.projectType=v); addNumber(contentEl,'Progress',this.values.progress,v=>this.values.progress=v); addNumber(contentEl,'Total Required',this.values.total,v=>this.values.total=v); ['cost','materials','assignedTo','summary','notes'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); modalButtons(contentEl,this,async()=>{ this.values.completed = Number(this.values.progress) >= Number(this.values.total); upsert(this.plugin.state,'projects',this.values); await this.plugin.saveState(); new Notice('Project saved.'); this.close(); }); } }
+class SessionModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'sessions', item); this.values = Object.assign({ sessionNumber:'', realDate:new Date().toISOString().slice(0,10), gameDate:'', summary:'', keyEvents:'', npcsMet:'', placesVisited:'', lootGained:'', worldChanges:'', nextPrep:'' }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Session Log'}); ['name','sessionNumber','realDate','gameDate'].forEach(f=>addText(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); ['summary','keyEvents','npcsMet','placesVisited','lootGained','worldChanges','nextPrep'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'sessions',this.values); await this.plugin.saveState(); new Notice('Session saved.'); this.close(); }); } }
+class SecretModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'secrets', item); this.values = Object.assign({ visibility:'secret', revealDate:'', revealTrigger:'', related:'', content:'' }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Hidden Secrets Storage'}); addText(contentEl,'Secret Name',this.values.name,v=>this.values.name=v); addSelect(contentEl,'Visibility Tag',this.values.visibility,['secret','dm-only','player-visible','reveal-date'],v=>this.values.visibility=v); addText(contentEl,'Reveal Date',this.values.revealDate,v=>this.values.revealDate=v); addText(contentEl,'Reveal Trigger',this.values.revealTrigger,v=>this.values.revealTrigger=v); addText(contentEl,'Related NPC/Quest/Location',this.values.related,v=>this.values.related=v); addTextArea(contentEl,'Secret Content',this.values.content||this.values.summary||'',v=>{this.values.content=v; this.values.summary=v;}); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'secrets',this.values); await this.plugin.saveState(); new Notice('Secret saved.'); this.close(); }); } }
+class MapModal extends EntityModal { constructor(app, plugin, item) { super(app, plugin, 'maps', item); this.values = Object.assign({ imagePath:'', pins:'', layers:'DM, Player, Fog', fogOfWar:'Unrevealed', distanceScale:'1 hex = 6 miles', playerVisible:false }, this.values); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Interactive Map Manager'}); ['name','imagePath','distanceScale','fogOfWar'].forEach(f=>addText(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); ['pins','layers','summary','notes'].forEach(f=>addTextArea(contentEl,nice(f),this.values[f]||'',v=>this.values[f]=v)); addSelect(contentEl,'Player Visible',String(this.values.playerVisible),['false','true'],v=>this.values.playerVisible=v==='true'); modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'maps',this.values); await this.plugin.saveState(); new Notice('Map saved.'); this.close(); }); } }
+class CalendarModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.values=Object.assign({ name:'Campaign Calendar', year:1492, month:'Hammer', day:1, weekday:'Moonday', seasons:'Spring, Summer, Autumn, Winter', moons:'Selûne: 30 days', holidays:'', notes:'' }, plugin.state.calendar || {}); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Custom Calendar System'}); Object.keys(this.values).forEach(k => k === 'notes' || k === 'holidays' ? addTextArea(contentEl,nice(k),this.values[k],v=>this.values[k]=v) : addText(contentEl,nice(k),this.values[k],v=>this.values[k]=v)); modalButtons(contentEl,this,async()=>{ this.plugin.state.calendar=this.values; await this.plugin.saveState(); new Notice('Calendar saved.'); this.close(); }); } }
+class DiceModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.formula='1d20'; this.mode='Normal'; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Dice Roller'}); const result=contentEl.createDiv('ttrpg-roll-result'); addText(contentEl,'Formula',this.formula,v=>this.formula=v); addSelect(contentEl,'Mode',this.mode,['Normal','Advantage','Disadvantage'],v=>this.mode=v); btn(contentEl,'Roll','ttrpg-btn ttrpg-primary',async()=>{ const r=rollFormula(this.formula,this.mode); result.textContent=`${r.label}: ${r.total} (${r.detail})`; this.plugin.state.diceHistory.unshift(r); await this.plugin.saveState(); }); } }
+class DamageModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.amount=10; this.interaction='Normal'; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Damage Interaction Calculator'}); const out=contentEl.createDiv('ttrpg-roll-result'); addNumber(contentEl,'Damage Amount',this.amount,v=>this.amount=v); addSelect(contentEl,'Interaction',this.interaction,['Normal','Resistance','Vulnerability','Immunity'],v=>this.interaction=v); btn(contentEl,'Calculate','ttrpg-btn ttrpg-primary',()=>{ let final=Number(this.amount); if(this.interaction==='Resistance') final=Math.floor(final/2); if(this.interaction==='Vulnerability') final*=2; if(this.interaction==='Immunity') final=0; out.textContent=`Final damage: ${final}`; }); } }
+class LevelModal extends Modal { constructor(app, plugin){ super(app); this.level=1; this.score=10; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Level-Up / XP Helper'}); const out=contentEl.createDiv('ttrpg-roll-result'); addNumber(contentEl,'Level',this.level,v=>this.level=v); addNumber(contentEl,'Ability Score',this.score,v=>this.score=v); btn(contentEl,'Calculate','ttrpg-btn ttrpg-primary',()=>{ const pb=proficiency(this.level); const mod=modifier(this.score); const xp=xpThreshold(this.level); out.textContent=`PB +${pb}; ability modifier ${mod>=0?'+':''}${mod}; encounter thresholds/person ${JSON.stringify(xp)}; spell DC example ${8+pb+mod}.`; }); } }
+class GeneratorModal extends Modal { constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'NPC Name'; this.result=''; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Generators & Random Tools'}); const out=contentEl.createDiv('ttrpg-generated'); addSelect(contentEl,'Generator',this.type,['NPC Name','Balanced Encounter','Loot','Tavern / Shop','Travel Event','Rumour / Plot Hook','Local AI Prompt'],v=>this.type=v); btn(contentEl,'Generate','ttrpg-btn ttrpg-primary',()=>{ this.result=generate(this.type,this.plugin.state); out.textContent=this.result; }); btn(contentEl,'Save Result','ttrpg-btn',async()=>{ if(!this.result) this.result=generate(this.type,this.plugin.state); this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:this.result, createdAt:Date.now() }); await this.plugin.saveState(); new Notice('Generated result saved.'); }); } }
+class RollableTableModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.name='New Rollable Table'; this.rows='1 | Common rumour | 5\n2 | Useful clue | 2\n3 | Dangerous lie | 1'; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Weighted Rollable Table Engine'}); const out=contentEl.createDiv('ttrpg-roll-result'); addText(contentEl,'Table Name',this.name,v=>this.name=v); addTextArea(contentEl,'Rows: number | result | weight',this.rows,v=>this.rows=v); btn(contentEl,'Roll','ttrpg-btn ttrpg-primary',()=>{ out.textContent=rollTable(this.rows); }); btn(contentEl,'Save Table','ttrpg-btn',async()=>{ upsert(this.plugin.state,'tables',{id:uid('table'),name:this.name,summary:this.rows,tags:['rollable-table']}); await this.plugin.saveState(); new Notice('Table saved.'); this.close(); }); } }
+class ImportModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.key='homebrew'; this.payload='[]'; } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Import JSON'}); addSelect(contentEl,'Target Library',this.key,Object.keys(ENTITY_LABELS),v=>this.key=v); addTextArea(contentEl,'JSON Array or Object',this.payload,v=>this.payload=v); modalButtons(contentEl,this,async()=>{ try { const data=JSON.parse(this.payload); const arr=Array.isArray(data)?data:[data]; arr.forEach(x=>upsert(this.plugin.state,this.key,Object.assign({id:uid(this.key),name:'Imported Entry'},x))); await this.plugin.saveState(); new Notice(`Imported ${arr.length} item(s).`); this.close(); } catch(e){ new Notice('Invalid JSON.'); } }); } }
+class SettingsModal extends Modal { constructor(app, plugin){ super(app); this.plugin=plugin; this.values=Object.assign({}, plugin.state.settings); } onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'TTRPG Table Settings'}); addText(contentEl,'Campaign folder',this.values.campaignFolder,v=>this.values.campaignFolder=v); addText(contentEl,'Export folder',this.values.exportFolder,v=>this.values.exportFolder=v); addSelect(contentEl,'Compact Mode',String(this.values.compact),['false','true'],v=>this.values.compact=v==='true'); addSelect(contentEl,'Wide Dashboard',String(this.values.wide),['true','false'],v=>this.values.wide=v==='true'); addSelect(contentEl,'High Contrast',String(this.values.highContrast),['false','true'],v=>this.values.highContrast=v==='true'); modalButtons(contentEl,this,async()=>{ this.plugin.state.settings=Object.assign(this.plugin.state.settings,this.values); await this.plugin.saveState(); new Notice('Settings saved.'); this.close(); }); } }
+class CampaignWizardModal extends Modal {
+  constructor(app, plugin){
+    super(app);
+    this.plugin=plugin;
+    this.step=0;
+    this.steps=['Basic Info','World','Calendar','Factions','Geography','NPCs','Quests','Encounters','Finalise'];
+    this.values=Object.assign({
+      name:'', summary:'', theme:'Heroic fantasy', levelRange:'1-20', worldName:'',
+      cosmology:'', planes:'', magicRules:'', technologyRules:'',
+      calendar:'Custom calendar', moons:'', seasons:'', holidays:'',
+      factions:'', deities:'', powers:'',
+      regions:'', settlements:'', pois:'',
+      npcs:'', story:'', questChains:'', startingEncounters:'', traps:'', loot:'',
+      finalNotes:'', visibility:'dm-only'
+    }, plugin.state.wizardDraft || {});
+    // Migration from older combined wizard fields. These keep existing drafts usable without reintroducing combined fields.
+    if (!this.values.cosmology && this.values.cosmologyPlanes) this.values.cosmology = this.values.cosmologyPlanes;
+    if (!this.values.magicRules && this.values.magicTech) this.values.magicRules = this.values.magicTech;
+    if (!this.values.factions && this.values.factionsDeitiesPowers) this.values.factions = this.values.factionsDeitiesPowers;
+    if (!this.values.regions && this.values.geography) this.values.regions = this.values.geography;
+    if (!this.values.story && this.values.quests) this.values.story = this.values.quests;
+    if (!this.values.startingEncounters && this.values.encounters) this.values.startingEncounters = this.values.encounters;
+  }
+  onOpen(){ this.render(); }
+  addWizardText(parent, label, key){
+    addText(parent, label, this.values[key] || '', v => this.values[key] = v);
+  }
+  addWizardTextArea(parent, label, key, help){
+    const setting = new Setting(parent).setName(label);
+    if (help) setting.setDesc(help);
+    setting.addTextArea(t => {
+      t.setValue(String(this.values[key] ?? '')).onChange(v => this.values[key] = v);
+      t.inputEl.rows = 4;
+      t.inputEl.addClass('ttrpg-textarea');
+    });
+  }
+  render(){
+    const {contentEl}=this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2',{text:`Campaign Builder Wizard — ${this.steps[this.step]}`});
+    const progress=contentEl.createDiv('ttrpg-progress');
+    progress.createDiv({cls:'ttrpg-progress-fill'}).style.width=`${((this.step+1)/this.steps.length)*100}%`;
+    const intro = contentEl.createDiv('ttrpg-muted ttrpg-wizard-note');
+    intro.textContent = 'Wizard inputs are deliberately split by content type. Comma-separated entries will be written as separate Markdown files in the matching campaign folder.';
+
+    if (this.step === 0) {
+      this.addWizardText(contentEl,'Campaign Name','name');
+      this.addWizardTextArea(contentEl,'Description / Pitch','summary');
+      this.addWizardText(contentEl,'Theme','theme');
+      this.addWizardText(contentEl,'Level Range','levelRange');
+    }
+    if (this.step === 1) {
+      this.addWizardText(contentEl,'World Name','worldName');
+      this.addWizardTextArea(contentEl,'Cosmology','cosmology','Reality structure: creation, afterlife, fate, gods, souls, and metaphysics.');
+      this.addWizardTextArea(contentEl,'Planes','planes','Realms/dimensions, such as Material, Fey, Shadow, elemental planes, and travel.');
+      this.addWizardTextArea(contentEl,'Magic Rules','magicRules','How magic works: rarity, laws, limits, spell access, resurrection, restrictions.');
+      this.addWizardTextArea(contentEl,'Technology Rules','technologyRules','Tech level: tools, industry, firearms, airships, artificers, infrastructure, limits.');
+    }
+    if (this.step === 2) {
+      this.addWizardTextArea(contentEl,'Calendar','calendar');
+      this.addWizardTextArea(contentEl,'Moons','moons');
+      this.addWizardTextArea(contentEl,'Seasons','seasons');
+      this.addWizardTextArea(contentEl,'Holidays','holidays');
+    }
+    if (this.step === 3) {
+      this.addWizardTextArea(contentEl,'Factions','factions');
+      this.addWizardTextArea(contentEl,'Deities','deities');
+      this.addWizardTextArea(contentEl,'Powers','powers');
+    }
+    if (this.step === 4) {
+      this.addWizardTextArea(contentEl,'Regions','regions');
+      this.addWizardTextArea(contentEl,'Settlements','settlements');
+      this.addWizardTextArea(contentEl,'Points of Interest','pois');
+    }
+    if (this.step === 5) {
+      this.addWizardTextArea(contentEl,'Core NPCs','npcs');
+    }
+    if (this.step === 6) {
+      this.addWizardTextArea(contentEl,'Story','story');
+      this.addWizardTextArea(contentEl,'Quest Chains','questChains');
+    }
+    if (this.step === 7) {
+      this.addWizardTextArea(contentEl,'Starting Encounters','startingEncounters');
+      this.addWizardTextArea(contentEl,'Traps','traps');
+      this.addWizardTextArea(contentEl,'Loot','loot');
+    }
+    if (this.step === 8) {
+      const summary = contentEl.createDiv('ttrpg-generated');
+      summary.createEl('strong', { text: 'Ready to generate campaign files.' });
+      summary.createEl('p', { text: 'Folder structure is now controlled by Settings. This final step only confirms generation and optional final notes.' });
+      this.addWizardTextArea(contentEl,'Final Notes','finalNotes');
+    }
+
+    const row=contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row,'Back','ttrpg-btn',async()=>{ await this.saveDraft(); this.step=Math.max(0,this.step-1); this.render(); });
+    btn(row,this.step===this.steps.length-1?'Generate Campaign':'Next','ttrpg-btn ttrpg-primary',async()=>{
+      await this.saveDraft();
+      if(this.step<this.steps.length-1){ this.step++; this.render(); }
+      else { await this.finalise(); }
+    });
+  }
+  async saveDraft(){ this.plugin.state.wizardDraft=this.values; await this.plugin.saveState(); }
+  async finalise(){
+    if(!this.values.name){ new Notice('Campaign name is required.'); return; }
+    const campaign={ id:uid('campaign'), name:this.values.name, summary:this.values.summary, theme:this.values.theme, levelRange:this.values.levelRange, worldName:this.values.worldName, visibility:'dm-only', tags:['campaign']};
+    upsert(this.plugin.state,'campaigns',campaign);
+    this.plugin.state.activeCampaignId=campaign.id;
+    await writeCampaignStructure(this.plugin,campaign,this.values);
+    this.plugin.state.wizardDraft={};
+    await this.plugin.saveState();
+    new Notice('Campaign generated.');
+    this.close();
+  }
+}
+function nice(k){ return String(k).replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()); }
+function addText(parent,name,value,onChange){ new Setting(parent).setName(name).addText(t=>t.setValue(String(value ?? '')).onChange(onChange)); }
+function addNumber(parent,name,value,onChange){ new Setting(parent).setName(name).addText(t=>t.setValue(String(value ?? '')).onChange(v=>onChange(Number(v)||0))); }
+function addTextArea(parent,name,value,onChange){ new Setting(parent).setName(name).addTextArea(t=>{ t.setValue(String(value ?? '')).onChange(onChange); t.inputEl.rows=4; t.inputEl.addClass('ttrpg-textarea'); }); }
+function addSelect(parent,name,value,options,onChange){ new Setting(parent).setName(name).addDropdown(d=>{ options.forEach(o=>d.addOption(String(o),String(o))); d.setValue(String(value ?? options[0])); d.onChange(onChange); }); }
+function modalButtons(parent, modal, onSave){ const row=parent.createDiv('ttrpg-modal-buttons'); btn(row,'Cancel','ttrpg-btn',()=>modal.close()); btn(row,'Save','ttrpg-btn ttrpg-primary',onSave); }
+function rollFormula(formula, mode){ const clean=String(formula||'1d20').replace(/\s+/g,''); const m=clean.match(/^(\d*)d(\d+)([+-]\d+)?$/i); if(!m) return {label:clean,total:0,detail:'Invalid formula'}; const count=Number(m[1]||1), sides=Number(m[2]), mod=Number(m[3]||0); const once=()=>{ const rolls=Array.from({length:Math.min(count,100)},()=>Math.floor(Math.random()*sides)+1); return {rolls,total:rolls.reduce((a,b)=>a+b,0)+mod}; }; if(mode==='Advantage'||mode==='Disadvantage'){ const a=once(), b=once(); const pick=mode==='Advantage' ? (a.total>=b.total?a:b) : (a.total<=b.total?a:b); return {label:`${formula} ${mode}`, total:pick.total, detail:`${a.total} vs ${b.total}; kept ${pick.total}`}; } const r=once(); return {label:formula,total:r.total,detail:`[${r.rolls.join(', ')}] ${mod? (mod>0?'+':'')+mod:''}`}; }
+function rollTable(rows){ const parsed=String(rows||'').split('\n').map(line=>line.split('|').map(x=>x.trim())).filter(x=>x.length>=2).map(x=>({result:x[1],weight:Number(x[2]||1)||1})); const total=parsed.reduce((a,b)=>a+b.weight,0); let r=Math.random()*total; for(const row of parsed){ r-=row.weight; if(r<=0) return row.result; } return parsed[0]?.result || 'No result.'; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function generate(type,state){ const names=['Aelric Thorn','Mira Vale','Brakka Stonejaw','Sable Merrow','Edrin Foxglove','Nyx Underbough','Ser Caldus Vey']; const places=['salt-road inn','ruined watchtower','moonlit ford','ash-choked shrine','market of seven bells']; if(type==='NPC Name') return `${pick(names)} — ${pick(['nervous informant','retired monster hunter','ambitious apprentice','exiled noble','smiling liar'])}.`; if(type==='Balanced Encounter') return `Encounter: ${pick(['ambush','negotiation under threat','guarded ritual','beast lair'])} at the ${pick(places)}. Difficulty: ${pick(['Easy','Medium','Hard','Deadly'])}. Add one objective beyond “kill everything.”`; if(type==='Loot') return `Loot: ${Math.ceil(Math.random()*80)} gp, ${pick(['silver signet','minor potion','old map','jeweled dagger','spell scroll'])}, and a clue pointing to ${pick(places)}.`; if(type==='Tavern / Shop') return `${pick(['The Copper Wyvern','The Drunken Basilisk','Ash & Antler','The Ninth Lantern'])}: owner ${pick(names)}; quirk: ${pick(['no one speaks above a whisper','all prices are bartered in rumours','a ghost cleans the tables','the cellar door is always locked'])}.`; if(type==='Travel Event') return `Travel event: ${pick(['flash storm','broken bridge','suspicious pilgrims','monster tracks','strange lights'])}. Terrain complication: ${pick(['mud','fog','heat','thin ice','loose scree'])}.`; if(type==='Rumour / Plot Hook') return `Rumour: ${pick(['The duke has not cast a shadow in three days.','A saint’s relic is fake, but still performs miracles.','The old well sings names at midnight.','The bandits are paying taxes to someone worse.'])}`; return `Local AI prompt pack: Using only my vault notes, generate 5 ${pick(['NPC secrets','quest twists','faction conflicts','travel complications'])}. Keep DM-only facts hidden from player-visible output.`; }
+async function ensureFolder(plugin,path){ const parts=normalizePath(path).split('/').filter(Boolean); let current=''; for(const part of parts){ current=current?`${current}/${part}`:part; if(!(await plugin.app.vault.adapter.exists(current))) await plugin.app.vault.createFolder(current); } }
+async function writeFile(plugin,path,content){ path=normalizePath(path); await ensureFolder(plugin,path.split('/').slice(0,-1).join('/')); const existing=plugin.app.vault.getAbstractFileByPath(path); if(existing) await plugin.app.vault.modify(existing,content); else await plugin.app.vault.create(path,content); }
+function mdEntity(key,item){ return `---
+ttrpg_type: ${key}
+id: ${item.id}
+visibility: ${item.visibility || 'dm-only'}
+tags: ${JSON.stringify(item.tags || [])}
+---
+
+# ${item.name || item.title || ENTITY_LABELS[key]}
+
+${item.portrait ? `![[${item.portrait}]]\n\n` : ''}${item.summary || ''}
+
+## Details
+
+${item.description || item.notes || item.content || ''}
+`; }
+function stripDmBlocks(text){ return String(text).replace(/\[dm-only\][\s\S]*?\[\/dm-only\]/gi,'').replace(/\[secret\][\s\S]*?\[\/secret\]/gi,'').replace(/^.*\[(dm-only|secret)\].*$/gim,''); }
+async function exportPlayerSafePacket(plugin){ const state=plugin.state; const campaign=activeCampaign(state); const lines=[`# Player Packet${campaign?`: ${campaign.name}`:''}`,'','Generated from TTRPG Table. DM-only and secret plugin entries are excluded.','','## Campaigns']; safeArray(state.entities.campaigns).forEach(c=>lines.push(`- **${c.name}** — ${c.summary||''}`)); lines.push('\n## Visible Quests'); safeArray(state.entities.quests).filter(x=>x.visibility==='player-visible').forEach(q=>lines.push(`- **${q.name}** — ${stripDmBlocks(q.summary||q.objectives||'')}`)); lines.push('\n## Handouts'); safeArray(state.entities.handouts).filter(x=>x.visibility!=='secret'&&x.visibility!=='dm-only').forEach(h=>lines.push(`- **${h.name}** — ${stripDmBlocks(h.summary||h.description||'')}`)); const path=`${state.settings.exportFolder}/player-safe-packet-${new Date().toISOString().slice(0,10)}.md`; await writeFile(plugin,path,lines.join('\n')); new Notice(`Player-safe packet exported: ${path}`); }
+async function scanVisibilityTags(plugin){ const files=plugin.app.vault.getMarkdownFiles(); let count=0; for(const file of files){ const text=await plugin.app.vault.cachedRead(file); if(/\[(dm-only|player-visible|secret|reveal-date)\]/i.test(text)) count++; } new Notice(`Visibility scan complete: ${count} markdown file(s) contain visibility tags.`); }
+
+module.exports = TTRPGTablePlugin;
+
+/* --------------------------------------------------------------------------
+ * Phase 62 — Player Mode Completion Pass
+ * Adds proper player-facing character management, known-info filtering,
+ * simplified safe navigation, party tools, and character export support.
+ * -------------------------------------------------------------------------- */
+
+Object.assign(ENTITY_LABELS, {
+  playerCharacters: 'Player Character',
+  partyNotes: 'Party Note / Journal',
+  partyInventory: 'Party Inventory',
+  personalNotes: 'Personal Note',
+  knownLocations: 'Known Location',
+  knownNpcs: 'Known NPC',
+  playerDowntime: 'Player Downtime',
+  playerProjects: 'Player Project',
+  playerRewards: 'Player Reward'
+});
+
+function createDefaultState() {
+  return {
+    version: PLUGIN_VERSION,
+    mode: 'DM',
+    activeSection: 'dashboard',
+    activePlayerTab: 'sheet',
+    activeCharacterId: '',
+    search: '',
+    activeCampaignId: '',
+    settings: {
+      campaignFolder: 'TTRPG/Campaigns',
+      exportFolder: EXPORT_ROOT,
+      compact: false,
+      wide: true,
+      highContrast: false,
+      readOnlyPlayer: false,
+      allowPlayerJournalEdits: true,
+      allowPlayerQuestUpdates: false,
+      allowPlayerStatusUpdates: true,
+      theme: 'Parchment & Leather'
+    },
+    wizardDraft: {},
+    calendar: { name: 'Campaign Calendar', year: 1492, month: 'Hammer', day: 1, weekday: 'Moonday', seasons: 'Spring, Summer, Autumn, Winter', moons: 'Selûne: 30 days', holidays: '', notes: '' },
+    entities: {
+      campaigns: [], worlds: [], factions: [], deities: [], languages: [], cultures: [], myths: [],
+      regions: [], settlements: [], pois: [], maps: [], npcs: [], creatures: [], adventures: [], quests: [], encounters: [],
+      rules: seedRules(), conditions: seedConditions(), damageTypes: seedDamageTypes(), downtime: [], projects: [], bastions: [], hirelings: [],
+      sessions: [], milestones: [], secrets: [], handouts: [], compendium: seedCompendium(), homebrew: [], tables: [],
+      playerCharacters: [seedPlayerCharacter()], partyNotes: [], partyInventory: [], personalNotes: [], knownLocations: [], knownNpcs: [], playerDowntime: [], playerProjects: [], playerRewards: []
+    },
+    generatorHistory: [],
+    diceHistory: []
+  };
+}
+
+function seedPlayerCharacter() {
+  return {
+    id: uid('pc'), name: 'New Adventurer', playerName: '', className: '', race: '', background: '', level: 1, xp: 0,
+    ac: 10, hpCurrent: 10, hpMax: 10, tempHp: 0, speed: '30 ft', initiative: 0,
+    str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
+    proficiencyBonus: 2, spellDc: 10, spellAttack: 2,
+    inspiration: false, heroPoints: 0, deathSuccesses: 0, deathFailures: 0,
+    skills: 'Acrobatics, Animal Handling, Arcana, Athletics, Deception, History, Insight, Intimidation, Investigation, Medicine, Nature, Perception, Performance, Persuasion, Religion, Sleight of Hand, Stealth, Survival',
+    skillProficiencies: '', expertise: '', savingThrowProficiencies: '', attacks: '', actions: '', spellsKnown: '', spellsPrepared: '', spellSlots: '', features: '', traits: '', equipment: '', inventory: '', carriedWeight: 0, encumbranceLimit: 150,
+    pp: 0, gp: 0, ep: 0, sp: 0, cp: 0, personality: '', ideals: '', bonds: '', flaws: '', backstory: '', personalNotes: '', privateSecrets: '', resources: '', conditions: '', milestones: '', rewards: '', visibility: 'player-visible', tags: ['player-character']
+  };
+}
+
+function playerVisible(item) {
+  if (!item) return false;
+  const visibility = item.visibility || (item.playerVisible ? 'player-visible' : 'dm-only');
+  return visibility === 'player-visible' || visibility === 'reveal-date' || item.revealed === true || item.known === true || item.discovered === true;
+}
+function selectedPc(state) {
+  const pcs = safeArray(state.entities.playerCharacters);
+  return pcs.find(pc => pc.id === state.activeCharacterId) || pcs[0] || seedPlayerCharacter();
+}
+function pcAbilities(pc) { return ['str','dex','con','int','wis','cha'].map(a => ({ key: a, label: a.toUpperCase(), score: Number(pc[a] || 10), mod: modifier(pc[a] || 10) })); }
+function signed(n) { return Number(n) >= 0 ? `+${Number(n)}` : String(Number(n)); }
+function textList(value) { return String(value || '').split(/\n|,/).map(x => x.trim()).filter(Boolean); }
+function canPlayerEdit(plugin, kind) {
+  const s = plugin.state.settings || {};
+  if (s.readOnlyPlayer) return false;
+  if (kind === 'journal') return s.allowPlayerJournalEdits !== false;
+  if (kind === 'quest') return s.allowPlayerQuestUpdates === true;
+  if (kind === 'status') return s.allowPlayerStatusUpdates !== false;
+  return true;
+}
+
+function renderPlayerView(main, plugin) {
+  const state = plugin.state;
+  if (!state.activePlayerTab) state.activePlayerTab = 'sheet';
+  const pc = selectedPc(state);
+  header(main, 'Player Mode', 'Clean player-facing tools: character sheet, known campaign info, safe dice/tools, party journal, and strict visibility filtering.', [
+    { label: state.settings.readOnlyPlayer ? 'Read-Only: ON' : 'Read-Only: OFF', onClick: async () => { state.settings.readOnlyPlayer = !state.settings.readOnlyPlayer; await plugin.saveState(); } },
+    { label: 'Export Character / Known Info', primary: true, onClick: () => exportPlayerSafePacket(plugin) },
+    { label: 'Back to DM Mode', onClick: async () => { state.mode = 'DM'; state.activeSection = 'dashboard'; await plugin.saveState(); } }
+  ]);
+  renderPlayerTabs(main, plugin);
+  const tab = state.activePlayerTab || 'sheet';
+  if (tab === 'sheet') renderPcSheet(main, plugin, pc);
+  else if (tab === 'campaign') renderPlayerCampaignInfo(main, plugin);
+  else if (tab === 'tools') renderPlayerTools(main, plugin, pc);
+  else if (tab === 'journal') renderPlayerContribution(main, plugin, pc);
+  else if (tab === 'party') renderPartyOverview(main, plugin, pc);
+  else if (tab === 'export') renderPlayerExport(main, plugin, pc);
+}
+
+function renderPlayerTabs(main, plugin) {
+  const tabs = [
+    ['sheet','📝 Character'], ['campaign','📜 Known Campaign'], ['tools','🎲 Tools'], ['journal','✍️ Journal'], ['party','🧑‍🤝‍🧑 Party'], ['export','📦 Export']
+  ];
+  const wrap = ce(main, 'div', 'ttrpg-player-tabs');
+  tabs.forEach(([id,label]) => btn(wrap, label, `ttrpg-player-tab ${plugin.state.activePlayerTab === id ? 'is-active' : ''}`, async () => { plugin.state.activePlayerTab = id; await plugin.saveState(); }));
+}
+
+function renderPcSheet(main, plugin, pc) {
+  const state = plugin.state;
+  const pcs = safeArray(state.entities.playerCharacters);
+  const selector = ce(main, 'div', 'ttrpg-player-select');
+  ce(selector, 'strong', '', 'Active Character');
+  const select = ce(selector, 'select', 'ttrpg-inline-select');
+  pcs.forEach(p => { const opt = document.createElement('option'); opt.value = p.id; opt.textContent = `${p.name || 'Unnamed'}${p.playerName ? ' — ' + p.playerName : ''}`; select.appendChild(opt); });
+  select.value = pc.id; select.addEventListener('change', async e => { state.activeCharacterId = e.target.value; await plugin.saveState(); });
+  if (!state.settings.readOnlyPlayer) btn(selector, 'New / Edit Character', 'ttrpg-btn ttrpg-primary', () => new PCModal(plugin.app, plugin, pc).open());
+  btn(selector, 'Export Sheet', 'ttrpg-btn', () => exportCharacterSheet(plugin, pc));
+
+  const hero = ce(main, 'section', 'ttrpg-character-hero');
+  const title = ce(hero, 'div', 'ttrpg-character-title');
+  ce(title, 'h2', '', pc.name || 'Unnamed Character');
+  ce(title, 'p', 'ttrpg-muted', `${pc.race || 'Unknown ancestry'} ${pc.className || 'Adventurer'} • Level ${pc.level || 1} • Player: ${pc.playerName || 'Unassigned'}`);
+  const core = ce(hero, 'div', 'ttrpg-core-stats');
+  [['HP', `${pc.hpCurrent || 0}/${pc.hpMax || 0}`], ['AC', pc.ac || 10], ['Speed', pc.speed || '30 ft'], ['Init', signed(pc.initiative || modifier(pc.dex || 10))], ['PB', signed(pc.proficiencyBonus || proficiency(pc.level || 1))], ['Spell DC', pc.spellDc || (8 + (pc.proficiencyBonus || proficiency(pc.level || 1)) + modifier(pc.int || 10))]].forEach(([label,value]) => {
+    const box = ce(core, 'div', 'ttrpg-core-stat'); ce(box, 'span', '', label); ce(box, 'strong', '', value);
+  });
+
+  const abilityGrid = ce(main, 'div', 'ttrpg-ability-grid');
+  pcAbilities(pc).forEach(a => { const box = ce(abilityGrid, 'div', 'ttrpg-ability-box'); ce(box, 'span', 'ttrpg-ability-name', a.label); ce(box, 'strong', 'ttrpg-ability-score', a.score); ce(box, 'span', 'ttrpg-ability-mod', signed(a.mod)); });
+
+  const g = grid(main, 'ttrpg-grid ttrpg-player-grid');
+  playerPanel(g, 'Saving Throws', '🛡️', formatSaves(pc));
+  playerPanel(g, 'Skills', '🎯', formatSkills(pc));
+  playerPanel(g, 'Attacks & Actions', '⚔️', pc.attacks || pc.actions || 'No attacks/actions entered yet.');
+  playerPanel(g, 'Spells & Slots', '🧙', `${pc.spellsPrepared || pc.spellsKnown || 'No spells entered.'}\n\nSlots: ${pc.spellSlots || 'None tracked.'}\nSpell Attack: ${signed(pc.spellAttack || 0)}`);
+  playerPanel(g, 'Features & Traits', '✨', `${pc.features || ''}\n${pc.traits || ''}`.trim() || 'No features or traits entered yet.');
+  playerPanel(g, 'Equipment & Inventory', '🎒', `${pc.equipment || ''}\n${pc.inventory || ''}\n\nWeight: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0}`.trim());
+  playerPanel(g, 'Currency', '💰', `${pc.pp || 0} pp • ${pc.gp || 0} gp • ${pc.ep || 0} ep • ${pc.sp || 0} sp • ${pc.cp || 0} cp`);
+  playerPanel(g, 'Background & Personality', '📖', `Background: ${pc.background || '—'}\nPersonality: ${pc.personality || '—'}\nIdeals: ${pc.ideals || '—'}\nBonds: ${pc.bonds || '—'}\nFlaws: ${pc.flaws || '—'}`);
+  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death saves: ${pc.deathSuccesses || 0} success / ${pc.deathFailures || 0} failure\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
+  playerPanel(g, 'Backstory & Personal Notes', '🖋️', `${pc.backstory || ''}\n\n${pc.personalNotes || ''}`.trim() || 'No backstory/personal notes yet.');
+  playerPanel(g, 'Private Notes', '🔒', pc.privateSecrets || 'Private player/DM notes can live here.');
+}
+
+function renderPlayerCampaignInfo(main, plugin) {
+  header(main, 'Known Campaign Information', 'Only discovered, revealed, or player-visible information appears here. DM secrets and hidden stats stay out of sight.', []);
+  const e = plugin.state.entities;
+  const groups = [
+    ['Active / Completed Quests', '📝', safeArray(e.quests).filter(playerVisible), q => `${q.status || 'Known'} — ${stripDmBlocks(q.summary || q.objectives || q.description || '')}`],
+    ['Known Locations', '🗺️', [...safeArray(e.knownLocations), ...safeArray(e.regions).filter(playerVisible), ...safeArray(e.settlements).filter(playerVisible), ...safeArray(e.pois).filter(playerVisible)], x => stripDmBlocks(x.summary || x.description || x.notes || 'Known location.')],
+    ['NPC Directory', '👤', [...safeArray(e.knownNpcs), ...safeArray(e.npcs).filter(playerVisible)], x => stripDmBlocks(x.publicNotes || x.summary || x.description || 'Known NPC.')],
+    ['Faction Reputation', '⚖️', safeArray(e.factions).filter(playerVisible), x => `${x.reputation || x.summary || x.description || 'Known faction.'}`],
+    ['Calendar & Timeline', '📅', [...safeArray(e.milestones).filter(playerVisible), ...safeArray(e.sessions).filter(playerVisible)], x => stripDmBlocks(x.summary || x.keyEvents || x.notes || 'Known event.')],
+    ['Explored Maps', '🗺️', safeArray(e.maps).filter(playerVisible), x => stripDmBlocks(`${x.fogOfWar || 'Explored/revealed map.'}\n${x.summary || x.notes || ''}`)],
+    ['Handouts & Notes', '📣', safeArray(e.handouts).filter(playerVisible), x => stripDmBlocks(x.summary || x.description || x.content || '')]
+  ];
+  groups.forEach(([title, icon, items, describe]) => { ce(main, 'h2', 'ttrpg-section-title', title); renderPlayerKnownCards(main, title, icon, items, describe); });
+}
+
+function renderPlayerKnownCards(parent, title, icon, items, describe) {
+  if (!items.length) { empty(parent, `No ${title.toLowerCase()} revealed yet.`, 'When the DM marks content as player-visible, it will appear here.'); return; }
+  const g = grid(parent);
+  items.forEach(item => card(g, item.name || item.title || 'Known Entry', describe(item), icon));
+}
+
+function renderPlayerTools(main, plugin, pc) {
+  header(main, 'Player Interaction & Tools', 'Dice, inventory, spell references, feature references, downtime, projects, and shared party resources.', [
+    { label: 'Roll Dice', primary: true, onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Update HP / Status', onClick: () => new PlayerStatusModal(plugin.app, plugin, pc).open() },
+    { label: 'Party Inventory Item', onClick: () => new EntityModal(plugin.app, plugin, 'partyInventory').open() }
+  ]);
+  const g = grid(main);
+  card(g, 'Dice Roller', 'Checks, saves, attacks, damage, advantage, disadvantage, and roll history.', '🎲', [{ label: 'Open Roller', primary: true, onClick: () => new DiceModal(plugin.app, plugin).open() }]);
+  card(g, 'Inventory Management', `${pc.name}: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0} carried weight.\nEquipped/carried/stored items can be tracked on the character sheet.`, '🎒', [{ label: 'Edit Character Inventory', onClick: () => new PCModal(plugin.app, plugin, pc).open() }]);
+  card(g, 'Spell Reference', pc.spellsPrepared || pc.spellsKnown || 'Prepared/known spells will appear here from the character sheet.', '🧙');
+  card(g, 'Feature Reference', pc.features || pc.traits || 'Class, race, background, and item features will appear here.', '✨');
+  card(g, 'Downtime Activity Log', safeArray(plugin.state.entities.playerDowntime).map(x => `${x.name}: ${x.summary || x.progress || ''}`).join('\n') || 'No player downtime logged yet.', '⏳', canPlayerEdit(plugin, 'journal') ? [{ label: 'Add Downtime', onClick: () => new EntityModal(plugin.app, plugin, 'playerDowntime').open() }] : []);
+  card(g, 'Project Tracking', safeArray(plugin.state.entities.playerProjects).map(x => `${x.name}: ${x.progress || 0}/${x.total || x.totalRequired || '?'}`).join('\n') || 'No personal crafting/research projects yet.', '🧪', canPlayerEdit(plugin, 'journal') ? [{ label: 'Add Project', onClick: () => new ProjectModal(plugin.app, plugin).open() }] : []);
+  ce(main, 'h2', 'ttrpg-section-title', 'Party Inventory'); itemCards(main, plugin, 'partyInventory', { icon: '🎒', empty: 'Shared party storage and resources will appear here.' });
+}
+
+function renderPlayerContribution(main, plugin, pc) {
+  header(main, 'Contribution & Updates', 'Player journal, personal observations, safe status updates, objectives if allowed, milestones, and rewards.', [
+    { label: 'Add Party Note', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'partyNotes').open() },
+    { label: 'Add Personal Note', onClick: () => new EntityModal(plugin.app, plugin, 'personalNotes').open() },
+    { label: 'Update Status', onClick: () => new PlayerStatusModal(plugin.app, plugin, pc).open() }
+  ]);
+  const g = grid(main);
+  card(g, 'Current Status', `HP ${pc.hpCurrent || 0}/${pc.hpMax || 0} • Temp ${pc.tempHp || 0}\nConditions: ${pc.conditions || 'None'}\nMilestones: ${pc.milestones || 'None logged'}`, '❤️', canPlayerEdit(plugin, 'status') ? [{ label: 'Update', primary: true, onClick: () => new PlayerStatusModal(plugin.app, plugin, pc).open() }] : []);
+  card(g, 'Progress & Rewards', `${pc.rewards || 'No rewards logged.'}\nXP: ${pc.xp || 0}\nMilestones: ${pc.milestones || 'None'}`, '🏆');
+  ce(main, 'h2', 'ttrpg-section-title', 'Party Notes / Journal'); itemCards(main, plugin, 'partyNotes', { icon: '📓', empty: 'No shared party journal entries yet.' });
+  ce(main, 'h2', 'ttrpg-section-title', 'Personal Notes / Observations'); itemCards(main, plugin, 'personalNotes', { icon: '🖋️', empty: 'No personal observations yet.' });
+  ce(main, 'h2', 'ttrpg-section-title', 'Known Quest Objectives');
+  renderQuestObjectiveCards(main, plugin);
+}
+
+function renderQuestObjectiveCards(main, plugin) {
+  const quests = safeArray(plugin.state.entities.quests).filter(playerVisible);
+  if (!quests.length) { empty(main, 'No known quest objectives yet.', 'Player-visible quests will appear here.'); return; }
+  const g = grid(main);
+  quests.forEach(q => {
+    const actions = canPlayerEdit(plugin, 'quest') ? [{ label: 'Mark / Edit', onClick: () => new QuestModal(plugin.app, plugin, q).open() }] : [];
+    card(g, q.name || q.title || 'Known Quest', `${q.status || 'Known'}\n${stripDmBlocks(q.objectives || q.summary || '')}\nRewards: ${stripDmBlocks(q.rewards || '')}`, '📝', actions);
+  });
+}
+
+function renderPartyOverview(main, plugin, pc) {
+  header(main, 'Party Overview', 'Combined party stats, shared resources, group reputation, party inventory, and known shared history.', [
+    { label: 'Add Party Inventory', onClick: () => new EntityModal(plugin.app, plugin, 'partyInventory').open() },
+    { label: 'Add Party Note', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'partyNotes').open() }
+  ]);
+  const pcs = safeArray(plugin.state.entities.playerCharacters);
+  const totalGold = pcs.reduce((sum, x) => sum + Number(x.gp || 0), 0);
+  const avgLevel = pcs.length ? (pcs.reduce((sum, x) => sum + Number(x.level || 1), 0) / pcs.length).toFixed(1) : '0';
+  const s = grid(main, 'ttrpg-stat-grid');
+  [['Characters', pcs.length], ['Average Level', avgLevel], ['Party Gold', `${totalGold} gp`], ['Shared Items', safeArray(plugin.state.entities.partyInventory).length]].forEach(([label, value]) => { const c = ce(s, 'div', 'ttrpg-stat-card'); ce(c, 'div', 'ttrpg-big-number', value); ce(c, 'div', 'ttrpg-muted', label); });
+  const g = grid(main);
+  pcs.forEach(p => card(g, p.name || 'Unnamed Character', `${p.race || ''} ${p.className || ''} • Level ${p.level || 1}\nHP ${p.hpCurrent || 0}/${p.hpMax || 0} • AC ${p.ac || 10}\nConditions: ${p.conditions || 'None'}`, '👤', [{ label: 'Select', onClick: async () => { plugin.state.activeCharacterId = p.id; plugin.state.activePlayerTab = 'sheet'; await plugin.saveState(); } }]));
+  ce(main, 'h2', 'ttrpg-section-title', 'Shared Party Resources'); itemCards(main, plugin, 'partyInventory', { icon: '🎒' });
+  ce(main, 'h2', 'ttrpg-section-title', 'Known Group Reputation'); renderPlayerKnownCards(main, 'known reputation', '⚖️', safeArray(plugin.state.entities.factions).filter(playerVisible), x => x.reputation || x.summary || x.description || 'Known faction standing.');
+}
+
+function renderPlayerExport(main, plugin, pc) {
+  header(main, 'Player Export & Safety', 'Export character sheets or known campaign packets without DM-only, secret, or unrevealed content.', [
+    { label: 'Export Character Sheet', primary: true, onClick: () => exportCharacterSheet(plugin, pc) },
+    { label: 'Export Known Info Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  const g = grid(main);
+  card(g, 'Read-Only Mode', plugin.state.settings.readOnlyPlayer ? 'Read-only is ON. Player edit controls are suppressed.' : 'Read-only is OFF. Allowed player edits are available.', '🔒', [{ label: 'Toggle Read-Only', onClick: async () => { plugin.state.settings.readOnlyPlayer = !plugin.state.settings.readOnlyPlayer; await plugin.saveState(); } }]);
+  card(g, 'Visibility Safety', 'DM-only, secret, and unrevealed content is filtered from Player Mode and player exports.', '🛡️');
+  card(g, 'Character Sheet Export', 'Exports the selected PC as Markdown with visible sheet fields, resources, notes, and inventory.', '📝', [{ label: 'Export Sheet', primary: true, onClick: () => exportCharacterSheet(plugin, pc) }]);
+  card(g, 'Known Campaign Export', 'Exports known quests, locations, NPCs, faction standings, handouts, and map notes.', '📦', [{ label: 'Export Packet', onClick: () => exportPlayerSafePacket(plugin) }]);
+}
+
+function playerPanel(parent, title, icon, text) {
+  return card(parent, title, String(text || '').trim() || 'Nothing entered yet.', icon);
+}
+function formatSaves(pc) {
+  const proficient = textList(pc.savingThrowProficiencies).map(x => x.toLowerCase());
+  return pcAbilities(pc).map(a => `${proficient.includes(a.key) || proficient.includes(a.label.toLowerCase()) ? '●' : '○'} ${a.label} ........ ${signed(a.mod + (proficient.includes(a.key) || proficient.includes(a.label.toLowerCase()) ? Number(pc.proficiencyBonus || proficiency(pc.level || 1)) : 0))}`).join('\n');
+}
+function formatSkills(pc) {
+  const skills = textList(pc.skills);
+  const prof = textList(pc.skillProficiencies).map(x => x.toLowerCase());
+  const exp = textList(pc.expertise).map(x => x.toLowerCase());
+  const pb = Number(pc.proficiencyBonus || proficiency(pc.level || 1));
+  return skills.map(skill => {
+    const key = skill.toLowerCase();
+    const bonus = exp.includes(key) ? pb * 2 : (prof.includes(key) ? pb : 0);
+    const mark = exp.includes(key) ? '◆' : (prof.includes(key) ? '●' : '○');
+    return `${mark} ${skill} ........ ${signed(bonus)}`;
+  }).join('\n');
+}
+
+class PCModal extends Modal {
+  constructor(app, plugin, item) { super(app); this.plugin = plugin; this.values = Object.assign(seedPlayerCharacter(), item || {}); }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Official-Style Player Character Sheet' });
+    ['name','playerName','race','className','background'].forEach(f => addText(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+    addNumber(contentEl, 'Level', this.values.level, v => { this.values.level = v; this.values.proficiencyBonus = proficiency(v); });
+    addNumber(contentEl, 'Experience', this.values.xp, v => this.values.xp = v);
+    ['str','dex','con','int','wis','cha'].forEach(a => addNumber(contentEl, `${a.toUpperCase()} Score`, this.values[a], v => this.values[a] = v));
+    ['ac','hpCurrent','hpMax','tempHp','initiative','heroPoints','deathSuccesses','deathFailures','carriedWeight','encumbranceLimit','pp','gp','ep','sp','cp'].forEach(f => addNumber(contentEl, nice(f), this.values[f], v => this.values[f] = v));
+    addText(contentEl, 'Speed', this.values.speed, v => this.values.speed = v);
+    addSelect(contentEl, 'Inspiration', String(this.values.inspiration), ['false','true'], v => this.values.inspiration = v === 'true');
+    ['savingThrowProficiencies','skillProficiencies','expertise','attacks','actions','spellsKnown','spellsPrepared','spellSlots','features','traits','equipment','inventory','resources','conditions','personality','ideals','bonds','flaws','backstory','personalNotes','privateSecrets','milestones','rewards'].forEach(f => addTextArea(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+    modalButtons(contentEl, this, async () => { this.values.proficiencyBonus = proficiency(this.values.level); upsert(this.plugin.state, 'playerCharacters', this.values); this.plugin.state.activeCharacterId = this.values.id; await this.plugin.saveState(); new Notice('Player character saved.'); this.close(); });
+  }
+}
+
+class PlayerStatusModal extends Modal {
+  constructor(app, plugin, pc) { super(app); this.plugin = plugin; this.pc = Object.assign(seedPlayerCharacter(), pc || {}); }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Update Player Status' });
+    addNumber(contentEl, 'Current HP', this.pc.hpCurrent, v => this.pc.hpCurrent = v);
+    addNumber(contentEl, 'Max HP', this.pc.hpMax, v => this.pc.hpMax = v);
+    addNumber(contentEl, 'Temporary HP', this.pc.tempHp, v => this.pc.tempHp = v);
+    addTextArea(contentEl, 'Conditions', this.pc.conditions || '', v => this.pc.conditions = v);
+    addNumber(contentEl, 'Death Save Successes', this.pc.deathSuccesses, v => this.pc.deathSuccesses = v);
+    addNumber(contentEl, 'Death Save Failures', this.pc.deathFailures, v => this.pc.deathFailures = v);
+    addSelect(contentEl, 'Inspiration', String(this.pc.inspiration), ['false','true'], v => this.pc.inspiration = v === 'true');
+    addTextArea(contentEl, 'Milestones / Rewards', this.pc.rewards || '', v => this.pc.rewards = v);
+    modalButtons(contentEl, this, async () => { upsert(this.plugin.state, 'playerCharacters', this.pc); await this.plugin.saveState(); new Notice('Player status updated.'); this.close(); });
+  }
+}
+
+async function exportCharacterSheet(plugin, pc) {
+  const body = [
+    `# ${pc.name || 'Character Sheet'}`,
+    '',
+    `**Player:** ${pc.playerName || ''}`,
+    `**Class/Level:** ${pc.className || ''} ${pc.level || 1}`,
+    `**Race:** ${pc.race || ''}`,
+    `**Background:** ${pc.background || ''}`,
+    '',
+    '## Core Stats',
+    `HP ${pc.hpCurrent || 0}/${pc.hpMax || 0} • Temp ${pc.tempHp || 0} • AC ${pc.ac || 10} • Speed ${pc.speed || ''} • Initiative ${signed(pc.initiative || modifier(pc.dex || 10))} • PB ${signed(pc.proficiencyBonus || proficiency(pc.level || 1))}`,
+    '',
+    '## Ability Scores',
+    pcAbilities(pc).map(a => `- ${a.label}: ${a.score} (${signed(a.mod)})`).join('\n'),
+    '',
+    '## Saving Throws', formatSaves(pc),
+    '',
+    '## Skills', formatSkills(pc),
+    '',
+    '## Attacks & Actions', pc.attacks || pc.actions || '',
+    '',
+    '## Spells', `Known: ${pc.spellsKnown || ''}\nPrepared: ${pc.spellsPrepared || ''}\nSlots: ${pc.spellSlots || ''}`,
+    '',
+    '## Features & Traits', `${pc.features || ''}\n${pc.traits || ''}`,
+    '',
+    '## Equipment & Inventory', `${pc.equipment || ''}\n${pc.inventory || ''}\nWeight: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0}`,
+    '',
+    '## Currency', `${pc.pp || 0} pp • ${pc.gp || 0} gp • ${pc.ep || 0} ep • ${pc.sp || 0} sp • ${pc.cp || 0} cp`,
+    '',
+    '## Background & Notes', `${pc.backstory || ''}\n\n${pc.personalNotes || ''}`,
+    '',
+    '## Private Player/DM Notes', pc.privateSecrets || ''
+  ].join('\n');
+  const path = `${plugin.state.settings.exportFolder}/${slugify(pc.name || 'character-sheet')}-character-sheet.md`;
+  await writeFile(plugin, path, body);
+  new Notice(`Character sheet exported: ${path}`);
+}
+
+async function exportPlayerSafePacket(plugin) {
+  const state = plugin.state;
+  const campaign = activeCampaign(state);
+  const pc = selectedPc(state);
+  const lines = [`# Player Packet${campaign ? ': ' + campaign.name : ''}`, '', 'Generated from TTRPG Table. DM-only, secret, and unrevealed entries are excluded.', ''];
+  lines.push('## Selected Character', `- **${pc.name || 'Unnamed'}** — ${pc.race || ''} ${pc.className || ''} level ${pc.level || 1}; HP ${pc.hpCurrent || 0}/${pc.hpMax || 0}; AC ${pc.ac || 10}`, '');
+  lines.push('## Visible Quests');
+  safeArray(state.entities.quests).filter(playerVisible).forEach(q => lines.push(`- **${q.name || q.title || 'Quest'}** — ${stripDmBlocks(q.summary || q.objectives || '')}`));
+  lines.push('', '## Known Locations');
+  [...safeArray(state.entities.knownLocations), ...safeArray(state.entities.regions).filter(playerVisible), ...safeArray(state.entities.settlements).filter(playerVisible), ...safeArray(state.entities.pois).filter(playerVisible)].forEach(x => lines.push(`- **${x.name || x.title || 'Location'}** — ${stripDmBlocks(x.summary || x.description || '')}`));
+  lines.push('', '## Known NPCs');
+  [...safeArray(state.entities.knownNpcs), ...safeArray(state.entities.npcs).filter(playerVisible)].forEach(x => lines.push(`- **${x.name || 'NPC'}** — ${stripDmBlocks(x.publicNotes || x.summary || x.description || '')}`));
+  lines.push('', '## Faction Reputation');
+  safeArray(state.entities.factions).filter(playerVisible).forEach(x => lines.push(`- **${x.name || 'Faction'}** — ${stripDmBlocks(x.reputation || x.summary || '')}`));
+  lines.push('', '## Calendar & Timeline');
+  if (state.calendar) lines.push(`- Current date: ${state.calendar.weekday || ''} ${state.calendar.day || ''} ${state.calendar.month || ''}, ${state.calendar.year || ''}`);
+  safeArray(state.entities.milestones).filter(playerVisible).forEach(x => lines.push(`- **${x.name || 'Milestone'}** — ${stripDmBlocks(x.summary || x.description || '')}`));
+  lines.push('', '## Handouts & Notes');
+  safeArray(state.entities.handouts).filter(playerVisible).forEach(h => lines.push(`- **${h.name || 'Handout'}** — ${stripDmBlocks(h.summary || h.description || h.content || '')}`));
+  lines.push('', '## Party Inventory');
+  safeArray(state.entities.partyInventory).forEach(i => lines.push(`- **${i.name || 'Item'}** — ${i.summary || i.description || ''}`));
+  const path = `${state.settings.exportFolder}/player-safe-packet-${new Date().toISOString().slice(0, 10)}.md`;
+  await writeFile(plugin, path, lines.join('\n'));
+  new Notice(`Player-safe packet exported: ${path}`);
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 63 — Rules-Driven Player Character Builder Restoration
+ * Restores selector-first character creation: ancestry/class/background choices,
+ * automatic features/proficiencies/equipment/spell references, and derived stats.
+ * -------------------------------------------------------------------------- */
+
+const PC_RULES = {
+  abilities: ['str','dex','con','int','wis','cha'],
+  skills: [
+    ['Acrobatics','dex'], ['Animal Handling','wis'], ['Arcana','int'], ['Athletics','str'],
+    ['Deception','cha'], ['History','int'], ['Insight','wis'], ['Intimidation','cha'],
+    ['Investigation','int'], ['Medicine','wis'], ['Nature','int'], ['Perception','wis'],
+    ['Performance','cha'], ['Persuasion','cha'], ['Religion','int'], ['Sleight of Hand','dex'],
+    ['Stealth','dex'], ['Survival','wis']
+  ],
+  ancestries: {
+    'Human': { speed:'30 ft', bonuses:{str:1,dex:1,con:1,int:1,wis:1,cha:1}, languages:'Common + one extra language', traits:['Versatile: +1 to all ability scores.'] },
+    'Hill Dwarf': { speed:'25 ft', bonuses:{con:2,wis:1}, languages:'Common, Dwarvish', traits:['Darkvision 60 ft','Dwarven Resilience','Dwarven Combat Training','Stonecunning','Dwarven Toughness: +1 HP per level'] },
+    'Mountain Dwarf': { speed:'25 ft', bonuses:{con:2,str:2}, languages:'Common, Dwarvish', traits:['Darkvision 60 ft','Dwarven Resilience','Dwarven Combat Training','Stonecunning','Dwarven Armor Training'] },
+    'High Elf': { speed:'30 ft', bonuses:{dex:2,int:1}, languages:'Common, Elvish + one extra language', traits:['Darkvision 60 ft','Fey Ancestry','Trance','Keen Senses','Elf Weapon Training','One wizard cantrip'] },
+    'Wood Elf': { speed:'35 ft', bonuses:{dex:2,wis:1}, languages:'Common, Elvish', traits:['Darkvision 60 ft','Fey Ancestry','Trance','Keen Senses','Elf Weapon Training','Fleet of Foot','Mask of the Wild'] },
+    'Lightfoot Halfling': { speed:'25 ft', bonuses:{dex:2,cha:1}, languages:'Common, Halfling', traits:['Lucky','Brave','Halfling Nimbleness','Naturally Stealthy'] },
+    'Stout Halfling': { speed:'25 ft', bonuses:{dex:2,con:1}, languages:'Common, Halfling', traits:['Lucky','Brave','Halfling Nimbleness','Stout Resilience'] },
+    'Dragonborn': { speed:'30 ft', bonuses:{str:2,cha:1}, languages:'Common, Draconic', traits:['Draconic Ancestry','Breath Weapon','Damage Resistance'] },
+    'Forest Gnome': { speed:'25 ft', bonuses:{int:2,dex:1}, languages:'Common, Gnomish', traits:['Darkvision 60 ft','Gnome Cunning','Natural Illusionist','Speak with Small Beasts'] },
+    'Rock Gnome': { speed:'25 ft', bonuses:{int:2,con:1}, languages:'Common, Gnomish', traits:['Darkvision 60 ft','Gnome Cunning','Artificer’s Lore','Tinker'] },
+    'Half-Elf': { speed:'30 ft', bonuses:{cha:2}, flexibleBonuses:2, languages:'Common, Elvish + one extra language', traits:['Darkvision 60 ft','Fey Ancestry','Skill Versatility: choose two skills'] },
+    'Half-Orc': { speed:'30 ft', bonuses:{str:2,con:1}, languages:'Common, Orc', traits:['Darkvision 60 ft','Menacing','Relentless Endurance','Savage Attacks'] },
+    'Tiefling': { speed:'30 ft', bonuses:{cha:2,int:1}, languages:'Common, Infernal', traits:['Darkvision 60 ft','Hellish Resistance','Infernal Legacy'] }
+  },
+  classes: {
+    'Barbarian': { hitDie:12, primary:'str', saves:['str','con'], armor:'Light armor, medium armor, shields', weapons:'Simple weapons, martial weapons', skillChoices:['Animal Handling','Athletics','Intimidation','Nature','Perception','Survival'], skillPick:2, features:['Rage','Unarmored Defense','Reckless Attack','Danger Sense','Primal Path'], resources:'Rage uses reset on long rest.', equipment:'Greataxe or martial melee weapon; two handaxes or simple weapon; explorer’s pack; four javelins.' },
+    'Bard': { hitDie:8, primary:'cha', saves:['dex','cha'], armor:'Light armor', weapons:'Simple weapons, hand crossbows, longswords, rapiers, shortswords', skillChoices:'ANY', skillPick:3, caster:'full', spellAbility:'cha', features:['Bardic Inspiration','Spellcasting','Jack of All Trades','Song of Rest','Bard College','Expertise'], resources:'Bardic Inspiration uses reset on long rest, later short rest.', equipment:'Rapier/longsword/simple weapon; diplomat’s or entertainer’s pack; instrument; leather armor; dagger.' },
+    'Cleric': { hitDie:8, primary:'wis', saves:['wis','cha'], armor:'Light armor, medium armor, shields', weapons:'Simple weapons', skillChoices:['History','Insight','Medicine','Persuasion','Religion'], skillPick:2, caster:'full', spellAbility:'wis', features:['Spellcasting','Divine Domain','Channel Divinity','Destroy Undead'], resources:'Channel Divinity resets on short/long rest.', equipment:'Mace/warhammer; scale mail/leather/chain mail; light crossbow or simple weapon; priest’s/explorer’s pack; shield; holy symbol.' },
+    'Druid': { hitDie:8, primary:'wis', saves:['int','wis'], armor:'Light armor, medium armor, shields; non-metal by tradition', weapons:'Clubs, daggers, darts, javelins, maces, quarterstaffs, scimitars, sickles, slings, spears', skillChoices:['Arcana','Animal Handling','Insight','Medicine','Nature','Perception','Religion','Survival'], skillPick:2, caster:'full', spellAbility:'wis', features:['Druidic','Spellcasting','Wild Shape','Druid Circle'], resources:'Wild Shape resets on short/long rest.', equipment:'Wooden shield or simple weapon; scimitar or simple melee weapon; leather armor; explorer’s pack; druidic focus.' },
+    'Fighter': { hitDie:10, primary:'str/dex', saves:['str','con'], armor:'All armor, shields', weapons:'Simple weapons, martial weapons', skillChoices:['Acrobatics','Animal Handling','Athletics','History','Insight','Intimidation','Perception','Survival'], skillPick:2, features:['Fighting Style','Second Wind','Action Surge','Martial Archetype','Extra Attack'], resources:'Second Wind and Action Surge reset on short/long rest.', equipment:'Chain mail or leather/longbow; martial weapon + shield or two martial weapons; light crossbow or handaxes; dungeoneer’s/explorer’s pack.' },
+    'Monk': { hitDie:8, primary:'dex/wis', saves:['str','dex'], armor:'None', weapons:'Simple weapons, shortswords', skillChoices:['Acrobatics','Athletics','History','Insight','Religion','Stealth'], skillPick:2, features:['Unarmored Defense','Martial Arts','Ki','Unarmored Movement','Monastic Tradition'], resources:'Ki resets on short/long rest.', equipment:'Shortsword or simple weapon; dungeoneer’s/explorer’s pack; 10 darts.' },
+    'Paladin': { hitDie:10, primary:'str/cha', saves:['wis','cha'], armor:'All armor, shields', weapons:'Simple weapons, martial weapons', skillChoices:['Athletics','Insight','Intimidation','Medicine','Persuasion','Religion'], skillPick:2, caster:'half', spellAbility:'cha', features:['Divine Sense','Lay on Hands','Fighting Style','Spellcasting','Divine Smite','Sacred Oath'], resources:'Lay on Hands pool = level × 5.', equipment:'Martial weapon + shield or two martial weapons; javelins/simple melee weapon; priest’s/explorer’s pack; chain mail; holy symbol.' },
+    'Ranger': { hitDie:10, primary:'dex/wis', saves:['str','dex'], armor:'Light armor, medium armor, shields', weapons:'Simple weapons, martial weapons', skillChoices:['Animal Handling','Athletics','Insight','Investigation','Nature','Perception','Stealth','Survival'], skillPick:3, caster:'half', spellAbility:'wis', features:['Favored Enemy','Natural Explorer','Fighting Style','Spellcasting','Ranger Archetype'], resources:'Spell slots reset on long rest.', equipment:'Scale mail/leather armor; two shortswords or simple melee weapons; dungeoneer’s/explorer’s pack; longbow + arrows.' },
+    'Rogue': { hitDie:8, primary:'dex', saves:['dex','int'], armor:'Light armor', weapons:'Simple weapons, hand crossbows, longswords, rapiers, shortswords', skillChoices:['Acrobatics','Athletics','Deception','Insight','Intimidation','Investigation','Perception','Performance','Persuasion','Sleight of Hand','Stealth'], skillPick:4, features:['Expertise','Sneak Attack','Thieves’ Cant','Cunning Action','Roguish Archetype'], resources:'Sneak Attack scales by level.', equipment:'Rapier/shortsword; shortbow/shortsword; burglar’s/dungeoneer’s/explorer’s pack; leather armor; daggers; thieves’ tools.' },
+    'Sorcerer': { hitDie:6, primary:'cha', saves:['con','cha'], armor:'None', weapons:'Daggers, darts, slings, quarterstaffs, light crossbows', skillChoices:['Arcana','Deception','Insight','Intimidation','Persuasion','Religion'], skillPick:2, caster:'full', spellAbility:'cha', features:['Spellcasting','Sorcerous Origin','Font of Magic','Metamagic'], resources:'Sorcery points reset on long rest.', equipment:'Light crossbow/simple weapon; component pouch/arcane focus; dungeoneer’s/explorer’s pack; two daggers.' },
+    'Warlock': { hitDie:8, primary:'cha', saves:['wis','cha'], armor:'Light armor', weapons:'Simple weapons', skillChoices:['Arcana','Deception','History','Intimidation','Investigation','Nature','Religion'], skillPick:2, caster:'pact', spellAbility:'cha', features:['Otherworldly Patron','Pact Magic','Eldritch Invocations','Pact Boon'], resources:'Pact Magic slots reset on short/long rest.', equipment:'Light crossbow/simple weapon; component pouch/arcane focus; scholar’s/dungeoneer’s pack; leather armor; simple weapon; daggers.' },
+    'Wizard': { hitDie:6, primary:'int', saves:['int','wis'], armor:'None', weapons:'Daggers, darts, slings, quarterstaffs, light crossbows', skillChoices:['Arcana','History','Insight','Investigation','Medicine','Religion'], skillPick:2, caster:'full', spellAbility:'int', features:['Spellcasting','Arcane Recovery','Arcane Tradition','Spell Mastery'], resources:'Arcane Recovery once per day after short rest.', equipment:'Quarterstaff/dagger; component pouch/arcane focus; scholar’s/explorer’s pack; spellbook.' }
+  },
+  backgrounds: {
+    'Acolyte': { skills:['Insight','Religion'], tools:'None', languages:'Two extra languages', equipment:'Holy symbol, prayer book/wheel, incense, vestments, common clothes, 15 gp.', feature:'Shelter of the Faithful' },
+    'Charlatan': { skills:['Deception','Sleight of Hand'], tools:'Disguise kit, forgery kit', equipment:'Fine clothes, disguise kit, con tools, 15 gp.', feature:'False Identity' },
+    'Criminal': { skills:['Deception','Stealth'], tools:'Gaming set, thieves’ tools', equipment:'Crowbar, dark common clothes with hood, 15 gp.', feature:'Criminal Contact' },
+    'Entertainer': { skills:['Acrobatics','Performance'], tools:'Disguise kit, musical instrument', equipment:'Instrument, admirer’s favor, costume, 15 gp.', feature:'By Popular Demand' },
+    'Folk Hero': { skills:['Animal Handling','Survival'], tools:'Artisan’s tools, vehicles (land)', equipment:'Tools, shovel, iron pot, common clothes, 10 gp.', feature:'Rustic Hospitality' },
+    'Guild Artisan': { skills:['Insight','Persuasion'], tools:'Artisan’s tools', languages:'One extra language', equipment:'Tools, letter of introduction, traveler’s clothes, 15 gp.', feature:'Guild Membership' },
+    'Hermit': { skills:['Medicine','Religion'], tools:'Herbalism kit', languages:'One extra language', equipment:'Scroll case, winter blanket, common clothes, herbalism kit, 5 gp.', feature:'Discovery' },
+    'Noble': { skills:['History','Persuasion'], tools:'Gaming set', languages:'One extra language', equipment:'Fine clothes, signet ring, pedigree scroll, 25 gp.', feature:'Position of Privilege' },
+    'Outlander': { skills:['Athletics','Survival'], tools:'Musical instrument', languages:'One extra language', equipment:'Staff, hunting trap, trophy, traveler’s clothes, 10 gp.', feature:'Wanderer' },
+    'Sage': { skills:['Arcana','History'], tools:'None', languages:'Two extra languages', equipment:'Ink, quill, small knife, letter, common clothes, 10 gp.', feature:'Researcher' },
+    'Sailor': { skills:['Athletics','Perception'], tools:'Navigator’s tools, vehicles (water)', equipment:'Belaying pin, silk rope, lucky charm, common clothes, 10 gp.', feature:'Ship’s Passage' },
+    'Soldier': { skills:['Athletics','Intimidation'], tools:'Gaming set, vehicles (land)', equipment:'Insignia, trophy, gaming set, common clothes, 10 gp.', feature:'Military Rank' },
+    'Urchin': { skills:['Sleight of Hand','Stealth'], tools:'Disguise kit, thieves’ tools', equipment:'Small knife, city map, pet mouse, token, common clothes, 10 gp.', feature:'City Secrets' }
+  },
+  spellLists: {
+    'Bard': ['Vicious Mockery','Mage Hand','Cure Wounds','Healing Word','Dissonant Whispers','Faerie Fire','Thunderwave','Charm Person','Detect Magic'],
+    'Cleric': ['Guidance','Sacred Flame','Thaumaturgy','Bless','Cure Wounds','Detect Magic','Guiding Bolt','Healing Word','Shield of Faith'],
+    'Druid': ['Druidcraft','Produce Flame','Shillelagh','Cure Wounds','Entangle','Faerie Fire','Goodberry','Healing Word','Thunderwave'],
+    'Paladin': ['Bless','Command','Cure Wounds','Detect Evil and Good','Divine Favor','Heroism','Shield of Faith'],
+    'Ranger': ['Cure Wounds','Detect Magic','Ensnaring Strike','Goodberry','Hail of Thorns','Hunter’s Mark','Speak with Animals'],
+    'Sorcerer': ['Fire Bolt','Mage Hand','Prestidigitation','Ray of Frost','Burning Hands','Charm Person','Magic Missile','Shield','Sleep'],
+    'Warlock': ['Eldritch Blast','Mage Hand','Minor Illusion','Armor of Agathys','Charm Person','Hex','Hellish Rebuke','Witch Bolt'],
+    'Wizard': ['Fire Bolt','Light','Mage Hand','Prestidigitation','Ray of Frost','Burning Hands','Detect Magic','Mage Armor','Magic Missile','Shield','Sleep']
+  }
+};
+
+const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
+
+function classOptions() { return Object.keys(PC_RULES.classes); }
+function ancestryOptions() { return Object.keys(PC_RULES.ancestries); }
+function backgroundOptions() { return Object.keys(PC_RULES.backgrounds); }
+function allSkillNames() { return PC_RULES.skills.map(s => s[0]); }
+function uniqueList(items) { return Array.from(new Set(items.map(x => String(x || '').trim()).filter(Boolean))); }
+function csv(items) { return uniqueList(Array.isArray(items) ? items : textList(items)).join(', '); }
+function skillAbility(skillName) { const row = PC_RULES.skills.find(s => s[0] === skillName); return row ? row[1] : 'dex'; }
+function defaultScoresForClass(className) {
+  const klass = PC_RULES.classes[className] || PC_RULES.classes.Fighter;
+  const scores = { str:10, dex:10, con:10, int:10, wis:10, cha:10 };
+  const priorities = String(klass.primary || 'str').split('/');
+  const order = uniqueList([...priorities, 'con', 'dex', 'wis', 'int', 'cha', 'str']).filter(a => PC_RULES.abilities.includes(a));
+  STANDARD_ARRAY.forEach((score, i) => { scores[order[i] || PC_RULES.abilities[i]] = score; });
+  return scores;
+}
+function applyAncestryBonuses(baseScores, ancestryName) {
+  const scores = Object.assign({}, baseScores);
+  const ancestry = PC_RULES.ancestries[ancestryName];
+  if (!ancestry) return scores;
+  Object.entries(ancestry.bonuses || {}).forEach(([ability, amount]) => { scores[ability] = Number(scores[ability] || 10) + Number(amount || 0); });
+  if (ancestry.flexibleBonuses) {
+    const sorted = Object.keys(scores).sort((a,b) => Number(scores[b]) - Number(scores[a]));
+    sorted.slice(0, ancestry.flexibleBonuses).forEach(a => scores[a] = Number(scores[a]) + 1);
+  }
+  return scores;
+}
+function hitPointsFor(pc, klass, ancestry) {
+  const level = Math.max(1, Number(pc.level || 1));
+  const conMod = modifier(pc.con || 10);
+  const hitDie = Number(klass.hitDie || 8);
+  const tough = ancestry && /Dwarven Toughness/i.test((ancestry.traits || []).join(' ')) ? level : 0;
+  return hitDie + conMod + ((level - 1) * (Math.ceil(hitDie / 2) + 1 + conMod)) + tough;
+}
+function spellSlotsFor(caster, level) {
+  const l = Math.max(1, Number(level || 1));
+  if (!caster) return 'None';
+  if (caster === 'pact') {
+    if (l < 2) return 'Pact slots: 1×1st';
+    if (l < 3) return 'Pact slots: 2×1st';
+    if (l < 5) return 'Pact slots: 2×2nd';
+    if (l < 7) return 'Pact slots: 2×3rd';
+    if (l < 9) return 'Pact slots: 2×4th';
+    return 'Pact slots: 2×5th; Mystic Arcanum by level as applicable.';
+  }
+  const effective = caster === 'half' ? Math.max(0, Math.floor(l / 2)) : l;
+  if (effective <= 0) return 'None until spellcasting level is reached.';
+  const table = {
+    1:'1st: 2', 2:'1st: 3', 3:'1st: 4, 2nd: 2', 4:'1st: 4, 2nd: 3', 5:'1st: 4, 2nd: 3, 3rd: 2',
+    6:'1st: 4, 2nd: 3, 3rd: 3', 7:'1st: 4, 2nd: 3, 3rd: 3, 4th: 1', 8:'1st: 4, 2nd: 3, 3rd: 3, 4th: 2',
+    9:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 1', 10:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2',
+    11:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1', 12:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1',
+    13:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1, 7th: 1', 14:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1, 7th: 1',
+    15:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1, 7th: 1, 8th: 1', 16:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1, 7th: 1, 8th: 1',
+    17:'1st: 4, 2nd: 3, 3rd: 3, 4th: 3, 5th: 2, 6th: 1, 7th: 1, 8th: 1, 9th: 1'
+  };
+  return table[Math.min(17, effective)] || table[17];
+}
+function buildProficiencies(values, klass, background) {
+  const backgroundSkills = background.skills || [];
+  const classChoices = klass.skillChoices === 'ANY' ? allSkillNames() : (klass.skillChoices || []);
+  const existing = textList(values.skillProficiencies);
+  const selectedClassSkills = textList(values.selectedClassSkills).length ? textList(values.selectedClassSkills) : classChoices.slice(0, klass.skillPick || 2);
+  return csv([...backgroundSkills, ...selectedClassSkills, ...existing]);
+}
+function buildFeatures(values, ancestry, klass, background) {
+  const chunks = [];
+  if (ancestry) chunks.push(`ANCESTRY TRAITS\n- ${ancestry.traits.join('\n- ')}\nLanguages: ${ancestry.languages || '—'}`);
+  if (klass) chunks.push(`CLASS FEATURES\n- ${klass.features.join('\n- ')}\nArmor: ${klass.armor || '—'}\nWeapons: ${klass.weapons || '—'}`);
+  if (background) chunks.push(`BACKGROUND FEATURE\n${background.feature || '—'}\nTools: ${background.tools || '—'}\nLanguages: ${background.languages || '—'}`);
+  return chunks.join('\n\n');
+}
+function rebuildCharacterFromRules(values, mode) {
+  const next = Object.assign(seedPlayerCharacter(), values || {});
+  const ancestry = PC_RULES.ancestries[next.race] || PC_RULES.ancestries.Human;
+  const klass = PC_RULES.classes[next.className] || PC_RULES.classes.Fighter;
+  const background = PC_RULES.backgrounds[next.background] || PC_RULES.backgrounds.Acolyte;
+  const abilityMode = mode || next.abilityGeneration || 'Keep current scores';
+  if (abilityMode === 'Standard array by class' || abilityMode === 'Reset to standard array') {
+    const scores = applyAncestryBonuses(defaultScoresForClass(next.className), next.race);
+    Object.assign(next, scores);
+  }
+  next.level = Math.max(1, Math.min(20, Number(next.level || 1)));
+  next.proficiencyBonus = proficiency(next.level);
+  next.speed = ancestry.speed || next.speed || '30 ft';
+  next.hpMax = hitPointsFor(next, klass, ancestry);
+  if (!next.hpCurrent || Number(next.hpCurrent) > Number(next.hpMax)) next.hpCurrent = next.hpMax;
+  next.initiative = modifier(next.dex || 10);
+  next.encumbranceLimit = Number(next.str || 10) * 15;
+  next.savingThrowProficiencies = csv(klass.saves || []);
+  next.skillProficiencies = buildProficiencies(next, klass, background);
+  next.traits = buildFeatures(next, ancestry, klass, background);
+  next.features = next.traits;
+  next.resources = klass.resources || '';
+  next.equipment = csv([klass.equipment, background.equipment, next.extraEquipment]);
+  next.spellcastingAbility = klass.spellAbility || '';
+  const spellMod = klass.spellAbility ? modifier(next[klass.spellAbility] || 10) : 0;
+  next.spellDc = klass.spellAbility ? 8 + next.proficiencyBonus + spellMod : 0;
+  next.spellAttack = klass.spellAbility ? next.proficiencyBonus + spellMod : 0;
+  next.spellSlots = spellSlotsFor(klass.caster, next.level);
+  if (klass.caster) {
+    const suggestions = PC_RULES.spellLists[next.className] || [];
+    if (!textList(next.spellsKnown).length) next.spellsKnown = suggestions.join(', ');
+    if (!textList(next.spellsPrepared).length && ['Cleric','Druid','Paladin'].includes(next.className)) next.spellsPrepared = suggestions.slice(0, 6).join(', ');
+  } else {
+    next.spellsKnown = next.spellsKnown || '';
+    next.spellsPrepared = next.spellsPrepared || '';
+    next.spellSlots = 'None';
+  }
+  next.skills = allSkillNames().join(', ');
+  next.visibility = 'player-visible';
+  next.tags = uniqueList([...(next.tags || []), 'player-character', 'rules-built']);
+  return next;
+}
+function characterAutomationSummary(pc) {
+  const klass = PC_RULES.classes[pc.className] || {};
+  const ancestry = PC_RULES.ancestries[pc.race] || {};
+  const background = PC_RULES.backgrounds[pc.background] || {};
+  return [
+    `Rules source: built-in SRD-compatible rules scaffold + your local/homebrew entries.`,
+    `Ancestry: ${pc.race || '—'} (${ancestry.speed || 'speed unknown'}).`,
+    `Class: ${pc.className || '—'}; hit die d${klass.hitDie || '?'}; saves ${csv(klass.saves || []) || '—'}.`,
+    `Background: ${pc.background || '—'}; feature ${background.feature || '—'}.`,
+    `Derived: PB ${signed(pc.proficiencyBonus || proficiency(pc.level || 1))}, initiative ${signed(pc.initiative || 0)}, spell DC ${pc.spellDc || '—'}, spell attack ${pc.spellAttack ? signed(pc.spellAttack) : '—'}.`
+  ].join('\n');
+}
+
+PCModal = class RulesDrivenPCModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.values = rebuildCharacterFromRules(Object.assign(seedPlayerCharacter(), item || {}), 'Keep current scores');
+    this.abilityMode = this.values.abilityGeneration || 'Keep current scores';
+  }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.addClass('ttrpg-character-builder-modal');
+    contentEl.createEl('h2', { text: 'Rules-Driven Character Builder' });
+    const intro = contentEl.createDiv('ttrpg-builder-callout');
+    intro.setText('Use the selector boxes first. The builder recalculates ability modifiers, proficiency bonus, saves, class/background skill proficiencies, HP, speed, spell DC, spell slots, features, traits, starting equipment, resources, and encumbrance. Manual notes remain available underneath.');
+
+    const basics = contentEl.createDiv('ttrpg-builder-section');
+    basics.createEl('h3', { text: '1. Identity & Rules Selectors' });
+    addText(basics, 'Character Name', this.values.name, v => this.values.name = v);
+    addText(basics, 'Player Name', this.values.playerName, v => this.values.playerName = v);
+    addSelect(basics, 'Ancestry / Species', this.values.race || 'Human', ancestryOptions(), v => { this.values.race = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addSelect(basics, 'Class', this.values.className || 'Fighter', classOptions(), v => { this.values.className = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addSelect(basics, 'Background', this.values.background || 'Acolyte', backgroundOptions(), v => { this.values.background = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'Level', this.values.level || 1, v => { this.values.level = Math.max(1, Math.min(20, Number(v) || 1)); this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'Experience', this.values.xp || 0, v => this.values.xp = v);
+    addSelect(basics, 'Ability Generation', this.abilityMode, ['Keep current scores', 'Standard array by class', 'Reset to standard array'], v => { this.abilityMode = v; this.values.abilityGeneration = v; this.values = rebuildCharacterFromRules(this.values, v); this.render(); });
+
+    const preview = contentEl.createDiv('ttrpg-builder-preview');
+    preview.createEl('h3', { text: 'Automation Preview' });
+    preview.createEl('pre', { text: characterAutomationSummary(this.values) });
+    const abilityGrid = preview.createDiv('ttrpg-ability-grid');
+    pcAbilities(this.values).forEach(a => { const box = abilityGrid.createDiv('ttrpg-ability-box'); box.createSpan({ cls:'ttrpg-ability-name', text:a.label }); box.createEl('strong', { cls:'ttrpg-ability-score', text:String(a.score) }); box.createSpan({ cls:'ttrpg-ability-mod', text:signed(a.mod) }); });
+
+    const scores = contentEl.createDiv('ttrpg-builder-section');
+    scores.createEl('h3', { text: '2. Ability Scores & Derived Stats' });
+    PC_RULES.abilities.forEach(a => addNumber(scores, `${a.toUpperCase()} Score`, this.values[a], v => { this.values[a] = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); this.render(); }));
+    ['ac','hpCurrent','hpMax','tempHp','heroPoints','deathSuccesses','deathFailures'].forEach(f => addNumber(scores, nice(f), this.values[f], v => this.values[f] = v));
+    addText(scores, 'Speed', this.values.speed, v => this.values.speed = v);
+    addSelect(scores, 'Inspiration', String(this.values.inspiration), ['false','true'], v => this.values.inspiration = v === 'true');
+
+    const prof = contentEl.createDiv('ttrpg-builder-section');
+    prof.createEl('h3', { text: '3. Proficiencies, Features & Spellcasting' });
+    const klass = PC_RULES.classes[this.values.className] || PC_RULES.classes.Fighter;
+    const classSkillOptions = klass.skillChoices === 'ANY' ? allSkillNames() : (klass.skillChoices || []);
+    addTextArea(prof, `Selected Class Skills (${klass.skillPick || 2} suggested from: ${csv(classSkillOptions)})`, this.values.selectedClassSkills || classSkillOptions.slice(0, klass.skillPick || 2).join(', '), v => { this.values.selectedClassSkills = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); });
+    addTextArea(prof, 'Skill Proficiencies', this.values.skillProficiencies || '', v => this.values.skillProficiencies = v);
+    addTextArea(prof, 'Expertise', this.values.expertise || '', v => this.values.expertise = v);
+    addTextArea(prof, 'Saving Throw Proficiencies', this.values.savingThrowProficiencies || '', v => this.values.savingThrowProficiencies = v);
+    addTextArea(prof, 'Features & Traits', this.values.features || this.values.traits || '', v => { this.values.features = v; this.values.traits = v; });
+    addTextArea(prof, 'Resources / Uses Per Rest', this.values.resources || '', v => this.values.resources = v);
+    addTextArea(prof, 'Known Spells / Spell Reference', this.values.spellsKnown || '', v => this.values.spellsKnown = v);
+    addTextArea(prof, 'Prepared Spells', this.values.spellsPrepared || '', v => this.values.spellsPrepared = v);
+    addTextArea(prof, 'Spell Slots', this.values.spellSlots || '', v => this.values.spellSlots = v);
+
+    const gear = contentEl.createDiv('ttrpg-builder-section');
+    gear.createEl('h3', { text: '4. Equipment, Currency & Inventory' });
+    addTextArea(gear, 'Starting Equipment / Equipped Gear', this.values.equipment || '', v => this.values.equipment = v);
+    addTextArea(gear, 'Inventory / Stored Items', this.values.inventory || '', v => this.values.inventory = v);
+    addText(gear, 'Extra Equipment to Include in Automation', this.values.extraEquipment || '', v => this.values.extraEquipment = v);
+    ['carriedWeight','encumbranceLimit','pp','gp','ep','sp','cp'].forEach(f => addNumber(gear, nice(f), this.values[f], v => this.values[f] = v));
+
+    const story = contentEl.createDiv('ttrpg-builder-section');
+    story.createEl('h3', { text: '5. Story, Notes & Safety' });
+    ['personality','ideals','bonds','flaws','backstory','personalNotes','privateSecrets','conditions','milestones','rewards'].forEach(f => addTextArea(story, nice(f), this.values[f] || '', v => this.values[f] = v));
+
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Recalculate from Selectors', 'ttrpg-btn', () => { this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    btn(row, 'Save Character', 'ttrpg-btn ttrpg-primary', async () => {
+      this.values = rebuildCharacterFromRules(this.values, 'Keep current scores');
+      upsert(this.plugin.state, 'playerCharacters', this.values);
+      this.plugin.state.activeCharacterId = this.values.id;
+      await this.plugin.saveState();
+      new Notice('Rules-built player character saved.');
+      this.close();
+    });
+  }
+};
+
+// Replace the previous player sheet renderer so the UI points clearly at the restored builder.
+renderPcSheet = function renderRulesDrivenPcSheet(main, plugin, pc) {
+  const state = plugin.state;
+  const pcs = safeArray(state.entities.playerCharacters);
+  const selector = ce(main, 'div', 'ttrpg-player-select');
+  ce(selector, 'strong', '', 'Active Character');
+  const select = ce(selector, 'select', 'ttrpg-inline-select');
+  pcs.forEach(p => { const opt = document.createElement('option'); opt.value = p.id; opt.textContent = `${p.name || 'Unnamed'}${p.playerName ? ' — ' + p.playerName : ''}`; select.appendChild(opt); });
+  select.value = pc.id;
+  select.addEventListener('change', async e => { state.activeCharacterId = e.target.value; await plugin.saveState(); });
+  if (!state.settings.readOnlyPlayer) btn(selector, 'Open Character Builder', 'ttrpg-btn ttrpg-primary', () => new PCModal(plugin.app, plugin, pc).open());
+  if (!state.settings.readOnlyPlayer) btn(selector, 'New Rules-Built Character', 'ttrpg-btn', () => new PCModal(plugin.app, plugin, rebuildCharacterFromRules(seedPlayerCharacter(), 'Standard array by class')).open());
+  btn(selector, 'Export Sheet', 'ttrpg-btn', () => exportCharacterSheet(plugin, pc));
+
+  const auto = ce(main, 'section', 'ttrpg-builder-status');
+  ce(auto, 'h3', '', 'Rules Connection');
+  ce(auto, 'pre', '', characterAutomationSummary(pc));
+
+  const hero = ce(main, 'section', 'ttrpg-character-hero');
+  const title = ce(hero, 'div', 'ttrpg-character-title');
+  ce(title, 'h2', '', pc.name || 'Unnamed Character');
+  ce(title, 'p', 'ttrpg-muted', `${pc.race || 'Unknown ancestry'} ${pc.className || 'Adventurer'} • Level ${pc.level || 1} • Background: ${pc.background || '—'} • Player: ${pc.playerName || 'Unassigned'}`);
+  const core = ce(hero, 'div', 'ttrpg-core-stats');
+  [['HP', `${pc.hpCurrent || 0}/${pc.hpMax || 0}`], ['AC', pc.ac || 10], ['Speed', pc.speed || '30 ft'], ['Init', signed(pc.initiative || modifier(pc.dex || 10))], ['PB', signed(pc.proficiencyBonus || proficiency(pc.level || 1))], ['Spell DC', pc.spellDc || '—']].forEach(([label,value]) => {
+    const box = ce(core, 'div', 'ttrpg-core-stat'); ce(box, 'span', '', label); ce(box, 'strong', '', value);
+  });
+
+  const abilityGrid = ce(main, 'div', 'ttrpg-ability-grid');
+  pcAbilities(pc).forEach(a => { const box = ce(abilityGrid, 'div', 'ttrpg-ability-box'); ce(box, 'span', 'ttrpg-ability-name', a.label); ce(box, 'strong', 'ttrpg-ability-score', a.score); ce(box, 'span', 'ttrpg-ability-mod', signed(a.mod)); });
+
+  const g = grid(main, 'ttrpg-grid ttrpg-player-grid');
+  playerPanel(g, 'Saving Throws', '🛡️', formatSaves(pc));
+  playerPanel(g, 'Skills', '🎯', formatSkills(pc));
+  playerPanel(g, 'Attacks & Actions', '⚔️', pc.attacks || pc.actions || 'No attacks/actions entered yet.');
+  playerPanel(g, 'Spells & Slots', '🧙', `${pc.spellsPrepared || pc.spellsKnown || 'No spells entered.'}\n\nSlots: ${pc.spellSlots || 'None tracked.'}\nSpell Attack: ${pc.spellAttack ? signed(pc.spellAttack) : '—'}\nSpell Ability: ${pc.spellcastingAbility || '—'}`);
+  playerPanel(g, 'Features & Traits', '✨', `${pc.features || ''}\n${pc.traits || ''}`.trim() || 'No features or traits entered yet.');
+  playerPanel(g, 'Equipment & Inventory', '🎒', `${pc.equipment || ''}\n${pc.inventory || ''}\n\nWeight: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0}`.trim());
+  playerPanel(g, 'Currency', '💰', `${pc.pp || 0} pp • ${pc.gp || 0} gp • ${pc.ep || 0} ep • ${pc.sp || 0} sp • ${pc.cp || 0} cp`);
+  playerPanel(g, 'Background & Personality', '📖', `Background: ${pc.background || '—'}\nPersonality: ${pc.personality || '—'}\nIdeals: ${pc.ideals || '—'}\nBonds: ${pc.bonds || '—'}\nFlaws: ${pc.flaws || '—'}`);
+  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death saves: ${pc.deathSuccesses || 0} success / ${pc.deathFailures || 0} failure\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
+  playerPanel(g, 'Backstory & Personal Notes', '🖋️', `${pc.backstory || ''}\n\n${pc.personalNotes || ''}`.trim() || 'No backstory/personal notes yet.');
+  playerPanel(g, 'Private Notes', '🔒', pc.privateSecrets || 'Private player/DM notes can live here.');
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 64 — DM Navigation, Persistence Display & Full Generators Patch
+ * Fixes: clickable dashboard cards, dedicated Campaigns vs Campaign Wizard,
+ * visible saved entries, collapsible sidebar, mode-filtered nav, deity spelling,
+ * pantheon details, and full-object generators.
+ * -------------------------------------------------------------------------- */
+
+const PHASE64_DM_NAV = [
+  ['dashboard', '🏰', 'Dashboard'],
+  ['campaignList', '📚', 'Campaigns'],
+  ['campaign', '🧙', 'Campaign Wizard'],
+  ['world', '🌌', 'World & Lore'],
+  ['geography', '🗺️', 'Geography & Maps'],
+  ['npcs', '👤', 'NPCs & Creatures'],
+  ['adventure', '📝', 'Adventures & Quests'],
+  ['generators', '🎲', 'Generators'],
+  ['rules', '⚙️', 'Rules & Mechanics'],
+  ['downtime', '⏳', 'Downtime & Bases'],
+  ['sessions', '📅', 'Sessions & Timeline'],
+  ['secrets', '🔒', 'Secrets & Reveals'],
+  ['library', '📚', 'Library & Compendium']
+];
+const PHASE64_PLAYER_NAV = [['player', '👁️', 'Player View']];
+const PHASE64_PLURALS = Object.assign({}, ENTITY_LABELS, {
+  campaigns: 'Campaigns', worlds: 'Worlds', factions: 'Factions', deities: 'Deities', languages: 'Languages', cultures: 'Race / Cultures', myths: 'Legends / Myths / Rumours',
+  regions: 'Regions', settlements: 'Settlements', pois: 'Points of Interest', maps: 'Maps', npcs: 'NPCs', creatures: 'Creatures', adventures: 'Adventures', quests: 'Quests', encounters: 'Encounters',
+  rules: 'Rules', conditions: 'Conditions', damageTypes: 'Damage Types', downtime: 'Downtime Activities', projects: 'Projects', bastions: 'Bastions / Strongholds', hirelings: 'Hirelings', sessions: 'Session Logs', milestones: 'Milestones', secrets: 'Secrets', handouts: 'Handouts', compendium: 'Compendium Entries', homebrew: 'Homebrew Entries', tables: 'Rollable Tables'
+});
+ENTITY_LABELS.deities = 'Deity';
+
+function phase64EnsureState(state) {
+  state.settings = Object.assign({ sidebarCollapsed: false }, state.settings || {});
+  state.entities = Object.assign(createDefaultState().entities, state.entities || {});
+  Object.keys(PHASE64_PLURALS).forEach(k => { if (!Array.isArray(state.entities[k])) state.entities[k] = []; });
+  if (state.mode === 'PLAYER') state.activeSection = 'player';
+  if (!state.mode) state.mode = 'DM';
+}
+function phase64SetSection(plugin, section) { plugin.state.activeSection = section; return plugin.saveState(); }
+function phase64VisibleNav(state) { return state.mode === 'PLAYER' ? PHASE64_PLAYER_NAV : PHASE64_DM_NAV; }
+function phase64CardClick(cardEl, onClick) { cardEl.classList.add('is-clickable'); cardEl.addEventListener('click', ev => { if (ev.target && ['BUTTON','INPUT','SELECT','TEXTAREA'].includes(ev.target.tagName)) return; onClick(ev); }); return cardEl; }
+function phase64SectionTitle(main, key) { ce(main, 'h2', 'ttrpg-section-title', PHASE64_PLURALS[key] || `${ENTITY_LABELS[key] || key}s`); }
+function phase64Count(plugin, key) { return safeArray(plugin.state.entities[key]).length; }
+function phase64SectionCountCard(parent, plugin, key, icon, openModal) {
+  const c = card(parent, PHASE64_PLURALS[key] || key, `${phase64Count(plugin, key)} saved entr${phase64Count(plugin, key) === 1 ? 'y' : 'ies'}.`, icon || '📜', [
+    { label: `New ${ENTITY_LABELS[key] || 'Entry'}`, primary: true, onClick: openModal || (() => new EntityModal(plugin.app, plugin, key).open()) }
+  ]);
+  return c;
+}
+
+// Replace item card renderer with clearer persistence display and search diagnostics.
+itemCards = function phase64ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state; phase64EnsureState(state);
+  const all = getStore(state, key);
+  const items = all.filter(x => matchesSearch(x, state.search));
+  if (!all.length) { empty(parent, `No ${PHASE64_PLURALS[key] || key} yet.`, opts && opts.empty || 'Use the action buttons above to create one. Saved entries will appear here immediately.'); return; }
+  if (!items.length) {
+    const e = ce(parent, 'div', 'ttrpg-empty'); ce(e, 'div', 'ttrpg-empty-icon', '🔎'); ce(e, 'h2', '', `No ${PHASE64_PLURALS[key] || key} match the current search.`); ce(e, 'p', '', `There are ${all.length} saved entr${all.length === 1 ? 'y' : 'ies'}, but the search box is filtering them out.`); btn(e, 'Clear Search', 'ttrpg-btn ttrpg-primary', async () => { state.search = ''; await plugin.saveState(); }); return;
+  }
+  const g = grid(parent);
+  items.forEach(item => {
+    const c = card(g, item.name || item.title || ENTITY_LABELS[key] || 'Untitled Entry', item.summary || item.description || item.notes || item.type || item.category || 'Saved entry.', opts && opts.icon || '📜');
+    phase64CardClick(c, () => new EntityModal(plugin.app, plugin, key, item).open());
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    if (item.visibility) ce(meta, 'span', `ttrpg-tag ${item.visibility === 'player-visible' ? 'is-visible' : ''}`, item.visibility);
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, item).open());
+    btn(row, 'Write Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`); });
+  });
+};
+
+stats = function phase64Stats(main, plugin) {
+  const state = plugin.state; phase64EnsureState(state);
+  const s = grid(main, 'ttrpg-stat-grid');
+  const entries = [
+    ['Campaigns', 'campaignList', 'campaigns'], ['NPCs', 'npcs', 'npcs'], ['Quests', 'adventure', 'quests'], ['Encounters', 'adventure', 'encounters'], ['Secrets', 'secrets', 'secrets'], ['Sessions', 'sessions', 'sessions']
+  ];
+  entries.forEach(([label, section, key]) => {
+    const c = ce(s, 'button', 'ttrpg-stat-card ttrpg-stat-button'); c.type = 'button';
+    ce(c, 'div', 'ttrpg-big-number', phase64Count(plugin, key)); ce(c, 'div', 'ttrpg-muted', label);
+    c.addEventListener('click', () => phase64SetSection(plugin, section));
+  });
+};
+
+renderSection = function phase64RenderSection(main, plugin, section) {
+  const map = { dashboard: renderDashboard, campaignList: renderCampaignList, campaign: renderCampaign, world: renderWorld, geography: renderGeography, npcs: renderNpcs, adventure: renderAdventure, generators: renderGenerators, rules: renderRules, downtime: renderDowntime, sessions: renderSessions, secrets: renderSecrets, library: renderLibrary, player: renderPlayerView };
+  (map[section] || renderDashboard)(main, plugin);
+};
+
+TTRPGMainView.prototype.render = function phase64MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase64EnsureState(state);
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (state.activeSection === 'player') state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search visible saved entries…'; search.value = state.search || ''; search.title = 'Search saved entries without losing focus';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase64VisibleNav(state).forEach(([id, icon, label]) => {
+    const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+    const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; await this.plugin.saveState(); });
+    item.dataset.section = id; item.title = label;
+  });
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin); else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+renderDashboard = function phase64Dashboard(main, plugin) {
+  header(main, 'Dungeon Master Console', 'One box for campaign building, prep, session tracking, secrecy, and running the table.', [
+    { label: 'New Campaign', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  stats(main, plugin);
+  const g = grid(main);
+  phase64CardClick(card(g, 'Campaigns', 'View saved campaigns and active campaign details.', '📚', [{ label: 'Open Campaigns', onClick: () => phase64SetSection(plugin, 'campaignList') }]), () => phase64SetSection(plugin, 'campaignList'));
+  phase64CardClick(card(g, 'Campaign Builder Wizard', 'Create a new campaign through the multi-step wizard. This tab stays clean: buttons only, no campaign list clutter.', '🧙', [{ label: 'Launch Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() }]), () => phase64SetSection(plugin, 'campaign'));
+  phase64CardClick(card(g, 'World & Lore', 'Worlds, factions, deities, languages, cultures, myths, rumours, and pantheons.', '🌌', [{ label: 'Open World', onClick: () => phase64SetSection(plugin, 'world') }]), () => phase64SetSection(plugin, 'world'));
+  phase64CardClick(card(g, 'Geography & Maps', 'Regions, settlements, POIs, map layers, fog, and reveal states.', '🗺️', [{ label: 'Open Maps', onClick: () => phase64SetSection(plugin, 'geography') }]), () => phase64SetSection(plugin, 'geography'));
+  phase64CardClick(card(g, 'NPCs & Creatures', 'NPC builder, creature builder, relationships, secrets, schedules, tactics, and ecology.', '👤', [{ label: 'Open NPCs', onClick: () => phase64SetSection(plugin, 'npcs') }]), () => phase64SetSection(plugin, 'npcs'));
+  phase64CardClick(card(g, 'Generators', 'Generate entire NPCs, encounters, loot drops, taverns, shops, travel events, rumours, and hooks.', '🎲', [{ label: 'Open Generators', onClick: () => phase64SetSection(plugin, 'generators') }]), () => phase64SetSection(plugin, 'generators'));
+};
+
+function renderCampaignList(main, plugin) {
+  header(main, 'Campaigns', 'Saved campaigns live here. Use the wizard when you want to create a full campaign structure from scratch.', [
+    { label: 'Launch Campaign Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'Quick Campaign Card', onClick: () => new EntityModal(plugin.app, plugin, 'campaigns').open() }
+  ]);
+  itemCards(main, plugin, 'campaigns', { icon: '📚', empty: 'No campaigns yet. Launch the wizard to generate one.' });
+}
+renderCampaign = function phase64CampaignWizardTab(main, plugin) {
+  header(main, 'Campaign Builder Wizard', 'This tab is intentionally clean: create or resume campaign setup from here. Existing campaigns live under the Campaigns tab.', [
+    { label: 'Start / Resume Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'View Saved Campaigns', onClick: () => phase64SetSection(plugin, 'campaignList') }
+  ]);
+  const g = grid(main);
+  card(g, 'Start New Campaign', 'Basic Info → World → Calendar → Factions → Geography → NPCs → Quests → Encounters → Finalise.', '🧙', [{ label: 'Launch Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() }]);
+  card(g, 'Wizard Draft', Object.keys(plugin.state.wizardDraft || {}).length ? 'A draft exists. Launch the wizard to continue.' : 'No wizard draft currently saved.', '📝', [{ label: 'Open Wizard', onClick: () => new CampaignWizardModal(plugin.app, plugin).open() }]);
+  card(g, 'Saved Campaigns', `${phase64Count(plugin, 'campaigns')} campaign entr${phase64Count(plugin, 'campaigns') === 1 ? 'y' : 'ies'} currently saved.`, '📚', [{ label: 'Open Campaigns', onClick: () => phase64SetSection(plugin, 'campaignList') }]);
+};
+
+renderWorld = function phase64World(main, plugin) {
+  header(main, 'World, Lore & Cosmology', 'World overview, cosmology, timelines, deities, pantheons, cultures, languages, factions, myths, rumours, magic and technology rules.', [
+    { label: 'World Overview', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'worlds').open() },
+    { label: 'Faction', onClick: () => new EntityModal(plugin.app, plugin, 'factions').open() },
+    { label: 'Deity / Pantheon', onClick: () => new DeityPantheonModal(plugin.app, plugin).open() },
+    { label: 'Language', onClick: () => new EntityModal(plugin.app, plugin, 'languages').open() },
+    { label: 'Race / Culture', onClick: () => new EntityModal(plugin.app, plugin, 'cultures').open() },
+    { label: 'Legend / Myth / Rumour', onClick: () => new EntityModal(plugin.app, plugin, 'myths').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }
+  ]);
+  const quick = grid(main, 'ttrpg-grid ttrpg-mini-grid');
+  phase64SectionCountCard(quick, plugin, 'worlds', '🌍');
+  phase64SectionCountCard(quick, plugin, 'factions', '⚖️');
+  phase64SectionCountCard(quick, plugin, 'deities', '☀️', () => new DeityPantheonModal(plugin.app, plugin).open());
+  phase64SectionCountCard(quick, plugin, 'languages', '🗣️');
+  phase64SectionCountCard(quick, plugin, 'cultures', '🧬');
+  phase64SectionCountCard(quick, plugin, 'myths', '📜');
+  ['worlds','factions','deities','languages','cultures','myths'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: k === 'deities' ? '☀️' : '🌌' }); });
+};
+
+renderGeography = function phase64Geography(main, plugin) {
+  header(main, 'Geography, Settlements & Maps', 'Regions, settlements, POIs, map pins, fog/reveal states, wilderness rules, terrain, hazards, and location linking.', [
+    { label: 'Region', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'regions').open() },
+    { label: 'Settlement', onClick: () => new EntityModal(plugin.app, plugin, 'settlements').open() },
+    { label: 'Point of Interest', onClick: () => new EntityModal(plugin.app, plugin, 'pois').open() },
+    { label: 'Map', onClick: () => new MapModal(plugin.app, plugin).open() }
+  ]);
+  const quick = grid(main, 'ttrpg-grid ttrpg-mini-grid'); ['regions','settlements','pois','maps'].forEach(k => phase64SectionCountCard(quick, plugin, k, '🗺️', k === 'maps' ? (() => new MapModal(plugin.app, plugin).open()) : undefined));
+  ['regions','settlements','pois','maps'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: '🗺️' }); });
+};
+renderNpcs = function phase64Npcs(main, plugin) {
+  header(main, 'NPCs, Creatures & Monsters', 'Full NPC builder, creature compendium, custom monsters, CR tuning, relationships, secrets, schedules, ecology, tactics, and dialogue hooks.', [
+    { label: 'NPC Builder', primary: true, onClick: () => new NPCModal(plugin.app, plugin).open() },
+    { label: 'Creature Builder', onClick: () => new CreatureModal(plugin.app, plugin).open() }
+  ]);
+  const quick = grid(main, 'ttrpg-grid ttrpg-mini-grid'); phase64SectionCountCard(quick, plugin, 'npcs', '👤', () => new NPCModal(plugin.app, plugin).open()); phase64SectionCountCard(quick, plugin, 'creatures', '🐉', () => new CreatureModal(plugin.app, plugin).open());
+  phase64SectionTitle(main, 'npcs'); itemCards(main, plugin, 'npcs', { icon: '👤' });
+  phase64SectionTitle(main, 'creatures'); itemCards(main, plugin, 'creatures', { icon: '🐉' });
+};
+renderAdventure = function phase64Adventure(main, plugin) {
+  header(main, 'Adventures, Quests & Encounters', 'Adventure hubs, acts, story beats, branching outcomes, quests, rewards, skill/social/exploration encounters, and combat prep.', [
+    { label: 'Adventure', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'adventures').open() },
+    { label: 'Quest', onClick: () => new QuestModal(plugin.app, plugin).open() },
+    { label: 'Encounter', onClick: () => new EncounterModal(plugin.app, plugin).open() }
+  ]);
+  const quick = grid(main, 'ttrpg-grid ttrpg-mini-grid'); phase64SectionCountCard(quick, plugin, 'adventures', '📚'); phase64SectionCountCard(quick, plugin, 'quests', '📝', () => new QuestModal(plugin.app, plugin).open()); phase64SectionCountCard(quick, plugin, 'encounters', '⚔️', () => new EncounterModal(plugin.app, plugin).open());
+  ['adventures','quests','encounters'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: k === 'encounters' ? '⚔️' : '📝' }); });
+};
+renderRules = function phase64Rules(main, plugin) {
+  header(main, 'Rules & Mechanics', 'Rule compendium, custom/optional rules, condition tracker, damage interactions, dice history, calculations, level-up helper, XP, inventory, and economy.', [
+    { label: 'Custom Rule', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'rules').open() },
+    { label: 'Condition', onClick: () => new EntityModal(plugin.app, plugin, 'conditions').open() },
+    { label: 'Damage Calculator', onClick: () => new DamageModal(plugin.app, plugin).open() },
+    { label: 'Level / XP Helper', onClick: () => new LevelModal(plugin.app, plugin).open() }
+  ]);
+  ['rules','conditions','damageTypes'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: '⚙️' }); });
+};
+renderDowntime = function phase64Downtime(main, plugin) {
+  header(main, 'Downtime & Bases', 'Downtime, crafting, research, bastions, strongholds, hirelings, ledgers, progress clocks, staff, and storage.', [
+    { label: 'Downtime Activity', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'downtime').open() },
+    { label: 'Project / Crafting', onClick: () => new ProjectModal(plugin.app, plugin).open() },
+    { label: 'Bastion', onClick: () => new EntityModal(plugin.app, plugin, 'bastions').open() },
+    { label: 'Hireling', onClick: () => new EntityModal(plugin.app, plugin, 'hirelings').open() }
+  ]);
+  ['downtime','projects','bastions','hirelings'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: '⏳' }); });
+};
+renderSessions = function phase64Sessions(main, plugin) {
+  header(main, 'Sessions & Timeline', 'Session logs, current campaign time, timeline events, player actions, world changes, milestones, achievements, and unlockables.', [
+    { label: 'Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
+    { label: 'Milestone', onClick: () => new EntityModal(plugin.app, plugin, 'milestones').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }
+  ]);
+  const cal = plugin.state.calendar || {}; card(main, 'Current Campaign Time', `${cal.weekday || ''} ${cal.day || ''} ${cal.month || ''}, ${cal.year || ''}`.trim() || 'No campaign calendar set.', '📅', [{ label: 'Edit Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }]);
+  ['sessions','milestones'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: '📅' }); });
+};
+renderSecrets = function phase64Secrets(main, plugin) {
+  header(main, 'Secrets & Reveals', 'DM-only notes, player-visible reveals, hidden storage, reveal dates, player map control, handouts, and player-safe exports.', [
+    { label: 'New Secret', primary: true, onClick: () => new SecretModal(plugin.app, plugin).open() },
+    { label: 'Handout', onClick: () => new EntityModal(plugin.app, plugin, 'handouts').open() },
+    { label: 'Scan Vault Tags', onClick: () => scanVisibilityTags(plugin) },
+    { label: 'Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  ['secrets','handouts'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: k === 'secrets' ? '🔒' : '📣' }); });
+};
+renderLibrary = function phase64Library(main, plugin) {
+  header(main, 'Library & Compendium', 'SRD-compatible seed library, user-supplied local data, homebrew, import/export, search/filter, and auto-linking hooks.', [
+    { label: 'Homebrew Entry', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'homebrew').open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() },
+    { label: 'Export Backup', onClick: () => exportBackup(plugin) }
+  ]);
+  ['compendium','homebrew','tables'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: '📚' }); });
+};
+
+class DeityPantheonModal extends EntityModal {
+  constructor(app, plugin, item) {
+    super(app, plugin, 'deities', item);
+    this.values = Object.assign({ entryType: 'Deity', pantheon: '', title: '', alignment: '', domains: '', symbol: '', worshippers: '', dogma: '', churches: '', relics: '', rites: '', holyDays: '', allies: '', enemies: '', relationships: '', myths: '', secrets: '', travelRules: '', visibility: 'dm-only', tags: ['deity'] }, this.values);
+  }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2', { text: 'Deity / Pantheon Details' });
+    addSelect(contentEl, 'Entry Type', this.values.entryType, ['Deity', 'Pantheon', 'Divine Power', 'Saint / Exarch', 'Dead God', 'Primordial'], v => this.values.entryType = v);
+    addText(contentEl, 'Name', this.values.name, v => this.values.name = v);
+    addText(contentEl, 'Title / Epithet', this.values.title, v => this.values.title = v);
+    addText(contentEl, 'Pantheon', this.values.pantheon, v => this.values.pantheon = v);
+    addText(contentEl, 'Alignment', this.values.alignment, v => this.values.alignment = v);
+    addText(contentEl, 'Domains', this.values.domains, v => this.values.domains = v);
+    addText(contentEl, 'Symbol', this.values.symbol, v => this.values.symbol = v);
+    ['summary','worshippers','dogma','churches','relics','rites','holyDays','allies','enemies','relationships','myths','travelRules','secrets','notes'].forEach(f => addTextArea(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+    addText(contentEl, 'Tags', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+    modalButtons(contentEl, this, async () => { if (!this.values.tags || !this.values.tags.length) this.values.tags = ['deity']; upsert(this.plugin.state, 'deities', this.values); await this.plugin.saveState(); new Notice('Deity / pantheon entry saved.'); this.close(); });
+  }
+}
+
+function phase64FullGenerator(type, state) {
+  const names = ['Aelric Thorn', 'Mira Vale', 'Brakka Stonejaw', 'Sable Merrow', 'Edrin Foxglove', 'Nyx Underbough', 'Ser Caldus Vey', 'Ilyra Dawnmantle'];
+  const places = ['Salt-Road Inn', 'Ruined Watchtower', 'Moonlit Ford', 'Ash-Choked Shrine', 'Market of Seven Bells', 'Blackfen Causeway', 'Old Kingsroad'];
+  const motives = ['protect a dangerous secret', 'repay an old debt', 'gain a noble patron', 'hide from a former cult', 'recover a stolen relic', 'test the party without revealing why'];
+  const complications = ['a rival faction arrives first', 'the reward is cursed', 'the quest-giver is lying by omission', 'weather cuts off retreat', 'a witness saw too much', 'the obvious villain is bait'];
+  if (type === 'NPC Name' || type === 'Full NPC') return { kind: 'npcs', entry: { id: uid('npc'), name: pick(names), role: pick(['Innkeeper', 'Spy', 'Monster Hunter', 'Scholar', 'Fence', 'Priest', 'Captain']), status: 'Alive', attitude: pick(['Friendly','Indifferent','Hostile']), summary: 'Generated full NPC with motive, secret, hook, and table use.', appearance: pick(['ink-stained gloves and tired eyes','polished boots, old scars, and a forced smile','bright scarf, hidden dagger, and too many rings','weather-beaten cloak and a silver holy symbol']), voice: pick(['soft and careful','loud and theatrical','dry, clipped, impatient','warm until pressed']), motives: pick(motives), secrets: pick(['They know who opened the sealed gate.', 'They are being blackmailed.', 'They serve two factions.', 'They are not using their real name.']), dialogue: `“${pick(['I did not say it was safe.', 'Coin first, questions after.', 'You did not hear this from me.', 'Some doors should stay closed.'])}”`, relationships: `Connected to ${pick(places)} and opposed by ${pick(['the local guild','a hidden cult','a jealous sibling','the old guard'])}.`, tags: ['generated','npc'], visibility: 'dm-only' } };
+  if (type === 'Balanced Encounter' || type === 'Full Encounter') return { kind: 'encounters', entry: { id: uid('encounter'), name: `${pick(['Ambush at','Ritual beneath','Negotiation at','Last Stand near'])} ${pick(places)}`, difficulty: pick(['Easy','Medium','Hard','Deadly']), environment: pick(['Urban','Forest','Dungeon','Road','Swamp','Ruins']), summary: 'Generated complete encounter with objective, tactics, terrain, hazard, and loot hook.', creatures: pick(['2 scouts and 1 veteran','4 goblins and a wolf','1 cult fanatic and 3 guards','2 shadows and a trapped altar']), objectives: pick(['Rescue the hostage before round 4.', 'Stop the ritual without destroying the relic.', 'Cross the battlefield with the evidence intact.', 'Convince one enemy to defect.']), terrain: pick(['half cover from broken wagons','slick stone with difficult terrain','waist-high fog blocking sightlines','collapsing balconies and narrow stairs']), hazards: pick(['falling masonry, DC 13 Dex save','choking smoke, Con save each round','unstable magic, random cantrip flare','hidden snare lines']), tactics: pick(['Enemies retreat if the leader falls.', 'The strongest enemy protects a fragile caster.', 'Foes try to split the party.', 'Enemies target lights and healers first.']), loot: `${Math.ceil(Math.random()*120)} gp, ${pick(['potion of healing','coded map','silvered dagger','minor spell scroll'])}`, tags: ['generated','encounter'], visibility: 'dm-only' } };
+  if (type === 'Loot' || type === 'Full Loot Drop') return { kind: 'homebrew', entry: { id: uid('loot'), name: `Loot Cache — ${pick(places)}`, type: 'Loot', summary: 'Generated treasure parcel with coins, mundane goods, magic hook, and clue.', coins: `${Math.ceil(Math.random()*200)} gp, ${Math.ceil(Math.random()*80)} sp`, items: pick(['potion of healing, garnet ring, travel-stained map','silver mirror, alchemist kit, sealed letter','moonstone pendant, 3 trade bars, old key','spell scroll, fine cloak, black wax seal']), clue: `Points toward ${pick(places)}.`, complication: pick(complications), tags: ['generated','loot'], visibility: 'dm-only' } };
+  if (type === 'Tavern / Shop' || type === 'Full Tavern / Shop') return { kind: 'homebrew', entry: { id: uid('shop'), name: pick(['The Copper Wyvern','The Drunken Basilisk','Ash & Antler','The Ninth Lantern','The Fox and Flagon']), type: 'Tavern / Shop', summary: 'Generated location with owner, services, inventory, atmosphere, rumour, and secret.', owner: pick(names), services: pick(['rooms, meals, stabling, discreet messages','weapons, repairs, rumours, fenced goods','potions, charms, maps, ritual supplies','food, gossip, caravan contacts, local guides']), inventory: pick(['healing draughts, rope, lantern oil, silvered bolts','maps, chalk, thieves tools, false papers','common potions, incense, holy water','travel packs, warm cloaks, mule tack']), atmosphere: pick(['warm, crowded, always watched','quiet, expensive, unnervingly clean','rowdy, smoky, full of mercenaries','cosy, haunted, too polite']), rumour: pick(['The mayor has not been seen in daylight.', 'The old well sings names at midnight.', 'A saint’s relic is fake but still works.', 'The bandits pay taxes to someone worse.']), secret: pick(['The cellar connects to an escape tunnel.', 'The owner keeps a monster ledger.', 'A faction meets upstairs on new moons.', 'One regular is a disguised noble.']), tags: ['generated','location','shop'], visibility: 'dm-only' } };
+  if (type === 'Travel Event' || type === 'Full Travel Event') return { kind: 'sessions', entry: { id: uid('travel'), name: `Travel Event — ${pick(places)}`, type: 'Travel Event', summary: 'Generated travel scene with hazard, discovery, choice, consequence, and reward.', hazard: pick(['flash storm','broken bridge','thin ice','rockslide','strange fog','territorial beast tracks']), discovery: pick(['abandoned camp with fresh ashes','buried milestone with wrong distances','traveller carrying forbidden letters','shrine with recent offerings','corpse clutching a faction token']), choice: pick(['press on and risk exhaustion','detour and lose a day','help strangers and attract attention','investigate and trigger an encounter']), consequence: pick(complications), reward: pick(['shortcut discovered','local guide earned','minor treasure found','future ally rescued','map corrected']), tags: ['generated','travel'], visibility: 'dm-only' } };
+  if (type === 'Rumour / Plot Hook' || type === 'Full Rumour / Plot Hook') return { kind: 'myths', entry: { id: uid('rumour'), name: `Rumour — ${pick(['Blood Moon','Hollow Duke','Singing Well','Ash Saint','Taxed Bandits'])}`, type: 'Rumour / Plot Hook', summary: 'Generated rumour with truth, lie, source, hook, and escalation.', publicVersion: pick(['The duke has not cast a shadow in three days.', 'The old well sings names at midnight.', 'A saint’s relic is fake but still performs miracles.', 'The bandits are paying taxes to someone worse.']), truth: pick(['A fiendish pact is leaking into public life.', 'A trapped spirit is trying to identify its murderer.', 'Belief itself is powering the miracle.', 'A faction has infiltrated local crime.']), lie: pick(['The obvious suspect is innocent.', 'The monster story was planted.', 'The relic was never stolen.', 'The cure is not actually a cure.']), source: pick(['drunk guard','market child','rival priest','wanted smuggler','nervous clerk']), escalation: pick(complications), tags: ['generated','rumour','plot-hook'], visibility: 'dm-only' } };
+  return { kind: 'homebrew', entry: { id: uid('prompt'), name: 'Local AI Prompt Pack', type: 'Prompt', summary: 'Use with a local model only. No external network required.', prompt: 'Using only my vault notes, generate 5 NPC secrets, 5 quest twists, and 5 faction conflicts. Keep [dm-only] and [secret] material out of player-visible output.', tags: ['generated','prompt'], visibility: 'dm-only' } };
+}
+
+generate = function phase64Generate(type, state) {
+  const generated = phase64FullGenerator(type, state);
+  const e = generated.entry;
+  return Object.entries(e).filter(([k]) => !['id'].includes(k)).map(([k,v]) => `**${nice(k)}:** ${Array.isArray(v) ? v.join(', ') : v}`).join('\n');
+};
+
+GeneratorModal = class Phase64GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){ const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Full Generators & Random Tools'}); const out=contentEl.createDiv('ttrpg-generated'); addSelect(contentEl,'Generator',this.type,['Full NPC','Full Encounter','Full Loot Drop','Full Tavern / Shop','Full Travel Event','Full Rumour / Plot Hook','Local AI Prompt'],v=>this.type=v); btn(contentEl,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{ this.generated=phase64FullGenerator(this.type,this.plugin.state); out.textContent=generate(this.type,this.plugin.state); }); btn(contentEl,'Save Generated Entry', 'ttrpg-btn', async()=>{ if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state); upsert(this.plugin.state,this.generated.kind,this.generated.entry); this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), target:this.generated.kind, createdAt:Date.now() }); await this.plugin.saveState(); new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`); this.close(); }); }
+};
+
+/* Phase 66 — Rich Generator Rendering
+ * Render generated markdown-like output as readable labelled fields instead of raw **Label:** marks.
+ */
+function phase66ValueToText(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+function phase66StripMarkdownLabel(text) {
+  return String(text || '').replace(/^\s*\*\*([^*]+):\*\*\s*/u, '$1: ');
+}
+function phase66ParseGeneratedText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n+/u).map(l => l.trim()).filter(Boolean);
+  const fields = [];
+  for (const line of lines) {
+    let m = line.match(/^\*\*([^*]+):\*\*\s*(.*)$/u);
+    if (!m) m = line.match(/^([^:]{2,40}):\s*(.*)$/u);
+    if (m) fields.push({ label: m[1].trim(), value: m[2].trim() });
+    else fields.push({ label: '', value: phase66StripMarkdownLabel(line) });
+  }
+  return fields;
+}
+function phase66RenderGenerated(parent, textOrEntry) {
+  const wrap = ce(parent, 'div', 'ttrpg-generated-rendered');
+  let fields = [];
+  if (textOrEntry && typeof textOrEntry === 'object' && !Array.isArray(textOrEntry)) {
+    fields = Object.entries(textOrEntry)
+      .filter(([k, v]) => !['id'].includes(k) && v !== undefined && v !== null && phase66ValueToText(v).trim() !== '')
+      .map(([k, v]) => ({ label: nice(k), value: phase66ValueToText(v) }));
+  } else {
+    fields = phase66ParseGeneratedText(textOrEntry);
+  }
+  if (!fields.length) {
+    ce(wrap, 'p', 'ttrpg-muted', 'No generated details yet.');
+    return wrap;
+  }
+  fields.forEach(({ label, value }) => {
+    const row = ce(wrap, 'div', 'ttrpg-field-row');
+    if (label) ce(row, 'div', 'ttrpg-field-label', label);
+    ce(row, 'div', 'ttrpg-field-value', value || '—');
+  });
+  return wrap;
+}
+function phase66GeneratedPreview(parent, generated) {
+  clear(parent);
+  if (!generated) {
+    ce(parent, 'p', 'ttrpg-muted', 'Generate a complete entry to preview it here.');
+    return;
+  }
+  const cardEl = ce(parent, 'section', 'ttrpg-card ttrpg-generated-preview-card');
+  const entry = generated.entry || {};
+  const head = ce(cardEl, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', '✨');
+  ce(head, 'h3', '', entry.name || generated.type || 'Generated Entry');
+  phase66RenderGenerated(cardEl, entry);
+}
+
+itemHistory = function phase66ItemHistory(parent, hist) {
+  const g = grid(parent);
+  hist.slice(0, 20).forEach(x => {
+    const c = ce(g, 'section', 'ttrpg-card ttrpg-generated-history-card');
+    const head = ce(c, 'div', 'ttrpg-card-head');
+    ce(head, 'div', 'ttrpg-card-icon', '✨');
+    ce(head, 'h3', '', x.type || 'Generated Result');
+    if (x.createdAt) ce(c, 'div', 'ttrpg-card-meta', new Date(x.createdAt).toLocaleString());
+    phase66RenderGenerated(c, x.entry || x.result || '');
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Copy Text', 'ttrpg-btn', async () => {
+      await navigator.clipboard.writeText(String(x.result || ''));
+      new Notice('Generated text copied.');
+    });
+  });
+};
+
+GeneratorModal = class Phase66GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){
+    const {contentEl}=this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2',{text:'Full Generators & Random Tools'});
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,['Full NPC','Full Encounter','Full Loot Drop','Full Tavern / Shop','Full Travel Event','Full Rumour / Plot Hook','Local AI Prompt'],v=>this.type=v);
+    btn(contentEl,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{
+      this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      phase66GeneratedPreview(out, this.generated);
+    });
+    btn(contentEl,'Save Generated Entry', 'ttrpg-btn', async()=>{
+      if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, createdAt:Date.now() });
+      await this.plugin.saveState();
+      new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`);
+      this.close();
+    });
+    phase66GeneratedPreview(out, this.generated);
+  }
+};
+
+/* Phase 67 — Universal Card Rendering Polish
+ * Applies the generator-style rich rendering to every card body, not just generator history.
+ * Cards now render markdown-ish labels as proper fields, strip common formatting marks,
+ * preserve readable spacing, and show useful object properties as labelled rows.
+ */
+function phase67HumanKey(key) {
+  return nice(String(key || ''));
+}
+function phase67CleanInline(text) {
+  return String(text || '')
+    .replace(/\*\*([^*]+)\*\*/gu, '$1')
+    .replace(/__([^_]+)__/gu, '$1')
+    .replace(/`([^`]+)`/gu, '$1')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+function phase67Stringify(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    return value.map(v => phase67Stringify(v)).filter(Boolean).join(', ');
+  }
+  if (typeof value === 'object') {
+    const parts = Object.entries(value)
+      .filter(([, v]) => v !== null && v !== undefined && phase67Stringify(v) !== '')
+      .map(([k, v]) => `${phase67HumanKey(k)}: ${phase67Stringify(v)}`);
+    return parts.join(' • ');
+  }
+  return phase67CleanInline(String(value));
+}
+function phase67IsDisplayableKey(key) {
+  return ![
+    'id', 'createdAt', 'updatedAt', 'metadata', 'sort', 'order'
+  ].includes(String(key));
+}
+function phase67ObjectToFields(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return [];
+  const preferred = [
+    'type', 'status', 'role', 'summary', 'description', 'objectives', 'creatures', 'terrain', 'hazards', 'tactics', 'loot',
+    'owner', 'services', 'inventory', 'atmosphere', 'rumour', 'secret', 'publicVersion', 'truth', 'lie', 'source', 'escalation',
+    'coins', 'items', 'clue', 'complication', 'hazard', 'discovery', 'choice', 'consequence', 'reward',
+    'domains', 'symbol', 'worshippers', 'dogma', 'churches', 'relics', 'relationships', 'goals', 'resources',
+    'visibility', 'tags', 'notes'
+  ];
+  const seen = new Set();
+  const fields = [];
+  const push = (key) => {
+    if (!phase67IsDisplayableKey(key) || seen.has(key)) return;
+    const value = obj[key];
+    const text = phase67Stringify(value);
+    if (!text) return;
+    seen.add(key);
+    fields.push({ label: phase67HumanKey(key), value: text });
+  };
+  preferred.forEach(push);
+  Object.keys(obj).forEach(push);
+  return fields;
+}
+function phase67TextToFields(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const normalised = raw
+    .replace(/\s*\*\*([^*\n:]{1,60}):\*\*\s*/gu, '\n**$1:** ')
+    .replace(/^\n/u, '');
+  const lines = normalised.split(/\r?\n+/u).map(l => l.trim()).filter(Boolean);
+  const fields = [];
+  for (const line of lines) {
+    let m = line.match(/^\*\*([^*]+):\*\*\s*(.*)$/u);
+    if (!m) m = line.match(/^([^:]{2,45}):\s*(.*)$/u);
+    if (m) fields.push({ label: phase67CleanInline(m[1]), value: phase67CleanInline(m[2]) || '—' });
+    else fields.push({ label: '', value: phase67CleanInline(line) });
+  }
+  return fields;
+}
+function phase67LooksStructured(text) {
+  return /\*\*[^*\n:]{1,60}:\*\*/u.test(String(text || '')) || /^\s*[^:\n]{2,45}:\s+\S/mu.test(String(text || '')) || /\r?\n/u.test(String(text || ''));
+}
+function phase67RenderBody(parent, content) {
+  if (!content) return;
+  let fields = [];
+  if (typeof content === 'object' && !Array.isArray(content)) fields = phase67ObjectToFields(content);
+  else if (phase67LooksStructured(content)) fields = phase67TextToFields(content);
+
+  if (fields.length) {
+    const wrap = ce(parent, 'div', 'ttrpg-card-rich-body');
+    fields.forEach(({ label, value }) => {
+      const row = ce(wrap, 'div', label ? 'ttrpg-field-row' : 'ttrpg-card-paragraph');
+      if (label) ce(row, 'div', 'ttrpg-field-label', label);
+      ce(row, 'div', 'ttrpg-field-value', value || '—');
+    });
+    return;
+  }
+  const p = ce(parent, 'p', 'ttrpg-card-paragraph', phase67CleanInline(content));
+  p.addClass('ttrpg-muted');
+}
+
+card = function phase67Card(parent, title, text, icon, actions) {
+  const c = ce(parent, 'section', 'ttrpg-card');
+  const head = ce(c, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', icon || '📜');
+  ce(head, 'h3', '', title || 'Untitled');
+  phase67RenderBody(c, text);
+  if (actions && actions.length) {
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    actions.forEach(a => btn(row, a.label, a.primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', a.onClick));
+  }
+  return c;
+};
+
+itemCards = function phase67ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${ENTITY_LABELS[key] || key} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(item => {
+    const title = item.name || item.title || ENTITY_LABELS[key] || 'Untitled';
+    const c = card(g, title, item, opts && opts.icon || '📜');
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(t)));
+    if (item.visibility) ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(item.visibility));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, item).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key]} deleted.`); });
+  });
+};
+
+if (typeof renderPlayerKnownCards === 'function') {
+  renderPlayerKnownCards = function phase67RenderPlayerKnownCards(parent, title, icon, items, describe) {
+    const visible = safeArray(items).filter(playerVisible);
+    if (!visible.length) { empty(parent, `No ${title} known yet.`, 'This will populate when the DM reveals information.'); return; }
+    const g = grid(parent);
+    visible.forEach(item => card(g, item.name || item.title || 'Known Entry', describe ? describe(item) : item, icon || '👁️'));
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 68 — Search, Responsive Topnav & Live Combat Tracker
+ * Fixes:
+ * - Search now returns a real global in-plugin result view while typing.
+ * - Topnav / DM-PC toggle remain visible when resizing/collapsing sidebar.
+ * - Combat & Encounters moved to its own sidebar tab.
+ * - Generated/saved encounters can be launched into a live encounter tracker.
+ * -------------------------------------------------------------------------- */
+
+const PHASE68_DM_NAV = [
+  ['dashboard', '🏰', 'Dashboard'],
+  ['campaignList', '📚', 'Campaigns'],
+  ['campaign', '🧙', 'Campaign Wizard'],
+  ['world', '🌌', 'World & Lore'],
+  ['geography', '🗺️', 'Geography & Maps'],
+  ['npcs', '👤', 'NPCs & Creatures'],
+  ['adventure', '📝', 'Adventures & Quests'],
+  ['combat', '⚔️', 'Combat & Encounters'],
+  ['generators', '🎲', 'Generators'],
+  ['rules', '⚙️', 'Rules & Mechanics'],
+  ['downtime', '⏳', 'Downtime & Bases'],
+  ['sessions', '📅', 'Sessions & Timeline'],
+  ['secrets', '🔒', 'Secrets & Reveals'],
+  ['library', '📚', 'Library & Compendium']
+];
+
+const PHASE68_SEARCH_KEYS = [
+  'campaigns','worlds','factions','deities','languages','cultures','myths','regions','settlements','pois','maps','npcs','creatures','adventures','quests','encounters','rules','conditions','damageTypes','downtime','projects','bastions','hirelings','sessions','milestones','secrets','handouts','compendium','homebrew','tables','playerCharacters','partyNotes','partyInventory','personalNotes','knownLocations','knownNpcs','playerDowntime','playerProjects','playerRewards'
+];
+
+function phase68EnsureState(state) {
+  phase64EnsureState(state);
+  if (!state.combat) {
+    state.combat = {
+      active: false,
+      name: '',
+      encounterId: '',
+      round: 1,
+      turnIndex: 0,
+      combatants: [],
+      log: []
+    };
+  }
+  if (!Array.isArray(state.combat.combatants)) state.combat.combatants = [];
+  if (!Array.isArray(state.combat.log)) state.combat.log = [];
+  if (state.activeSection === 'adventure' && state._phase68MoveEncountersNotice !== true) {
+    // Keep users where they are; encounters still appear in their new tab.
+    state._phase68MoveEncountersNotice = true;
+  }
+}
+
+phase64VisibleNav = function phase68VisibleNav(state) {
+  return state.mode === 'PLAYER' ? PHASE64_PLAYER_NAV : PHASE68_DM_NAV;
+};
+
+renderSection = function phase68RenderSection(main, plugin, section) {
+  const map = {
+    dashboard: renderDashboard,
+    campaignList: renderCampaignList,
+    campaign: renderCampaign,
+    world: renderWorld,
+    geography: renderGeography,
+    npcs: renderNpcs,
+    adventure: renderAdventure,
+    combat: renderCombat,
+    generators: renderGenerators,
+    rules: renderRules,
+    downtime: renderDowntime,
+    sessions: renderSessions,
+    secrets: renderSecrets,
+    library: renderLibrary,
+    player: renderPlayerView
+  };
+  (map[section] || renderDashboard)(main, plugin);
+};
+
+function phase68VisibleToCurrentMode(plugin, key, item) {
+  if (plugin.state.mode !== 'PLAYER') return true;
+  if (key === 'secrets') return false;
+  return playerVisible(item) || ['playerCharacters','partyNotes','partyInventory','personalNotes','knownLocations','knownNpcs','playerDowntime','playerProjects','playerRewards'].includes(key);
+}
+
+function phase68SearchResults(plugin) {
+  const q = String(plugin.state.search || '').trim();
+  if (!q) return [];
+  const results = [];
+  for (const key of PHASE68_SEARCH_KEYS) {
+    const items = safeArray(plugin.state.entities && plugin.state.entities[key]);
+    for (const item of items) {
+      if (!phase68VisibleToCurrentMode(plugin, key, item)) continue;
+      if (matchesSearch(item, q)) results.push({ key, item });
+    }
+  }
+  return results;
+}
+
+function renderGlobalSearch(main, plugin) {
+  const query = String(plugin.state.search || '').trim();
+  const results = phase68SearchResults(plugin);
+  header(main, 'Search Results', query ? `Showing matches for “${query}”. Search covers saved entries across the current mode.` : 'Type in the top search box to find saved entries.', [
+    { label: 'Clear Search', primary: true, onClick: async () => { plugin.state.search = ''; await plugin.saveState(); } }
+  ]);
+  if (!query) { empty(main, 'Search is ready.', 'Type in the top search box to search campaigns, NPCs, quests, encounters, rules, notes, and more.'); return; }
+  if (!results.length) { empty(main, `No results for “${query}”.`, 'Try a name, tag, location, creature, rule, quest, or visibility value.'); return; }
+  const grouped = results.reduce((acc, result) => { if (!acc[result.key]) acc[result.key] = []; acc[result.key].push(result.item); return acc; }, {});
+  Object.keys(grouped).forEach(key => {
+    phase64SectionTitle(main, key);
+    const g = grid(main);
+    grouped[key].slice(0, 30).forEach(item => {
+      const title = item.name || item.title || ENTITY_LABELS[key] || 'Untitled';
+      const c = card(g, title, item, key === 'encounters' ? '⚔️' : '🔎');
+      phase64CardClick(c, () => new EntityModal(plugin.app, plugin, key, item).open());
+      const row = ce(c, 'div', 'ttrpg-card-actions');
+      btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, item).open());
+      if (key === 'encounters') btn(row, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, item));
+      btn(row, 'Go to Section', 'ttrpg-btn', async () => { plugin.state.search = ''; plugin.state.activeSection = phase68SectionForKey(key); await plugin.saveState(); });
+    });
+  });
+}
+
+function phase68SectionForKey(key) {
+  if (['campaigns'].includes(key)) return 'campaignList';
+  if (['worlds','factions','deities','languages','cultures','myths'].includes(key)) return 'world';
+  if (['regions','settlements','pois','maps'].includes(key)) return 'geography';
+  if (['npcs','creatures'].includes(key)) return 'npcs';
+  if (['adventures','quests'].includes(key)) return 'adventure';
+  if (['encounters'].includes(key)) return 'combat';
+  if (['rules','conditions','damageTypes'].includes(key)) return 'rules';
+  if (['downtime','projects','bastions','hirelings'].includes(key)) return 'downtime';
+  if (['sessions','milestones'].includes(key)) return 'sessions';
+  if (['secrets','handouts'].includes(key)) return 'secrets';
+  if (['compendium','homebrew','tables'].includes(key)) return 'library';
+  return 'player';
+}
+
+attachStableSearch = function phase68AttachStableSearch(search, view, main) {
+  search.addEventListener('input', e => {
+    const input = e.target;
+    view.plugin.state.search = input.value;
+    persistSearchSilently(view.plugin);
+    clear(main);
+    if (String(view.plugin.state.search || '').trim()) renderGlobalSearch(main, view.plugin);
+    else if (view.plugin.state.mode === 'PLAYER') renderPlayerView(main, view.plugin);
+    else renderSection(main, view.plugin, view.plugin.state.activeSection || 'dashboard');
+    window.setTimeout(() => {
+      try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+    }, 0);
+  });
+};
+
+TTRPGMainView.prototype.render = function phase68MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase68EnsureState(state);
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (state.activeSection === 'player') state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search this plugin…'; search.value = state.search || ''; search.title = 'Search saved plugin entries';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary ttrpg-top-action', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn ttrpg-top-action', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase64VisibleNav(state).forEach(([id, icon, label]) => {
+    const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+    const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; state.search = ''; await this.plugin.saveState(); });
+    item.dataset.section = id; item.title = label;
+  });
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (String(state.search || '').trim()) renderGlobalSearch(main, this.plugin);
+  else if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin);
+  else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+renderAdventure = function phase68Adventure(main, plugin) {
+  header(main, 'Adventures & Quests', 'Adventure hubs, acts, story beats, branching outcomes, quest chains, rewards, consequences, and campaign story structure.', [
+    { label: 'Adventure', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'adventures').open() },
+    { label: 'Quest', onClick: () => new QuestModal(plugin.app, plugin).open() },
+    { label: 'Open Combat & Encounters', onClick: () => phase64SetSection(plugin, 'combat') }
+  ]);
+  const quick = grid(main, 'ttrpg-grid ttrpg-mini-grid');
+  phase64SectionCountCard(quick, plugin, 'adventures', '📚');
+  phase64SectionCountCard(quick, plugin, 'quests', '📝', () => new QuestModal(plugin.app, plugin).open());
+  phase64CardClick(card(quick, 'Combat & Encounters', `${phase64Count(plugin, 'encounters')} saved encounter${phase64Count(plugin, 'encounters') === 1 ? '' : 's'} plus live tracker.`, '⚔️', [{ label: 'Open Combat', primary: true, onClick: () => phase64SetSection(plugin, 'combat') }]), () => phase64SetSection(plugin, 'combat'));
+  ['adventures','quests'].forEach(k => { phase64SectionTitle(main, k); itemCards(main, plugin, k, { icon: k === 'quests' ? '📝' : '📚' }); });
+};
+
+function renderCombat(main, plugin) {
+  phase68EnsureState(plugin.state);
+  header(main, 'Combat & Encounters', 'Saved encounters, generated encounter launch, initiative, rounds, turns, HP changes, conditions, and live combat state.', [
+    { label: 'New Encounter', primary: true, onClick: () => new EncounterModal(plugin.app, plugin).open() },
+    { label: 'Generate Encounter', onClick: () => new GeneratorModal(plugin.app, plugin, 'Full Encounter').open() },
+    { label: 'Add Combatant', onClick: () => new CombatantModal(plugin.app, plugin).open() }
+  ]);
+  renderLiveCombatTracker(main, plugin);
+  phase64SectionTitle(main, 'encounters');
+  itemCards(main, plugin, 'encounters', { icon: '⚔️', empty: 'No encounters yet. Create one, or generate a full encounter and save it here.' });
+}
+
+function phase68EncounterCombatants(encounter) {
+  const raw = String(encounter.creatures || encounter.combatants || '').trim();
+  if (!raw) return [{ name: 'Enemy 1', type: 'Enemy' }];
+  const chunks = raw.replace(/\band\b/gi, ',').split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+  const out = [];
+  chunks.forEach(chunk => {
+    const m = chunk.match(/^(\d+)\s+(.+)$/);
+    const count = m ? Math.min(20, Math.max(1, Number(m[1]))) : 1;
+    const base = m ? m[2].replace(/s$/i, '') : chunk;
+    for (let i = 1; i <= count; i++) out.push({ name: count > 1 ? `${base} ${i}` : base, type: 'Enemy' });
+  });
+  return out.length ? out : [{ name: 'Enemy 1', type: 'Enemy' }];
+}
+
+function phase68RollInitiative() { return Math.floor(Math.random() * 20) + 1; }
+function phase68DefaultHp(name) {
+  const lower = String(name || '').toLowerCase();
+  if (lower.includes('wolf')) return 11;
+  if (lower.includes('goblin')) return 7;
+  if (lower.includes('guard')) return 11;
+  if (lower.includes('cult')) return 22;
+  if (lower.includes('veteran')) return 58;
+  if (lower.includes('scout')) return 16;
+  return 10;
+}
+
+async function startCombatFromEncounter(plugin, encounter) {
+  phase68EnsureState(plugin.state);
+  const pcs = safeArray(plugin.state.entities.playerCharacters).map(pc => ({
+    id: pc.id || uid('pc-combat'),
+    name: pc.name || 'Player Character',
+    type: 'PC',
+    ac: Number(pc.ac || 10),
+    hpMax: Number(pc.hpMax || 10),
+    hpCurrent: Number(pc.hpCurrent || pc.hpMax || 10),
+    initiative: phase68RollInitiative() + modifier(pc.dex || 10),
+    conditions: textList(pc.conditions),
+    notes: pc.className || ''
+  }));
+  const enemies = phase68EncounterCombatants(encounter).map(c => {
+    const hp = phase68DefaultHp(c.name);
+    return { id: uid('combatant'), name: c.name, type: c.type || 'Enemy', ac: 12, hpMax: hp, hpCurrent: hp, initiative: phase68RollInitiative(), conditions: [], notes: encounter.tactics || '' };
+  });
+  plugin.state.combat = {
+    active: true,
+    name: encounter.name || encounter.title || 'Live Encounter',
+    encounterId: encounter.id || '',
+    round: 1,
+    turnIndex: 0,
+    combatants: pcs.concat(enemies).sort((a, b) => Number(b.initiative || 0) - Number(a.initiative || 0)),
+    log: [`Started combat: ${encounter.name || encounter.title || 'Live Encounter'}`]
+  };
+  plugin.state.activeSection = 'combat';
+  plugin.state.search = '';
+  await plugin.saveState();
+  new Notice('Encounter launched in live combat tracker.');
+}
+
+async function phase68SaveCombat(plugin) {
+  await plugin.saveState();
+}
+function phase68CurrentCombatant(combat) { return combat.combatants[combat.turnIndex] || combat.combatants[0]; }
+
+function renderLiveCombatTracker(main, plugin) {
+  const combat = plugin.state.combat || {};
+  const panel = ce(main, 'section', 'ttrpg-live-combat');
+  const title = ce(panel, 'div', 'ttrpg-live-combat-head');
+  ce(title, 'div', 'ttrpg-live-title', combat.active ? `Live: ${combat.name || 'Encounter'}` : 'No live encounter running');
+  ce(title, 'div', 'ttrpg-live-subtitle', combat.active ? `Round ${combat.round || 1} • Turn ${(combat.turnIndex || 0) + 1}/${safeArray(combat.combatants).length || 1}` : 'Start from a saved/generated encounter or add combatants manually.');
+  const controls = ce(panel, 'div', 'ttrpg-live-controls');
+  btn(controls, 'Add Combatant', 'ttrpg-btn', () => new CombatantModal(plugin.app, plugin).open());
+  btn(controls, 'Sort Initiative', 'ttrpg-btn', async () => { combat.combatants.sort((a,b)=>Number(b.initiative||0)-Number(a.initiative||0)); combat.turnIndex = 0; combat.active = true; await phase68SaveCombat(plugin); });
+  btn(controls, 'Previous Turn', 'ttrpg-btn', async () => { if (!combat.combatants.length) return; combat.turnIndex = (Number(combat.turnIndex || 0) - 1 + combat.combatants.length) % combat.combatants.length; await phase68SaveCombat(plugin); });
+  btn(controls, 'Next Turn', 'ttrpg-btn ttrpg-primary', async () => { if (!combat.combatants.length) return; combat.turnIndex = (Number(combat.turnIndex || 0) + 1) % combat.combatants.length; if (combat.turnIndex === 0) combat.round = Number(combat.round || 1) + 1; await phase68SaveCombat(plugin); });
+  btn(controls, '+ Round', 'ttrpg-btn', async () => { combat.round = Number(combat.round || 1) + 1; await phase68SaveCombat(plugin); });
+  btn(controls, 'End Combat', 'ttrpg-btn ttrpg-danger', async () => { combat.active = false; combat.name = ''; combat.encounterId = ''; combat.round = 1; combat.turnIndex = 0; combat.combatants = []; combat.log = []; await phase68SaveCombat(plugin); });
+
+  if (!safeArray(combat.combatants).length) {
+    empty(panel, 'No combatants yet.', 'Start from a saved encounter, generate an encounter, or add combatants manually.');
+    return;
+  }
+  const current = phase68CurrentCombatant(combat);
+  const g = grid(panel, 'ttrpg-combat-grid');
+  combat.combatants.forEach((c, index) => {
+    const isTurn = current && current.id === c.id;
+    const cardEl = ce(g, 'section', `ttrpg-combat-card ${isTurn ? 'is-current-turn' : ''} ${Number(c.hpCurrent || 0) <= 0 ? 'is-ko' : ''}`);
+    const head = ce(cardEl, 'div', 'ttrpg-combat-card-head');
+    ce(head, 'h3', '', `${isTurn ? '▶ ' : ''}${c.name || 'Combatant'}`);
+    ce(head, 'span', 'ttrpg-tag', c.type || 'Combatant');
+    const statsRow = ce(cardEl, 'div', 'ttrpg-combat-stats');
+    [['Init', c.initiative || 0], ['AC', c.ac || 10], ['HP', `${c.hpCurrent || 0}/${c.hpMax || 0}`]].forEach(([label, value]) => { const box = ce(statsRow, 'div', 'ttrpg-combat-stat'); ce(box, 'span', '', label); ce(box, 'strong', '', value); });
+    if (safeArray(c.conditions).length) { const tags = ce(cardEl, 'div', 'ttrpg-tags'); c.conditions.forEach(cond => ce(tags, 'span', 'ttrpg-tag', cond)); }
+    if (c.notes) ce(cardEl, 'p', 'ttrpg-muted', c.notes);
+    const hp = ce(cardEl, 'div', 'ttrpg-combat-hp-controls');
+    [-10,-5,-1,1,5,10].forEach(delta => btn(hp, delta > 0 ? `+${delta}` : String(delta), delta < 0 ? 'ttrpg-btn ttrpg-danger' : 'ttrpg-btn', async () => { c.hpCurrent = Math.max(0, Math.min(Number(c.hpMax || 0) + 999, Number(c.hpCurrent || 0) + delta)); await phase68SaveCombat(plugin); }));
+    const row = ce(cardEl, 'div', 'ttrpg-card-actions');
+    btn(row, 'Edit', 'ttrpg-btn', () => new CombatantModal(plugin.app, plugin, c).open());
+    btn(row, 'Turn', 'ttrpg-btn', async () => { combat.turnIndex = index; await phase68SaveCombat(plugin); });
+    btn(row, 'Remove', 'ttrpg-btn ttrpg-danger', async () => { combat.combatants = combat.combatants.filter(x => x.id !== c.id); if (combat.turnIndex >= combat.combatants.length) combat.turnIndex = 0; await phase68SaveCombat(plugin); });
+  });
+}
+
+class CombatantModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || null;
+    this.values = Object.assign({ id: uid('combatant'), name: '', type: 'Enemy', ac: 12, hpMax: 10, hpCurrent: 10, initiative: phase68RollInitiative(), conditions: [], notes: '' }, item || {});
+    this.values.conditionsText = safeArray(this.values.conditions).join(', ');
+  }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2', { text: this.item ? 'Edit Combatant' : 'Add Combatant' });
+    addText(contentEl, 'Name', this.values.name, v => this.values.name = v);
+    addSelect(contentEl, 'Type', this.values.type || 'Enemy', ['PC','Ally','Enemy','Neutral','Creature','NPC'], v => this.values.type = v);
+    addNumber(contentEl, 'Initiative', this.values.initiative || 0, v => this.values.initiative = v);
+    addNumber(contentEl, 'AC', this.values.ac || 10, v => this.values.ac = v);
+    addNumber(contentEl, 'Max HP', this.values.hpMax || 10, v => { this.values.hpMax = v; if (!this.item) this.values.hpCurrent = v; });
+    addNumber(contentEl, 'Current HP', this.values.hpCurrent || this.values.hpMax || 10, v => this.values.hpCurrent = v);
+    addText(contentEl, 'Conditions', this.values.conditionsText || '', v => this.values.conditionsText = v);
+    addTextArea(contentEl, 'Notes / Tactics', this.values.notes || '', v => this.values.notes = v);
+    modalButtons(contentEl, this, async () => {
+      phase68EnsureState(this.plugin.state);
+      this.values.conditions = textList(this.values.conditionsText);
+      delete this.values.conditionsText;
+      const list = this.plugin.state.combat.combatants;
+      const i = list.findIndex(x => x.id === this.values.id);
+      if (i >= 0) list[i] = this.values; else list.push(this.values);
+      this.plugin.state.combat.active = true;
+      if (!this.plugin.state.combat.name) this.plugin.state.combat.name = 'Manual Encounter';
+      await this.plugin.saveState();
+      new Notice('Combatant saved.');
+      this.close();
+    });
+  }
+}
+
+// Add combat launch actions to encounter cards everywhere.
+itemCards = function phase68ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${ENTITY_LABELS[key] || key} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(item => {
+    const title = item.name || item.title || ENTITY_LABELS[key] || 'Untitled';
+    const c = card(g, title, item, opts && opts.icon || (key === 'encounters' ? '⚔️' : '📜'));
+    phase64CardClick(c, () => key === 'encounters' ? startCombatFromEncounter(plugin, item) : new EntityModal(plugin.app, plugin, key, item).open());
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(t)));
+    if (item.visibility) ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(item.visibility));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    if (key === 'encounters') btn(row, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, item));
+    btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, item).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`); });
+  });
+};
+
+GeneratorModal = class Phase68GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){
+    const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Full Generators & Random Tools'});
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,['Full NPC','Full Encounter','Full Loot Drop','Full Tavern / Shop','Full Travel Event','Full Rumour / Plot Hook','Local AI Prompt'],v=>this.type=v);
+    const renderOut = () => { clear(out); if (this.generated) phase67RenderBody(out, this.generated.entry); };
+    btn(contentEl,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{ this.generated=phase64FullGenerator(this.type,this.plugin.state); renderOut(); });
+    btn(contentEl,'Save Generated Entry', 'ttrpg-btn', async()=>{ if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state); upsert(this.plugin.state,this.generated.kind,this.generated.entry); this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() }); await this.plugin.saveState(); new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`); this.close(); });
+    btn(contentEl,'Save & Start Combat', 'ttrpg-btn ttrpg-primary', async()=>{ if(!this.generated || this.generated.kind !== 'encounters') this.generated=phase64FullGenerator('Full Encounter',this.plugin.state); upsert(this.plugin.state,'encounters',this.generated.entry); this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:'Full Encounter', result:generate('Full Encounter',this.plugin.state), target:'encounters', entryId:this.generated.entry.id, createdAt:Date.now() }); await startCombatFromEncounter(this.plugin, this.generated.entry); this.close(); });
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 69 — Generator Suite Cleanup + New Generators
+ * - Replace many generator cards with one suite card.
+ * - Add one-by-one and clear-all generator history controls.
+ * - Add Location/Settlement/Town/City, Fantasy Map, and Trap generators.
+ * -------------------------------------------------------------------------- */
+const PHASE69_GENERATOR_TYPES = [
+  'Full NPC',
+  'Full Encounter',
+  'Location / Settlement / Town / City',
+  'Fantasy Map',
+  'Trap',
+  'Full Loot Drop',
+  'Full Tavern / Shop',
+  'Full Travel Event',
+  'Full Rumour / Plot Hook',
+  'Local AI Prompt'
+];
+
+const phase69OldFullGenerator = phase64FullGenerator;
+function phase69PlaceWord() { return pick(['Ashford', 'Greyhaven', 'Moonbridge', 'Saltmere', 'Thornwatch', 'Emberfall', 'Briarwick', 'Dawnspire', 'Hollowmere', 'Ironford']); }
+function phase69TerrainWord() { return pick(['forest', 'marsh', 'coast', 'mountain pass', 'river valley', 'badlands', 'highland', 'old battlefield', 'trade road', 'frozen lake']); }
+function phase69SettlementEntry() {
+  const settlementType = pick(['Village', 'Town', 'City', 'Fortress', 'Outpost', 'Ruins']);
+  const name = `${phase69PlaceWord()} ${pick(['Crossing', 'Hold', 'Market', 'Gate', 'Rest', 'Hollow', 'Reach', 'Harbour'])}`;
+  return {
+    kind: 'settlements',
+    entry: {
+      id: uid('settlement'),
+      name,
+      type: settlementType,
+      summary: `Generated ${settlementType.toLowerCase()} with government, economy, districts, problems, secrets, and adventure hooks.`,
+      population: pick(['87', '240', '1,200', '4,800', '18,000']),
+      government: pick(['elder council', 'merchant governor', 'military reeve', 'hereditary lord', 'temple magistrates', 'criminal-backed mayor']),
+      economy: pick(['river trade, wool, and old toll rights', 'iron mining, charcoal burning, and caravan protection', 'fishing, salt, and smuggled luxuries', 'grain, horse breeding, and relic tourism', 'craft guilds, banking, and questionable imports']),
+      notableLocations: pick(['The Crooked Bell inn; Saint Merrow’s shrine; flooded catacombs; moonlit market', 'The Brass Orchard; East Gate barracks; Red Quill archive; old plague pit', 'Glasswater docks; Lantern Court; oath-stone plaza; abandoned observatory']),
+      laws: pick(['No weapons drawn after dusk; all magic must be declared at the gate.', 'Outsiders must register a sponsor; debt is punishable by labour.', 'Masks are mandatory during festivals; insulting the river is a fineable offence.']),
+      problems: pick(['Children have begun dreaming the same map.', 'The wells taste of copper and memory.', 'A guild election is about to become a knife fight.', 'A sealed ruin beneath town has started ringing like a bell.']),
+      factions: pick(['dock guild vs temple court', 'merchant council vs old nobility', 'miners league vs crown reeve', 'smugglers vs customs office']),
+      secret: pick(['The ruler died months ago and is being impersonated.', 'The town was built over a sleeping planar wound.', 'The local saint was a dragon in disguise.', 'The watch captain sells names to a cult.']),
+      adventureHooks: pick(['Find the missing tax collector before the duke sends soldiers.', 'Recover a stolen relic without exposing the beloved thief.', 'Map the flooded lower district before something maps you back.', 'Choose which faction receives proof of a conspiracy.']),
+      tags: ['generated', 'settlement', settlementType.toLowerCase()],
+      visibility: 'dm-only'
+    }
+  };
+}
+function phase69MapEntry() {
+  const name = `${phase69PlaceWord()} ${pick(['Marches', 'Reach', 'Vale', 'Coast', 'Wilds', 'Barony', 'Exclusion Zone'])}`;
+  const terrain = phase69TerrainWord();
+  const points = [
+    `North: ${pick(['ruined watchtower', 'witch-light fen', 'abandoned silver road'])}`,
+    `East: ${pick(['trade town', 'haunted bridge', 'salt cliffs'])}`,
+    `South: ${pick(['old battlefield', 'hidden monastery', 'sinkhole village'])}`,
+    `West: ${pick(['bandit pass', 'storm forest', 'dragon-bone ridge'])}`
+  ];
+  return {
+    kind: 'maps',
+    entry: {
+      id: uid('map'),
+      name,
+      type: 'Fantasy Region Map',
+      summary: `Generated fantasy map brief for a ${terrain} region with landmarks, routes, fog-of-war notes, and encounter zones.`,
+      scale: pick(['1 hex = 6 miles', '1 square = 5 miles', 'regional sketch, travel-day scale', 'city approach map']),
+      terrain,
+      landmarks: points.join('; '),
+      routes: pick(['Old imperial road, smugglers’ trail, river ferry, pilgrim path', 'Mountain switchback, ruined aqueduct, hunting tracks, tunnel road', 'Coastal road, reef passage, cliff stairs, lighthouse chain']),
+      encounterZones: pick(['lowland patrols; forest ambushes; ruin hazards; night road omens', 'safe farms; contested roads; cursed wetlands; dragon-sighted peaks', 'city outskirts; haunted farms; occupied fort; forbidden shrine']),
+      fogOfWar: pick(['Reveal roads first, then nearby landmarks after travel.', 'Reveal only named locations until players scout or buy maps.', 'Keep western ruins hidden until a rumour, map, or aerial view reveals them.']),
+      simpleSketch: 'N: ruins / E: settlement / S: hazard / W: wilderness / Centre: contested landmark',
+      tags: ['generated', 'map', 'fantasy-map'],
+      visibility: 'dm-only'
+    }
+  };
+}
+function phase69TrapEntry() {
+  const name = `${pick(['Serrated', 'Whispering', 'Moonlit', 'Grasping', 'Ashen', 'Glass'])} ${pick(['Threshold', 'Idol', 'Stair', 'Chest', 'Mirror', 'Bridge'])} Trap`;
+  const dc = pick([12, 13, 14, 15, 16, 17, 18]);
+  return {
+    kind: 'encounters',
+    entry: {
+      id: uid('trap'),
+      name,
+      type: 'Trap',
+      difficulty: pick(['Easy', 'Medium', 'Hard', 'Deadly']),
+      summary: 'Generated trap encounter with trigger, detection, disable method, effect, complication, and loot/clue hook.',
+      trigger: pick(['pressure plate under cracked tile', 'opening the sealed container', 'crossing the silver inlay', 'speaking a forbidden name', 'removing weight from a shrine bowl']),
+      detection: `DC ${dc} Investigation or Perception notices the mechanism, magical residue, or suspicious wear pattern.`,
+      disable: `DC ${dc + 1} thieves’ tools, Arcana, or appropriate creative solution disables or redirects it.`,
+      effect: pick(['2d10 piercing damage and restrained until freed', '3d6 fire damage and smoke fills the room', 'Wisdom save or frightened for 1 minute', 'floor collapses into a lower chamber', 'poison darts target the two nearest creatures']),
+      consequence: pick(['alerts nearby guards', 'destroys a clue if handled badly', 'splits the party across a barrier', 'starts a countdown before reinforcements arrive']),
+      clue: pick(['same maker’s mark as a known assassin', 'runes point toward a hidden patron', 'dust reveals someone bypassed it recently', 'the trap protects something the locals fear']),
+      loot: pick(['silver key, cracked emerald, and coded note', 'minor potion, old map scrap, and 22 gp', 'holy symbol, signet ring, and blackmail letter']),
+      tags: ['generated', 'trap', 'encounter'],
+      visibility: 'dm-only'
+    }
+  };
+}
+phase64FullGenerator = function phase69FullGenerator(type, state) {
+  if (type === 'Location / Settlement / Town / City' || type === 'Location' || type === 'Settlement' || type === 'Town' || type === 'City') return phase69SettlementEntry();
+  if (type === 'Fantasy Map' || type === 'Fantasy Map Generator') return phase69MapEntry();
+  if (type === 'Trap' || type === 'Trap Generator') return phase69TrapEntry();
+  return phase69OldFullGenerator(type, state);
+};
+
+generate = function phase69Generate(type, state) {
+  const generated = phase64FullGenerator(type, state);
+  const e = generated.entry || {};
+  return Object.entries(e).filter(([k]) => !['id'].includes(k)).map(([k,v]) => `**${nice(k)}:** ${Array.isArray(v) ? v.join(', ') : v}`).join('\n');
+};
+
+renderGenerators = function phase69RenderGenerators(main, plugin) {
+  header(main, 'Generators & Random Tools', 'One clean generator suite for NPCs, encounters, locations, settlements, fantasy maps, traps, loot, taverns, travel events, rumours, plot hooks, rollable tables, and local prompt packs.', [
+    { label: 'Open Generator', primary: true, onClick: () => new GeneratorModal(plugin.app, plugin).open() },
+    { label: 'Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Rollable Table', onClick: () => new RollableTableModal(plugin.app, plugin).open() }
+  ]);
+  const g = grid(main);
+  const suite = card(g, 'Generator Suite', 'Open one modal, choose the generator type, create a complete entry, then save it into the right section or launch encounters straight into combat.', '🎲', [
+    { label: 'Open Generator', primary: true, onClick: () => new GeneratorModal(plugin.app, plugin).open() }
+  ]);
+  phase64CardClick(suite, () => new GeneratorModal(plugin.app, plugin).open());
+
+  const hist = plugin.state.generatorHistory || [];
+  ce(main, 'h2', 'ttrpg-section-title', 'Generator History');
+  if (!hist.length) {
+    empty(main, 'No generated results yet.', 'Use the generator suite above and save anything worth keeping.');
+  } else {
+    const controls = ce(main, 'div', 'ttrpg-history-controls');
+    ce(controls, 'span', 'ttrpg-muted', `${hist.length} saved generated result${hist.length === 1 ? '' : 's'}.`);
+    btn(controls, 'Clear All History', 'ttrpg-btn ttrpg-danger', async () => {
+      const ok = confirm('Clear all generator history? Saved NPCs, encounters, maps, settlements, and other entries will remain. Only generator history cards are removed.');
+      if (!ok) return;
+      plugin.state.generatorHistory = [];
+      await plugin.saveState();
+      new Notice('Generator history cleared.');
+    });
+    itemHistory(main, hist, plugin);
+  }
+};
+
+itemHistory = function phase69ItemHistory(parent, hist, plugin) {
+  const g = grid(parent);
+  hist.slice(0, 50).forEach((x, index) => {
+    const c = ce(g, 'section', 'ttrpg-card ttrpg-generated-history-card');
+    const head = ce(c, 'div', 'ttrpg-card-head');
+    ce(head, 'div', 'ttrpg-card-icon', '✨');
+    ce(head, 'h3', '', x.type || 'Generated Result');
+    if (x.createdAt) ce(c, 'div', 'ttrpg-card-meta', new Date(x.createdAt).toLocaleString());
+    phase66RenderGenerated(c, x.entry || x.result || '');
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Copy Text', 'ttrpg-btn', async () => {
+      await navigator.clipboard.writeText(String(x.result || generate(x.type || 'Full NPC', plugin && plugin.state || {})));
+      new Notice('Generated text copied.');
+    });
+    if (plugin) {
+      btn(row, 'Delete History Item', 'ttrpg-btn ttrpg-danger', async () => {
+        const history = plugin.state.generatorHistory || [];
+        if (x.id) plugin.state.generatorHistory = history.filter(h => h.id !== x.id);
+        else plugin.state.generatorHistory = history.filter((_, i) => i !== index);
+        await plugin.saveState();
+        new Notice('Generator history item removed.');
+      });
+    }
+  });
+};
+
+GeneratorModal = class Phase69GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){
+    const {contentEl}=this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2',{text:'Generator Suite'});
+    ce(contentEl, 'p', 'ttrpg-muted', 'Pick one generator, create a complete entry, preview it, then save it to the matching plugin section.');
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,PHASE69_GENERATOR_TYPES,v=>{ this.type=v; this.generated=null; phase66GeneratedPreview(out, this.generated); });
+    const actions = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(actions,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{
+      this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      phase66GeneratedPreview(out, this.generated);
+    });
+    btn(actions,'Save Generated Entry', 'ttrpg-btn', async()=>{
+      if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() });
+      await this.plugin.saveState();
+      new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`);
+      this.close();
+    });
+    btn(actions,'Save & Start Combat', 'ttrpg-btn ttrpg-primary', async()=>{
+      if(!this.generated || this.generated.kind !== 'encounters') this.generated=phase64FullGenerator('Full Encounter',this.plugin.state);
+      upsert(this.plugin.state,'encounters',this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.generated.type || 'Full Encounter', result:generate('Full Encounter',this.plugin.state), entry:this.generated.entry, target:'encounters', entryId:this.generated.entry.id, createdAt:Date.now() });
+      await startCombatFromEncounter(this.plugin, this.generated.entry);
+      this.close();
+    });
+    phase66GeneratedPreview(out, this.generated);
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 70 — PC Rules Selectors + Visual Map Rendering + Scroll Bounce Fix
+ * - Adds selectable feats, spells, and inventory from bundled local data.
+ * - Adds SVG visual map rendering from Location/Settlement/City generator output.
+ * - Preserves main/sidebar scroll position across save-triggered re-renders.
+ * -------------------------------------------------------------------------- */
+
+const PHASE70_SPELLS = [
+  { id:'spell-acid-splash', name:'Acid Splash', level:'Cantrip', school:'Conjuration', classes:['Sorcerer','Wizard'], summary:'Choose one or two nearby creatures; Dexterity save or acid damage.' },
+  { id:'spell-bless', name:'Bless', level:'1', school:'Enchantment', classes:['Cleric','Paladin'], summary:'Up to three creatures add 1d4 to attacks and saving throws while concentrated.' },
+  { id:'spell-burning-hands', name:'Burning Hands', level:'1', school:'Evocation', classes:['Sorcerer','Wizard'], summary:'15-foot cone; Dexterity save for fire damage.' },
+  { id:'spell-cure-wounds', name:'Cure Wounds', level:'1', school:'Evocation', classes:['Bard','Cleric','Druid','Paladin','Ranger'], summary:'Touch a creature to restore hit points.' },
+  { id:'spell-detect-magic', name:'Detect Magic', level:'1', school:'Divination', classes:['Bard','Cleric','Druid','Paladin','Ranger','Sorcerer','Wizard'], summary:'Sense magic nearby; ritual for some casters.' },
+  { id:'spell-eldritch-blast', name:'Eldritch Blast', level:'Cantrip', school:'Evocation', classes:['Warlock'], summary:'Ranged spell attack dealing force damage.' },
+  { id:'spell-fire-bolt', name:'Fire Bolt', level:'Cantrip', school:'Evocation', classes:['Sorcerer','Wizard'], summary:'Ranged spell attack dealing fire damage; can ignite objects.' },
+  { id:'spell-guidance', name:'Guidance', level:'Cantrip', school:'Divination', classes:['Cleric','Druid'], summary:'Creature adds 1d4 to one ability check while concentrated.' },
+  { id:'spell-healing-word', name:'Healing Word', level:'1', school:'Evocation', classes:['Bard','Cleric','Druid'], summary:'Bonus-action ranged healing.' },
+  { id:'spell-mage-armor', name:'Mage Armor', level:'1', school:'Abjuration', classes:['Sorcerer','Wizard'], summary:'Target AC becomes 13 + Dexterity modifier if not wearing armor.' },
+  { id:'spell-magic-missile', name:'Magic Missile', level:'1', school:'Evocation', classes:['Sorcerer','Wizard'], summary:'Three darts automatically hit creatures you can see.' },
+  { id:'spell-minor-illusion', name:'Minor Illusion', level:'Cantrip', school:'Illusion', classes:['Bard','Sorcerer','Warlock','Wizard'], summary:'Create a sound or image illusion.' },
+  { id:'spell-sacred-flame', name:'Sacred Flame', level:'Cantrip', school:'Evocation', classes:['Cleric'], summary:'Radiant flame; Dexterity save; ignores cover bonuses.' },
+  { id:'spell-shield', name:'Shield', level:'1', school:'Abjuration', classes:['Sorcerer','Wizard'], summary:'Reaction for +5 AC until start of next turn.' },
+  { id:'spell-thaumaturgy', name:'Thaumaturgy', level:'Cantrip', school:'Transmutation', classes:['Cleric'], summary:'Small supernatural signs and dramatic effects.' },
+  { id:'spell-vicious-mockery', name:'Vicious Mockery', level:'Cantrip', school:'Enchantment', classes:['Bard'], summary:'Wisdom save or psychic damage and disadvantage on next attack.' }
+];
+
+const PHASE70_FEATS = [
+  { id:'feat-alert', name:'Alert', summary:'+5 initiative, cannot be surprised while conscious, unseen attackers gain no advantage from being unseen.' },
+  { id:'feat-athlete', name:'Athlete', summary:'Improve Strength or Dexterity by 1; climbing, jumping, and standing are easier.' },
+  { id:'feat-defensive-duelist', name:'Defensive Duelist', prerequisite:'Dexterity 13+', summary:'Use reaction with finesse weapon to add PB to AC against one melee attack.' },
+  { id:'feat-great-weapon-master', name:'Great Weapon Master', summary:'Bonus attack on crit/kill; optional heavy-weapon accuracy trade for damage.' },
+  { id:'feat-healer', name:'Healer', summary:'Use healer’s kit to stabilise and restore hit points.' },
+  { id:'feat-lucky', name:'Lucky', summary:'Gain luck points to reroll attacks, checks, saves, or enemy attacks.' },
+  { id:'feat-magic-initiate', name:'Magic Initiate', summary:'Learn two cantrips and one 1st-level spell from a selected class list.' },
+  { id:'feat-mobile', name:'Mobile', summary:'+10 ft speed; Dash ignores difficult terrain; avoid opportunity attacks from targets you attacked.' },
+  { id:'feat-observant', name:'Observant', summary:'Improve Intelligence or Wisdom by 1; read lips; +5 passive Perception/Investigation.' },
+  { id:'feat-resilient', name:'Resilient', summary:'Improve one ability by 1 and gain proficiency in that saving throw.' },
+  { id:'feat-sentinel', name:'Sentinel', summary:'Lock enemies down with opportunity attacks and reaction control.' },
+  { id:'feat-war-caster', name:'War Caster', summary:'Advantage on concentration saves, cast with hands full, and use spells for opportunity attacks.' }
+];
+
+const PHASE70_ITEMS = [
+  { id:'item-club', name:'Club', type:'Weapon', weight:2, value:'1 sp', summary:'Simple melee weapon, 1d4 bludgeoning, light.' },
+  { id:'item-dagger', name:'Dagger', type:'Weapon', weight:1, value:'2 gp', summary:'Simple melee weapon, 1d4 piercing, finesse, light, thrown.' },
+  { id:'item-handaxe', name:'Handaxe', type:'Weapon', weight:2, value:'5 gp', summary:'Simple melee weapon, 1d6 slashing, light, thrown.' },
+  { id:'item-quarterstaff', name:'Quarterstaff', type:'Weapon', weight:4, value:'2 sp', summary:'Simple melee weapon, 1d6 bludgeoning, versatile 1d8.' },
+  { id:'item-light-crossbow', name:'Light Crossbow', type:'Weapon', weight:5, value:'25 gp', summary:'Simple ranged weapon, 1d8 piercing, ammunition, loading, two-handed.' },
+  { id:'item-shortsword', name:'Shortsword', type:'Weapon', weight:2, value:'10 gp', summary:'Martial melee weapon, 1d6 piercing, finesse, light.' },
+  { id:'item-longsword', name:'Longsword', type:'Weapon', weight:3, value:'15 gp', summary:'Martial melee weapon, 1d8 slashing, versatile 1d10.' },
+  { id:'item-rapier', name:'Rapier', type:'Weapon', weight:2, value:'25 gp', summary:'Martial melee weapon, 1d8 piercing, finesse.' },
+  { id:'item-leather-armor', name:'Leather Armor', type:'Armor', weight:10, value:'10 gp', summary:'Light armor, AC 11 + Dex modifier.' },
+  { id:'item-scale-mail', name:'Scale Mail', type:'Armor', weight:45, value:'50 gp', summary:'Medium armor, AC 14 + Dex modifier max 2, stealth disadvantage.' },
+  { id:'item-chain-mail', name:'Chain Mail', type:'Armor', weight:55, value:'75 gp', summary:'Heavy armor, AC 16, Strength 13, stealth disadvantage.' },
+  { id:'item-shield', name:'Shield', type:'Armor', weight:6, value:'10 gp', summary:'+2 AC while wielded.' },
+  { id:'item-backpack', name:'Backpack', type:'Gear', weight:5, value:'2 gp', summary:'Container for adventuring gear.' },
+  { id:'item-bedroll', name:'Bedroll', type:'Gear', weight:7, value:'1 gp', summary:'Basic sleeping roll.' },
+  { id:'item-rations', name:'Rations (1 day)', type:'Gear', weight:2, value:'5 sp', summary:'Food for one day of travel.' },
+  { id:'item-rope', name:'Hempen Rope (50 ft)', type:'Gear', weight:10, value:'1 gp', summary:'Useful for climbing, hauling, tying, and terrible plans.' },
+  { id:'item-torch', name:'Torch', type:'Gear', weight:1, value:'1 cp', summary:'Burns for 1 hour, bright light 20 ft and dim 20 ft.' },
+  { id:'item-thieves-tools', name:'Thieves’ Tools', type:'Tool', weight:1, value:'25 gp', summary:'Tools for locks, traps, and other suspiciously useful work.' },
+  { id:'item-healers-kit', name:'Healer’s Kit', type:'Kit', weight:3, value:'5 gp', summary:'10 uses; stabilise a creature without a Medicine check.' },
+  { id:'item-arcane-focus', name:'Arcane Focus', type:'Focus', weight:1, value:'10 gp', summary:'Spellcasting focus for arcane casters.' },
+  { id:'item-holy-symbol', name:'Holy Symbol', type:'Focus', weight:1, value:'5 gp', summary:'Spellcasting focus for clerics and paladins.' },
+  { id:'item-druidic-focus', name:'Druidic Focus', type:'Focus', weight:1, value:'1 gp', summary:'Spellcasting focus for druids.' }
+];
+
+function phase70EnsureArrayText(value) { return textList(value).map(phase67CleanInline).filter(Boolean); }
+function phase70MergeCsv(current, added) { return uniqueList([...phase70EnsureArrayText(current), ...phase70EnsureArrayText(added)]).join(', '); }
+function phase70ItemLabel(item) { return `${item.name} — ${item.type}${item.weight ? `, ${item.weight} lb` : ''}${item.value ? `, ${item.value}` : ''}`; }
+function phase70SpellLabel(spell) { return `${spell.name} — ${spell.level === 'Cantrip' ? 'Cantrip' : `Level ${spell.level}`} ${spell.school}`; }
+function phase70FeatLabel(feat) { return `${feat.name}${feat.prerequisite ? ` — ${feat.prerequisite}` : ''}`; }
+function phase70AvailableSpellsForPc(pc) {
+  const cls = pc && pc.className;
+  const built = PHASE70_SPELLS.filter(s => !cls || s.classes.includes(cls));
+  return built.length ? built : PHASE70_SPELLS;
+}
+function phase70InventoryWeight(text) {
+  const names = phase70EnsureArrayText(text).map(x => x.replace(/\s+x\d+$/iu, '').trim().toLowerCase());
+  let total = 0;
+  names.forEach(n => {
+    const item = PHASE70_ITEMS.find(i => i.name.toLowerCase() === n || phase70ItemLabel(i).toLowerCase() === n || n.includes(i.name.toLowerCase()));
+    if (item) total += Number(item.weight || 0);
+  });
+  return total;
+}
+function phase70EnsureBuiltInCompendium(state) {
+  if (!state.entities) state.entities = {};
+  if (!Array.isArray(state.entities.compendium)) state.entities.compendium = [];
+  const existing = new Set(state.entities.compendium.map(x => x.id || x.name));
+  const entries = [
+    ...PHASE70_SPELLS.map(s => Object.assign({ type:'Spell', source:'Built-in SRD-compatible JSON seed', tags:['spell', String(s.level).toLowerCase(), ...s.classes.map(c => c.toLowerCase())] }, s)),
+    ...PHASE70_FEATS.map(f => Object.assign({ type:'Feat', source:'Built-in SRD-compatible JSON seed', tags:['feat'] }, f)),
+    ...PHASE70_ITEMS.map(i => Object.assign({ source:'Built-in SRD-compatible JSON seed', tags:['item', String(i.type).toLowerCase()] }, i))
+  ];
+  entries.forEach(e => { if (!existing.has(e.id) && !existing.has(e.name)) state.entities.compendium.push(e); });
+}
+
+const phase70OriginalOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase70Onload() {
+  await phase70OriginalOnload.call(this);
+  phase70EnsureBuiltInCompendium(this.state);
+  await this.saveData(this.state);
+};
+
+const phase70OriginalSaveState = TTRPGTablePlugin.prototype.saveState;
+TTRPGTablePlugin.prototype.saveState = async function phase70SaveStatePreserveScroll() {
+  const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+  const positions = leaves.map(leaf => {
+    const view = leaf.view;
+    const root = view && view.containerEl;
+    const main = root && root.querySelector ? root.querySelector('.ttrpg-main') : null;
+    const side = root && root.querySelector ? root.querySelector('.ttrpg-sidebar') : null;
+    return { leaf, mainTop: main ? main.scrollTop : 0, mainLeft: main ? main.scrollLeft : 0, sideTop: side ? side.scrollTop : 0 };
+  });
+  this.state.version = PLUGIN_VERSION;
+  await this.saveData(this.state);
+  this.refreshViews();
+  window.requestAnimationFrame(() => {
+    positions.forEach(pos => {
+      const view = pos.leaf.view;
+      const root = view && view.containerEl;
+      const main = root && root.querySelector ? root.querySelector('.ttrpg-main') : null;
+      const side = root && root.querySelector ? root.querySelector('.ttrpg-sidebar') : null;
+      if (main) { main.scrollTop = pos.mainTop; main.scrollLeft = pos.mainLeft; }
+      if (side) side.scrollTop = pos.sideTop;
+    });
+  });
+};
+
+function phase70AddAppendSelect(parent, label, options, toText, onAppend) {
+  let chosen = options[0] || null;
+  new Setting(parent)
+    .setName(label)
+    .addDropdown(d => {
+      options.forEach((o, idx) => {
+        const value = String(idx);
+        d.addOption(value, toText(o));
+      });
+      d.onChange(v => { chosen = options[Number(v)] || options[0]; });
+    })
+    .addButton(b => b.setButtonText('Add').onClick(() => { if (chosen) onAppend(chosen); }));
+}
+
+const phase70OldRebuildCharacterFromRules = rebuildCharacterFromRules;
+rebuildCharacterFromRules = function phase70RebuildCharacterFromRules(pc, abilityMode) {
+  const before = Object.assign({}, pc || {});
+  const next = phase70OldRebuildCharacterFromRules(pc, abilityMode);
+  next.selectedFeats = before.selectedFeats || next.selectedFeats || '';
+  next.spellsKnown = before.spellsKnown || next.spellsKnown || '';
+  next.spellsPrepared = before.spellsPrepared || next.spellsPrepared || '';
+  next.inventory = before.inventory || next.inventory || '';
+  next.equipment = before.equipment || next.equipment || '';
+  next.carriedWeight = Math.max(Number(next.carriedWeight || 0), phase70InventoryWeight(`${next.equipment || ''}, ${next.inventory || ''}`));
+  return next;
+};
+
+PCModal = class Phase70PCModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    phase70EnsureBuiltInCompendium(plugin.state);
+    this.values = rebuildCharacterFromRules(Object.assign(seedPlayerCharacter(), item || {}), 'Keep current scores');
+    this.abilityMode = this.values.abilityGeneration || 'Keep current scores';
+  }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.addClass('ttrpg-character-builder-modal');
+    contentEl.createEl('h2', { text: 'Rules-Driven Character Builder' });
+    ce(contentEl, 'p', 'ttrpg-muted', 'Selector-first character creation. Pick ancestry, class, background, feats, spells, and inventory from the built-in local rules data; manual overrides stay available where D&D inevitably gets weird.');
+
+    const basics = contentEl.createDiv('ttrpg-builder-section');
+    basics.createEl('h3', { text: '1. Identity & Core Rules' });
+    addText(basics, 'Character Name', this.values.name, v => this.values.name = v);
+    addText(basics, 'Player Name', this.values.playerName, v => this.values.playerName = v);
+    addSelect(basics, 'Ancestry / Species', this.values.race || 'Human', ancestryOptions(), v => { this.values.race = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addSelect(basics, 'Class', this.values.className || 'Fighter', classOptions(), v => { this.values.className = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addSelect(basics, 'Background', this.values.background || 'Acolyte', backgroundOptions(), v => { this.values.background = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'Level', this.values.level || 1, v => { this.values.level = Math.max(1, Math.min(20, Number(v) || 1)); this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'Experience', this.values.xp || 0, v => this.values.xp = v);
+    addSelect(basics, 'Ability Generation', this.abilityMode, ['Keep current scores', 'Standard array by class', 'Reset to standard array'], v => { this.abilityMode = v; this.values.abilityGeneration = v; this.values = rebuildCharacterFromRules(this.values, v); this.render(); });
+
+    const preview = contentEl.createDiv('ttrpg-builder-preview');
+    preview.createEl('h3', { text: 'Automation Preview' });
+    preview.createEl('pre', { text: characterAutomationSummary(this.values) });
+    const abilityGrid = preview.createDiv('ttrpg-ability-grid');
+    pcAbilities(this.values).forEach(a => { const box = abilityGrid.createDiv('ttrpg-ability-box'); box.createSpan({ cls:'ttrpg-ability-name', text:a.label }); box.createEl('strong', { cls:'ttrpg-ability-score', text:String(a.score) }); box.createSpan({ cls:'ttrpg-ability-mod', text:signed(a.mod) }); });
+
+    const scores = contentEl.createDiv('ttrpg-builder-section');
+    scores.createEl('h3', { text: '2. Ability Scores & Derived Stats' });
+    PC_RULES.abilities.forEach(a => addNumber(scores, `${a.toUpperCase()} Score`, this.values[a], v => { this.values[a] = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); this.render(); }));
+    ['ac','hpCurrent','hpMax','tempHp','heroPoints','deathSuccesses','deathFailures'].forEach(f => addNumber(scores, nice(f), this.values[f], v => this.values[f] = v));
+    addText(scores, 'Speed', this.values.speed, v => this.values.speed = v);
+    addSelect(scores, 'Inspiration', String(this.values.inspiration), ['false','true'], v => this.values.inspiration = v === 'true');
+
+    const prof = contentEl.createDiv('ttrpg-builder-section');
+    prof.createEl('h3', { text: '3. Proficiencies, Features & Feats' });
+    const klass = PC_RULES.classes[this.values.className] || PC_RULES.classes.Fighter;
+    const classSkillOptions = klass.skillChoices === 'ANY' ? allSkillNames() : (klass.skillChoices || []);
+    addTextArea(prof, `Selected Class Skills (${klass.skillPick || 2} suggested from: ${csv(classSkillOptions)})`, this.values.selectedClassSkills || classSkillOptions.slice(0, klass.skillPick || 2).join(', '), v => { this.values.selectedClassSkills = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); });
+    addTextArea(prof, 'Skill Proficiencies', this.values.skillProficiencies || '', v => this.values.skillProficiencies = v);
+    addTextArea(prof, 'Expertise', this.values.expertise || '', v => this.values.expertise = v);
+    addTextArea(prof, 'Saving Throw Proficiencies', this.values.savingThrowProficiencies || '', v => this.values.savingThrowProficiencies = v);
+    phase70AddAppendSelect(prof, 'Add Feat from Built-In Data', PHASE70_FEATS, phase70FeatLabel, feat => { this.values.selectedFeats = phase70MergeCsv(this.values.selectedFeats, feat.name); if (!String(this.values.features || '').includes(feat.name)) this.values.features = `${this.values.features || ''}\n${feat.name}: ${feat.summary}`.trim(); this.render(); });
+    addTextArea(prof, 'Selected Feats', this.values.selectedFeats || '', v => this.values.selectedFeats = v);
+    addTextArea(prof, 'Features & Traits', this.values.features || this.values.traits || '', v => { this.values.features = v; this.values.traits = v; });
+    addTextArea(prof, 'Resources / Uses Per Rest', this.values.resources || '', v => this.values.resources = v);
+
+    const magic = contentEl.createDiv('ttrpg-builder-section');
+    magic.createEl('h3', { text: '4. Spell Selection' });
+    const spellOptions = phase70AvailableSpellsForPc(this.values);
+    ce(magic, 'p', 'ttrpg-muted', `Showing ${spellOptions.length} spell option${spellOptions.length === 1 ? '' : 's'} for ${this.values.className || 'this class'} from the built-in local rules data.`);
+    phase70AddAppendSelect(magic, 'Add Known Spell / Cantrip', spellOptions, phase70SpellLabel, spell => { this.values.spellsKnown = phase70MergeCsv(this.values.spellsKnown, spell.name); this.render(); });
+    phase70AddAppendSelect(magic, 'Add Prepared Spell', spellOptions, phase70SpellLabel, spell => { this.values.spellsPrepared = phase70MergeCsv(this.values.spellsPrepared, spell.name); this.render(); });
+    addTextArea(magic, 'Known Spells / Spell Reference', this.values.spellsKnown || '', v => this.values.spellsKnown = v);
+    addTextArea(magic, 'Prepared Spells', this.values.spellsPrepared || '', v => this.values.spellsPrepared = v);
+    addTextArea(magic, 'Spell Slots', this.values.spellSlots || '', v => this.values.spellSlots = v);
+
+    const gear = contentEl.createDiv('ttrpg-builder-section');
+    gear.createEl('h3', { text: '5. Inventory from Built-In Items' });
+    phase70AddAppendSelect(gear, 'Add Item to Inventory', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.inventory = phase70MergeCsv(this.values.inventory, item.name); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    phase70AddAppendSelect(gear, 'Add Equipped / Starting Item', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    addTextArea(gear, 'Starting Equipment / Equipped Gear', this.values.equipment || '', v => { this.values.equipment = v; this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); });
+    addTextArea(gear, 'Inventory / Stored Items', this.values.inventory || '', v => { this.values.inventory = v; this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); });
+    addText(gear, 'Extra Equipment to Include in Automation', this.values.extraEquipment || '', v => this.values.extraEquipment = v);
+    ['carriedWeight','encumbranceLimit','pp','gp','ep','sp','cp'].forEach(f => addNumber(gear, nice(f), this.values[f], v => this.values[f] = v));
+
+    const story = contentEl.createDiv('ttrpg-builder-section');
+    story.createEl('h3', { text: '6. Story, Notes & Safety' });
+    ['personality','ideals','bonds','flaws','backstory','personalNotes','privateSecrets','conditions','milestones','rewards'].forEach(f => addTextArea(story, nice(f), this.values[f] || '', v => this.values[f] = v));
+
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Recalculate from Selectors', 'ttrpg-btn', () => { this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    btn(row, 'Save Character', 'ttrpg-btn ttrpg-primary', async () => {
+      this.values = rebuildCharacterFromRules(this.values, 'Keep current scores');
+      this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`);
+      upsert(this.plugin.state, 'playerCharacters', this.values);
+      this.plugin.state.activeCharacterId = this.values.id;
+      await this.plugin.saveState();
+      new Notice('Rules-built player character saved.');
+      this.close();
+    });
+  }
+};
+
+function phase70EscapeSvg(text) {
+  return String(text || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));
+}
+function phase70MapSvg(entry) {
+  const name = phase70EscapeSvg(entry.name || 'Generated Location');
+  const type = phase70EscapeSvg(entry.type || 'Settlement');
+  const terrain = phase70EscapeSvg(entry.terrain || entry.terrainType || 'mixed terrain');
+  const seed = String(entry.name || 'map').split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  const points = [
+    ['Gate', 95 + (seed % 28), 80 + (seed % 18)],
+    ['Market', 250 + (seed % 50), 130 + (seed % 40)],
+    ['Shrine', 435 - (seed % 60), 100 + (seed % 30)],
+    ['Old Road', 135 + (seed % 30), 290 - (seed % 40)],
+    ['Secret', 390 - (seed % 70), 300 - (seed % 25)]
+  ];
+  const labels = points.map(([label,x,y]) => `<g><circle cx="${x}" cy="${y}" r="9" fill="#8C2318" stroke="#2B241E" stroke-width="3"/><text x="${Number(x)+14}" y="${Number(y)+5}" font-size="16" fill="#1A1612">${phase70EscapeSvg(label)}</text></g>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-label="Generated fantasy map for ${name}">
+  <defs>
+    <linearGradient id="paper" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F2E8D0"/><stop offset="1" stop-color="#D9C89E"/></linearGradient>
+    <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="2" seed="${seed % 97}"/><feColorMatrix type="saturate" values="0.2"/><feBlend mode="multiply" in2="SourceGraphic"/></filter>
+  </defs>
+  <rect width="640" height="420" rx="24" fill="url(#paper)"/>
+  <path d="M52,318 C105,250 86,139 167,91 C256,38 377,44 476,83 C566,118 599,207 566,297 C529,397 386,389 292,369 C196,349 118,377 52,318 Z" fill="#c9b77f" stroke="#704214" stroke-width="4" opacity="0.75"/>
+  <path d="M69,314 C126,274 180,268 234,284 C297,304 362,342 535,294" fill="none" stroke="#324A5F" stroke-width="14" opacity="0.45"/>
+  <path d="M80,212 C168,192 233,196 315,218 C401,241 482,231 560,205" fill="none" stroke="#704214" stroke-width="7" stroke-dasharray="12 10" opacity="0.65"/>
+  <path d="M458,54 L485,104 L537,111 L499,147 L509,199 L461,174 L415,199 L423,146 L385,109 L438,102 Z" fill="#3A5F41" opacity="0.38" stroke="#2B241E"/>
+  <path d="M124,96 l20,-38 l22,40 l-21,-8 z M162,112 l25,-48 l25,48 l-26,-11 z" fill="#324A5F" opacity="0.5" stroke="#2B241E"/>
+  ${labels}
+  <text x="320" y="38" text-anchor="middle" font-size="26" font-family="Georgia, serif" font-weight="700" fill="#704214">${name}</text>
+  <text x="320" y="64" text-anchor="middle" font-size="14" font-family="Georgia, serif" fill="#1A1612">${type} • ${terrain}</text>
+  <text x="34" y="392" font-size="13" fill="#1A1612">Procedural sketch: meant for table prep, fog-of-war notes, and quick regional orientation.</text>
+</svg>`;
+}
+function phase70RenderMapPreview(parent, entry) {
+  if (!entry || !entry.visualMapSvg) return;
+  const wrap = ce(parent, 'div', 'ttrpg-map-preview');
+  wrap.innerHTML = entry.visualMapSvg;
+}
+function phase70MakeMapEntryFromLocation(entry) {
+  const svg = entry.visualMapSvg || phase70MapSvg(entry);
+  return {
+    id: uid('map'),
+    name: `${entry.name || 'Generated Location'} Visual Map`,
+    type: 'Rendered Fantasy Map',
+    summary: `Visual SVG map rendered from ${entry.name || 'generated location'} details.`,
+    sourceLocationId: entry.id,
+    visualMapSvg: svg,
+    terrain: entry.terrain || entry.terrainType || '',
+    tags: ['generated', 'map', 'svg-map'],
+    visibility: entry.visibility || 'dm-only'
+  };
+}
+
+const phase70OldPhase69MapEntry = phase69MapEntry;
+phase69MapEntry = function phase70MapEntry() {
+  const generated = phase70OldPhase69MapEntry();
+  generated.entry.visualMapSvg = phase70MapSvg(generated.entry);
+  generated.entry.summary = `${generated.entry.summary || 'Generated map.'} Includes an inline SVG visual map preview.`;
+  return generated;
+};
+const phase70OldSettlementEntry = phase69SettlementEntry;
+phase69SettlementEntry = function phase70SettlementEntry() {
+  const generated = phase70OldSettlementEntry();
+  generated.entry.canRenderVisualMap = true;
+  return generated;
+};
+
+const phase70OldGeneratedPreview = phase66GeneratedPreview;
+phase66GeneratedPreview = function phase70GeneratedPreview(parent, generated) {
+  clear(parent);
+  if (!generated) {
+    ce(parent, 'p', 'ttrpg-muted', 'Generate a complete entry to preview it here.');
+    return;
+  }
+  const cardEl = ce(parent, 'section', 'ttrpg-card ttrpg-generated-preview-card');
+  const entry = generated.entry || {};
+  const head = ce(cardEl, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', entry.visualMapSvg ? '🗺️' : '✨');
+  ce(head, 'h3', '', entry.name || generated.type || 'Generated Entry');
+  phase70RenderMapPreview(cardEl, entry);
+  phase66RenderGenerated(cardEl, entry);
+};
+
+const phase70OldCard = card;
+card = function phase70Card(parent, title, text, icon, actions) {
+  const c = phase70OldCard(parent, title, text, icon, actions);
+  if (text && typeof text === 'object' && text.visualMapSvg && !c.querySelector('.ttrpg-map-preview')) {
+    const head = c.querySelector('.ttrpg-card-head');
+    const preview = ce(c, 'div', 'ttrpg-map-preview');
+    preview.innerHTML = text.visualMapSvg;
+    if (head && head.nextSibling) c.insertBefore(preview, head.nextSibling); else c.appendChild(preview);
+  }
+  return c;
+};
+
+GeneratorModal = class Phase70GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){ this.render(); }
+  render(){
+    const {contentEl}=this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2',{text:'Generator Suite'});
+    ce(contentEl, 'p', 'ttrpg-muted', 'Pick one generator, create a complete entry, preview it, then save it. Location/settlement results can render an inline SVG visual map. No external image service required.');
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,PHASE69_GENERATOR_TYPES,v=>{ this.type=v; this.generated=null; this.render(); });
+    const actions = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(actions,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{ this.generated=phase64FullGenerator(this.type,this.plugin.state); phase66GeneratedPreview(out, this.generated); });
+    if (this.type === 'Location / Settlement / Town / City' || this.type === 'Fantasy Map') {
+      btn(actions,'Render Visual Map', 'ttrpg-btn',()=>{
+        if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+        this.generated.entry.visualMapSvg = phase70MapSvg(this.generated.entry);
+        phase66GeneratedPreview(out, this.generated);
+      });
+      btn(actions,'Save Location + Map', 'ttrpg-btn', async()=>{
+        if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+        this.generated.entry.visualMapSvg = this.generated.entry.visualMapSvg || phase70MapSvg(this.generated.entry);
+        upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+        const mapEntry = this.generated.kind === 'maps' ? this.generated.entry : phase70MakeMapEntryFromLocation(this.generated.entry);
+        upsert(this.plugin.state,'maps',mapEntry);
+        this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() });
+        await this.plugin.saveState();
+        new Notice('Generated location and visual map saved.');
+        this.close();
+      });
+    }
+    btn(actions,'Save Generated Entry', 'ttrpg-btn', async()=>{
+      if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() });
+      await this.plugin.saveState();
+      new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`);
+      this.close();
+    });
+    btn(actions,'Save & Start Combat', 'ttrpg-btn ttrpg-primary', async()=>{
+      if(!this.generated || this.generated.kind !== 'encounters') this.generated=phase64FullGenerator('Full Encounter',this.plugin.state);
+      upsert(this.plugin.state,'encounters',this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.generated.type || 'Full Encounter', result:generate('Full Encounter',this.plugin.state), entry:this.generated.entry, target:'encounters', entryId:this.generated.entry.id, createdAt:Date.now() });
+      await startCombatFromEncounter(this.plugin, this.generated.entry);
+      this.close();
+    });
+    phase66GeneratedPreview(out, this.generated);
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 74 — Campaign Wizard field alignment + portraits
+ * Scope: Campaign Builder Wizard visual consistency, plus portrait image paths
+ * for character/deity/entity cards and notes.
+ * -------------------------------------------------------------------------- */
+function phase74PortraitSrc(plugin, rawPath) {
+  const value = String(rawPath || '').trim();
+  if (!value) return '';
+  if (/^(https?:|app:|file:|data:image\/)/i.test(value)) return value;
+  try {
+    const file = plugin.app.vault.getAbstractFileByPath(normalizePath(value));
+    if (file && plugin.app.vault.getResourcePath) return plugin.app.vault.getResourcePath(file);
+  } catch (e) {}
+  return value;
+}
+function phase74AddPortraitField(parent, plugin, values, label) {
+  const setting = new Setting(parent).setName(label || 'Portrait Image Path').setDesc('Vault image path, attachment path, or image URL. Example: Assets/Portraits/NPC.png');
+  setting.settingEl.addClass('ttrpg-portrait-field');
+  setting.addText(t => t.setPlaceholder('Assets/Portraits/name.png').setValue(String(values.portraitPath || values.imagePath || '')).onChange(v => {
+    values.portraitPath = v;
+    values.imagePath = values.imagePath || v;
+    const preview = parent.querySelector('.ttrpg-portrait-preview[data-portrait-preview="true"]');
+    if (preview) preview.remove();
+    phase74RenderPortraitPreview(parent, plugin, values.portraitPath);
+  }));
+  phase74RenderPortraitPreview(parent, plugin, values.portraitPath || values.imagePath);
+}
+function phase74RenderPortraitPreview(parent, plugin, rawPath) {
+  const src = phase74PortraitSrc(plugin, rawPath);
+  if (!src) return;
+  const wrap = parent.createDiv('ttrpg-portrait-preview');
+  wrap.dataset.portraitPreview = 'true';
+  const img = wrap.createEl('img');
+  img.src = src;
+  img.alt = 'Portrait preview';
+  img.onerror = () => wrap.remove();
+}
+function phase74ApplyWizardFieldStyle(setting) {
+  if (setting && setting.settingEl) setting.settingEl.addClass('ttrpg-wizard-field');
+  return setting;
+}
+CampaignWizardModal.prototype.addWizardText = function(parent, label, key) {
+  const setting = phase74ApplyWizardFieldStyle(new Setting(parent).setName(label));
+  setting.addText(t => t.setValue(String(this.values[key] ?? '')).onChange(v => this.values[key] = v));
+};
+CampaignWizardModal.prototype.addWizardTextArea = function(parent, label, key, help) {
+  const setting = phase74ApplyWizardFieldStyle(new Setting(parent).setName(label));
+  if (help) setting.setDesc(help);
+  setting.addTextArea(t => {
+    t.setValue(String(this.values[key] ?? '')).onChange(v => this.values[key] = v);
+    t.inputEl.rows = 4;
+    t.inputEl.addClass('ttrpg-textarea');
+  });
+};
+
+const phase74OriginalCard = card;
+card = function(parent, title, text, icon, actions) {
+  return phase74OriginalCard(parent, title, text, icon, actions);
+};
+const phase74OriginalItemCards = itemCards;
+itemCards = function(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const items = getStore(state, key).filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(item => {
+    const c = card(g, item.name || item.title || ENTITY_LABELS[key], item.summary || item.description || item.notes || item.type || '', opts && opts.icon || '📜');
+    const portrait = item.portraitPath || item.imagePath;
+    if (portrait) {
+      const src = phase74PortraitSrc(plugin, portrait);
+      if (src) {
+        const img = c.createEl('img', { cls: 'ttrpg-card-portrait' });
+        img.src = src;
+        img.alt = `${item.name || item.title || 'Entry'} portrait`;
+        img.onerror = () => img.remove();
+      }
+    }
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    const modalClass = key === 'npcs' ? NPCModal : key === 'creatures' ? CreatureModal : key === 'quests' ? QuestModal : key === 'encounters' ? EncounterModal : key === 'projects' ? ProjectModal : key === 'sessions' ? SessionModal : key === 'secrets' ? SecretModal : key === 'maps' ? MapModal : key === 'deities' ? DeityPantheonModal : EntityModal;
+    btn(row, 'Open', 'ttrpg-btn', () => new modalClass(plugin.app, plugin, key === 'deities' || key === 'npcs' || key === 'creatures' || key === 'quests' || key === 'encounters' || key === 'projects' || key === 'sessions' || key === 'secrets' || key === 'maps' ? item : key, key === 'deities' || key === 'npcs' || key === 'creatures' || key === 'quests' || key === 'encounters' || key === 'projects' || key === 'sessions' || key === 'secrets' || key === 'maps' ? undefined : item).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key]} deleted.`); });
+  });
+};
+
+const phase74OriginalMdEntity = mdEntity;
+mdEntity = function(key, item) {
+  const raw = phase74OriginalMdEntity(key, item);
+  const portrait = item && (item.portraitPath || item.imagePath);
+  if (!portrait) return raw;
+  return raw.replace(/(# .+\n)/, `$1\n![[${String(portrait).trim()}]]\n`);
+};
+
+const phase74OriginalEntityOpen = EntityModal.prototype.onOpen;
+EntityModal.prototype.onOpen = function() {
+  phase74OriginalEntityOpen.call(this);
+  const h2 = this.contentEl.querySelector('h2');
+  if (h2 && !this.contentEl.querySelector('.ttrpg-portrait-field')) {
+    const anchor = h2.nextSibling;
+    const holder = this.contentEl.createDiv();
+    this.contentEl.insertBefore(holder, anchor);
+    phase74AddPortraitField(holder, this.plugin, this.values, 'Portrait / Image Path');
+  }
+};
+
+const phase74OriginalNPCOpen = NPCModal.prototype.onOpen;
+NPCModal.prototype.onOpen = function() {
+  phase74OriginalNPCOpen.call(this);
+  const h2 = this.contentEl.querySelector('h2');
+  if (h2 && !this.contentEl.querySelector('.ttrpg-portrait-field')) {
+    const holder = this.contentEl.createDiv();
+    this.contentEl.insertBefore(holder, h2.nextSibling);
+    phase74AddPortraitField(holder, this.plugin, this.values, 'NPC Portrait Image Path');
+  }
+};
+
+const phase74OriginalDeityOpen = DeityPantheonModal.prototype.onOpen;
+DeityPantheonModal.prototype.onOpen = function() {
+  phase74OriginalDeityOpen.call(this);
+  const h2 = this.contentEl.querySelector('h2');
+  if (h2 && !this.contentEl.querySelector('.ttrpg-portrait-field')) {
+    const holder = this.contentEl.createDiv();
+    this.contentEl.insertBefore(holder, h2.nextSibling);
+    phase74AddPortraitField(holder, this.plugin, this.values, 'Deity / Pantheon Portrait Image Path');
+  }
+};
+
+if (typeof PCModal !== 'undefined' && PCModal.prototype && PCModal.prototype.render) {
+  const phase74OriginalPCRender = PCModal.prototype.render;
+  PCModal.prototype.render = function() {
+    phase74OriginalPCRender.call(this);
+    const h2 = this.contentEl.querySelector('h2');
+    if (h2 && !this.contentEl.querySelector('.ttrpg-portrait-field')) {
+      const holder = this.contentEl.createDiv();
+      this.contentEl.insertBefore(holder, h2.nextSibling);
+      phase74AddPortraitField(holder, this.plugin, this.values, 'PC Portrait Image Path');
+    }
+  };
+}
+
+
+function ttrpgClassThemeClass(state) {
+  try {
+    const pcs = (state && state.players) || [];
+    const pc = pcs.find(p => p.id === state.activeCharacterId) || pcs[0];
+    const raw = String((pc && (pc.className || pc.class || pc.notes)) || '').toLowerCase();
+    const match = ['barbarian','bard','cleric','druid','fighter','monk','paladin','ranger','rogue','sorcerer','warlock','wizard','artificer'].find(c => raw.includes(c));
+    return match ? `ttrpg-class-${match}` : '';
+  } catch (_) { return ''; }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 76 — Form Uniformity, Acronyms, Spell-Gating, Stat Rolling & Overflow
+ * -------------------------------------------------------------------------- */
+
+const PHASE76_ACRONYMS = new Set(['ac','hp','xp','pp','gp','ep','sp','cp','pb','dc','cr']);
+function phase76TitleLabel(key) {
+  const raw = String(key || '').trim();
+  const lower = raw.toLowerCase();
+  if (PHASE76_ACRONYMS.has(lower)) return lower.toUpperCase();
+  const spaced = raw.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+  return spaced.split(/\s+/).map(part => PHASE76_ACRONYMS.has(part.toLowerCase()) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+nice = phase76TitleLabel;
+
+const PHASE76_FULL_CASTER_CLASSES = new Set(['Bard','Cleric','Druid','Sorcerer','Warlock','Wizard','Artificer']);
+const PHASE76_HALF_CASTER_CLASSES = new Set(['Paladin','Ranger']);
+const PHASE76_SPELL_SUBCLASSES = new Set(['Arcane Trickster','Eldritch Knight']);
+const PHASE76_SPELL_FEATS = ['Magic Initiate','Fey Touched','Shadow Touched','Telekinetic','Telepathic','Ritual Caster','War Caster'];
+function phase76HasSpellAccess(pc) {
+  const cls = String((pc && pc.className) || '').trim();
+  const level = Number((pc && pc.level) || 1);
+  const sub = String((pc && (pc.subclass || pc.subclassName)) || '').trim();
+  const feats = String((pc && pc.selectedFeats) || '').toLowerCase();
+  if (PHASE76_FULL_CASTER_CLASSES.has(cls)) return true;
+  if (PHASE76_HALF_CASTER_CLASSES.has(cls)) return level >= 2;
+  if (PHASE76_SPELL_SUBCLASSES.has(sub)) return level >= 3;
+  return PHASE76_SPELL_FEATS.some(f => feats.includes(f.toLowerCase()));
+}
+function phase76SpellSourceClass(pc) {
+  const cls = String((pc && pc.className) || '').trim();
+  if (PHASE76_FULL_CASTER_CLASSES.has(cls) || PHASE76_HALF_CASTER_CLASSES.has(cls)) return cls;
+  const sub = String((pc && (pc.subclass || pc.subclassName)) || '').trim();
+  if (sub === 'Arcane Trickster' || sub === 'Eldritch Knight') return 'Wizard';
+  const source = String((pc && pc.spellSourceClass) || '').trim();
+  return source || '';
+}
+phase70AvailableSpellsForPc = function phase76AvailableSpellsForPc(pc) {
+  if (!phase76HasSpellAccess(pc)) return [];
+  const source = phase76SpellSourceClass(pc);
+  if (!source) return PHASE70_SPELLS;
+  const filtered = PHASE70_SPELLS.filter(s => s.classes.includes(source));
+  return filtered;
+};
+function phase76RollDie(sides) { return Math.floor(Math.random() * sides) + 1; }
+function phase76RollAbilityScore() {
+  const rolls = [phase76RollDie(6), phase76RollDie(6), phase76RollDie(6), phase76RollDie(6)].sort((a,b)=>b-a);
+  return { score: rolls.slice(0,3).reduce((a,b)=>a+b,0), rolls };
+}
+function phase76RollAbilityArray() {
+  const detail = {};
+  const scores = {};
+  PC_RULES.abilities.forEach(a => { const r = phase76RollAbilityScore(); scores[a] = r.score; detail[a] = r.rolls.join(', '); });
+  return { scores, detail };
+}
+function phase76ApplyRolledStats(pc) {
+  const rolled = phase76RollAbilityArray();
+  PC_RULES.abilities.forEach(a => pc[a] = rolled.scores[a]);
+  pc.rolledStatsDetail = Object.entries(rolled.detail).map(([a,v]) => `${a.toUpperCase()}: ${pc[a]} (${v})`).join('\n');
+  return pc;
+}
+
+PCModal = class Phase76PCModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    phase70EnsureBuiltInCompendium(plugin.state);
+    this.values = rebuildCharacterFromRules(Object.assign(seedPlayerCharacter(), item || {}), 'Keep current scores');
+    this.abilityMode = this.values.abilityGeneration || 'Keep current scores';
+  }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.addClass('ttrpg-character-builder-modal');
+    contentEl.createEl('h2', { text: 'Rules-Driven Character Builder' });
+    ce(contentEl, 'p', 'ttrpg-muted', 'Selector-first character creation. Pick ancestry, class, subclass, background, feats, spells, and inventory from the built-in local rules data; manual overrides stay available where D&D inevitably gets weird.');
+
+    const basics = contentEl.createDiv('ttrpg-builder-section');
+    basics.createEl('h3', { text: '1. Identity & Core Rules' });
+    addText(basics, 'Character Name', this.values.name, v => this.values.name = v);
+    addText(basics, 'Player Name', this.values.playerName, v => this.values.playerName = v);
+    addSelect(basics, 'Ancestry / Species', this.values.race || 'Human', ancestryOptions(), v => { this.values.race = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addSelect(basics, 'Class', this.values.className || 'Fighter', classOptions(), v => { this.values.className = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    const subclassOptions = ['None','Berserker','College of Lore','Life Domain','Circle of the Land','Champion','Eldritch Knight','Way of the Open Hand','Oath of Devotion','Hunter','Arcane Trickster','Draconic Bloodline','Fiend Patron','School of Evocation','Alchemist'];
+    addSelect(basics, 'Subclass / Archetype', this.values.subclass || 'None', subclassOptions, v => { this.values.subclass = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); this.render(); });
+    addSelect(basics, 'Background', this.values.background || 'Acolyte', backgroundOptions(), v => { this.values.background = v; this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'Level', this.values.level || 1, v => { this.values.level = Math.max(1, Math.min(20, Number(v) || 1)); this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.render(); });
+    addNumber(basics, 'XP', this.values.xp || 0, v => this.values.xp = v);
+    addSelect(basics, 'Ability Generation', this.abilityMode, ['Keep current scores', 'Standard array by class', 'Reset to standard array', 'Roll 4d6 drop lowest'], v => {
+      this.abilityMode = v;
+      this.values.abilityGeneration = v;
+      if (v === 'Roll 4d6 drop lowest') this.values = phase76ApplyRolledStats(this.values);
+      this.values = rebuildCharacterFromRules(this.values, v === 'Roll 4d6 drop lowest' ? 'Keep current scores' : v);
+      this.render();
+    });
+    btn(basics, 'Roll Stats Now', 'ttrpg-btn', () => { this.values = phase76ApplyRolledStats(this.values); this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); this.render(); });
+    if (this.values.rolledStatsDetail) ce(basics, 'pre', 'ttrpg-roll-detail', this.values.rolledStatsDetail);
+
+    const preview = contentEl.createDiv('ttrpg-builder-preview');
+    preview.createEl('h3', { text: 'Automation Preview' });
+    preview.createEl('pre', { text: characterAutomationSummary(this.values) });
+    const abilityGrid = preview.createDiv('ttrpg-ability-grid');
+    pcAbilities(this.values).forEach(a => { const box = abilityGrid.createDiv('ttrpg-ability-box'); box.createSpan({ cls:'ttrpg-ability-name', text:a.label }); box.createEl('strong', { cls:'ttrpg-ability-score', text:String(a.score) }); box.createSpan({ cls:'ttrpg-ability-mod', text:signed(a.mod) }); });
+
+    const scores = contentEl.createDiv('ttrpg-builder-section');
+    scores.createEl('h3', { text: '2. Ability Scores & Derived Stats' });
+    PC_RULES.abilities.forEach(a => addNumber(scores, `${a.toUpperCase()} Score`, this.values[a], v => { this.values[a] = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); this.render(); }));
+    ['ac','hpCurrent','hpMax','tempHp','heroPoints','deathSuccesses','deathFailures'].forEach(f => addNumber(scores, nice(f), this.values[f], v => this.values[f] = v));
+    addText(scores, 'Speed', this.values.speed, v => this.values.speed = v);
+    addSelect(scores, 'Inspiration', String(this.values.inspiration), ['false','true'], v => this.values.inspiration = v === 'true');
+
+    const prof = contentEl.createDiv('ttrpg-builder-section');
+    prof.createEl('h3', { text: '3. Proficiencies, Features & Feats' });
+    const klass = PC_RULES.classes[this.values.className] || PC_RULES.classes.Fighter;
+    const classSkillOptions = klass.skillChoices === 'ANY' ? allSkillNames() : (klass.skillChoices || []);
+    addTextArea(prof, `Selected Class Skills (${klass.skillPick || 2} suggested from: ${csv(classSkillOptions)})`, this.values.selectedClassSkills || classSkillOptions.slice(0, klass.skillPick || 2).join(', '), v => { this.values.selectedClassSkills = v; this.values = rebuildCharacterFromRules(this.values, 'Keep current scores'); });
+    addTextArea(prof, 'Skill Proficiencies', this.values.skillProficiencies || '', v => this.values.skillProficiencies = v);
+    addTextArea(prof, 'Expertise', this.values.expertise || '', v => this.values.expertise = v);
+    addTextArea(prof, 'Saving Throw Proficiencies', this.values.savingThrowProficiencies || '', v => this.values.savingThrowProficiencies = v);
+    phase70AddAppendSelect(prof, 'Add Feat from Built-In Data', PHASE70_FEATS, phase70FeatLabel, feat => { this.values.selectedFeats = phase70MergeCsv(this.values.selectedFeats, feat.name); if (!String(this.values.features || '').includes(feat.name)) this.values.features = `${this.values.features || ''}\n${feat.name}: ${feat.summary}`.trim(); this.render(); });
+    addTextArea(prof, 'Selected Feats', this.values.selectedFeats || '', v => this.values.selectedFeats = v);
+    addTextArea(prof, 'Features & Traits', this.values.features || this.values.traits || '', v => { this.values.features = v; this.values.traits = v; });
+    addTextArea(prof, 'Resources / Uses Per Rest', this.values.resources || '', v => this.values.resources = v);
+
+    const magic = contentEl.createDiv('ttrpg-builder-section');
+    magic.createEl('h3', { text: '4. Spell Selection' });
+    if (phase76HasSpellAccess(this.values)) {
+      if (!PHASE76_FULL_CASTER_CLASSES.has(this.values.className) && !PHASE76_HALF_CASTER_CLASSES.has(this.values.className)) {
+        addSelect(magic, 'Spell Source Class', this.values.spellSourceClass || 'Wizard', ['Bard','Cleric','Druid','Sorcerer','Warlock','Wizard'], v => { this.values.spellSourceClass = v; this.render(); });
+      }
+      const spellOptions = phase70AvailableSpellsForPc(this.values);
+      ce(magic, 'p', 'ttrpg-muted', `Showing ${spellOptions.length} spell option${spellOptions.length === 1 ? '' : 's'} for ${phase76SpellSourceClass(this.values) || this.values.className || 'this spell source'} from the built-in local rules data.`);
+      phase70AddAppendSelect(magic, 'Add Known Spell / Cantrip', spellOptions, phase70SpellLabel, spell => { this.values.spellsKnown = phase70MergeCsv(this.values.spellsKnown, spell.name); this.render(); });
+      phase70AddAppendSelect(magic, 'Add Prepared Spell', spellOptions, phase70SpellLabel, spell => { this.values.spellsPrepared = phase70MergeCsv(this.values.spellsPrepared, spell.name); this.render(); });
+      addTextArea(magic, 'Known Spells / Spell Reference', this.values.spellsKnown || '', v => this.values.spellsKnown = v);
+      addTextArea(magic, 'Prepared Spells', this.values.spellsPrepared || '', v => this.values.spellsPrepared = v);
+      addTextArea(magic, 'Spell Slots', this.values.spellSlots || '', v => this.values.spellSlots = v);
+    } else {
+      ce(magic, 'p', 'ttrpg-muted', 'Spell selection is locked because this character does not currently have a spellcasting class, spellcasting subclass, or spell-granting feat. Take a spellcasting option first, then this section opens.');
+      if (this.values.spellsKnown || this.values.spellsPrepared) ce(magic, 'p', 'ttrpg-warning', 'Existing spell text is preserved, but new spell selection is disabled until spell access is valid.');
+    }
+
+    const gear = contentEl.createDiv('ttrpg-builder-section');
+    gear.createEl('h3', { text: '5. Inventory from Built-In Items' });
+    phase70AddAppendSelect(gear, 'Add Item to Inventory', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.inventory = phase70MergeCsv(this.values.inventory, item.name); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    phase70AddAppendSelect(gear, 'Add Equipped / Starting Item', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    addTextArea(gear, 'Starting Equipment / Equipped Gear', this.values.equipment || '', v => { this.values.equipment = v; this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); });
+    addTextArea(gear, 'Inventory / Stored Items', this.values.inventory || '', v => { this.values.inventory = v; this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); });
+    addText(gear, 'Extra Equipment to Include in Automation', this.values.extraEquipment || '', v => this.values.extraEquipment = v);
+    ['carriedWeight','encumbranceLimit','pp','gp','ep','sp','cp'].forEach(f => addNumber(gear, nice(f), this.values[f], v => this.values[f] = v));
+
+    const story = contentEl.createDiv('ttrpg-builder-section');
+    story.createEl('h3', { text: '6. Story, Notes & Safety' });
+    ['personality','ideals','bonds','flaws','backstory','personalNotes','privateSecrets','conditions','milestones','rewards'].forEach(f => addTextArea(story, nice(f), this.values[f] || '', v => this.values[f] = v));
+
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Recalculate from Selectors', 'ttrpg-btn', () => { this.values = rebuildCharacterFromRules(this.values, this.abilityMode); this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`); this.render(); });
+    btn(row, 'Save Character', 'ttrpg-btn ttrpg-primary', async () => {
+      this.values = rebuildCharacterFromRules(this.values, 'Keep current scores');
+      this.values.carriedWeight = phase70InventoryWeight(`${this.values.equipment || ''}, ${this.values.inventory || ''}`);
+      upsert(this.plugin.state, 'playerCharacters', this.values);
+      this.plugin.state.activeCharacterId = this.values.id;
+      await this.plugin.saveState();
+      new Notice('Rules-built player character saved.');
+      this.close();
+    });
+  }
+};
+
+const PHASE76_OLD_NPC_OPEN = NPCModal.prototype.onOpen;
+NPCModal.prototype.onOpen = function phase76NPCOpenWithRollStats() {
+  PHASE76_OLD_NPC_OPEN.call(this);
+  const buttons = this.contentEl.querySelector('.ttrpg-modal-buttons') || this.contentEl;
+  const rollButton = btn(buttons, 'Roll NPC Stats', 'ttrpg-btn', () => {
+    const rolled = phase76RollAbilityArray();
+    PC_RULES.abilities.forEach(a => { this.values[a] = rolled.scores[a]; });
+    this.values.rolledStatsDetail = Object.entries(rolled.detail).map(([a,v]) => `${a.toUpperCase()}: ${this.values[a]} (${v})`).join('\n');
+    this.onOpen();
+  });
+  if (this.values.rolledStatsDetail) {
+    const pre = ce(this.contentEl, 'pre', 'ttrpg-roll-detail', `Rolled NPC stats:\n${this.values.rolledStatsDetail}`);
+    const saveRow = this.contentEl.querySelector('.ttrpg-modal-buttons');
+    if (saveRow && pre) this.contentEl.insertBefore(pre, saveRow);
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 78 — Template-Driven Note Generation + Campaign Wizard Home Rules
+ * Applies clean internal Markdown templates to wizard/generated notes, removes
+ * backend-looking scaffolding, and creates player-facing home-rule handouts.
+ * -------------------------------------------------------------------------- */
+
+function phase78SplitValues(value) {
+  return String(value || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+function phase78Slug(value) { return slugify(value || 'Untitled'); }
+function phase78CampaignRoot(plugin, campaign) {
+  return normalizePath(`${plugin.state.settings?.campaignFolder || 'TTRPG/Campaigns'}/${phase78Slug(campaign?.name || 'Campaign')}`);
+}
+function phase78Yaml(value) {
+  return String(value ?? '').replace(/\n/g, ' ').replace(/:/g, ' -').trim();
+}
+function phase78Tags(tags) {
+  return `[${safeArray(tags).map(t => `"${String(t).replace(/"/g, '\\"')}"`).join(', ')}]`;
+}
+function phase78Title(value) {
+  return String(value || 'Untitled').trim();
+}
+function phase78BodyFallback(item) {
+  return item?.summary || item?.description || item?.notes || item?.content || 'Add details here.';
+}
+function phase78CampaignLink(campaign) {
+  return campaign?.name ? `[[${phase78Slug(campaign.name)}|${campaign.name}]]` : '';
+}
+function phase78TemplateFor(kind, item, campaign, extra) {
+  const name = phase78Title(item?.name || item?.title || extra?.title || ENTITY_LABELS[kind] || 'Entry');
+  const visibility = item?.visibility || extra?.visibility || 'dm-only';
+  const tags = Array.from(new Set([...(safeArray(item?.tags)), 'ttrpg', String(kind || 'entry').replace(/s$/, '')].filter(Boolean)));
+  const portrait = item?.portrait || item?.portraitPath || item?.imagePath || '';
+  const campaignLine = phase78CampaignLink(campaign);
+  const yaml = `---\nttrpg_type: ${phase78Yaml(kind)}\nid: ${phase78Yaml(item?.id || uid(kind || 'entry'))}\ncampaign: ${phase78Yaml(campaign?.name || '')}\ncampaign_id: ${phase78Yaml(campaign?.id || item?.campaignId || '')}\nstatus: draft\nvisibility: ${phase78Yaml(visibility)}\ntags: ${phase78Tags(tags)}\n---`;
+  const header = `# ${name}\n\n${portrait ? `![[${portrait}]]\n\n` : ''}${campaignLine ? `> [!info] Campaign\n> ${campaignLine}\n\n` : ''}`;
+  const summary = phase78BodyFallback(item);
+  const gm = `> [!gm-direction] DM Notes\n> Secrets, rulings, consequences, and prep notes go here. Keep player-safe text separate.\n`;
+  const player = `> [!readaloud] Player-Facing Notes\n> Add only information the players may safely see.\n`;
+  if (kind === 'campaigns') {
+    return `${yaml}\n\n${header}## Campaign Pitch\n\n${summary}\n\n## Theme & Level Range\n\n- **Theme:** ${item?.theme || ''}\n- **Level Range:** ${item?.levelRange || ''}\n- **World:** ${item?.worldName || ''}\n\n## Dashboard Links\n\n- [[01 World & Lore]]\n- [[02 Geography & Maps]]\n- [[03 NPCs & Creatures]]\n- [[04 Adventures & Quests]]\n- [[05 Encounters]]\n- [[06 Rules]]\n- [[07 Downtime & Bases]]\n- [[08 Sessions]]\n- [[09 Secrets]]\n- [[10 Player Packet]]\n\n## Session Prep\n\n- Current problem:\n- Next likely scene:\n- Open loops:\n`;
+  }
+  if (kind === 'deities' || kind === 'powers') {
+    return `${yaml}\n\n${header}## Divine Profile\n\n- **Title:** ${item?.title || ''}\n- **Domains:** ${item?.domains || ''}\n- **Symbol:** ${item?.symbol || ''}\n- **Alignment / Ethos:** ${item?.alignment || ''}\n- **Pantheon:** ${item?.pantheon || ''}\n\n## Worship & Dogma\n\n${summary}\n\n## Churches, Relics & Rites\n\n- Churches:\n- Relics:\n- Holy days:\n- Taboos:\n\n## Relationships\n\n- Allies:\n- Enemies:\n- Rival powers:\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'factions') {
+    return `${yaml}\n\n${header}## Faction Overview\n\n${summary}\n\n## Structure\n\n- **Type:** ${item?.type || ''}\n- **Leader:** ${item?.leader || ''}\n- **Headquarters:** ${item?.location || ''}\n- **Resources:** ${item?.resources || ''}\n\n## Goals\n\n- Public goal:\n- Hidden goal:\n- Current pressure:\n\n## Reputation\n\n| Group / PC | Standing | Notes |\n|---|---:|---|\n| Party | 0 | |\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'regions') {
+    return `${yaml}\n\n${header}## Region Overview\n\n${summary}\n\n## Geography\n\n- **Terrain:** ${item?.terrain || ''}\n- **Climate:** ${item?.climate || ''}\n- **Borders:**\n- **Resources:**\n- **Hazards:**\n\n## Inhabitants & Politics\n\n- Peoples:\n- Factions:\n- Ruler / authority:\n- Current tensions:\n\n## Locations Within This Region\n\n- Settlements:\n- Points of interest:\n- Routes:\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'settlements') {
+    return `${yaml}\n\n${header}## Settlement Overview\n\n${summary}\n\n## Quick Facts\n\n- **Type:** ${item?.type || 'Settlement'}\n- **Population:** ${item?.population || ''}\n- **Government:** ${item?.government || ''}\n- **Defenses:** ${item?.defenses || ''}\n- **Economy:** ${item?.economy || ''}\n\n## Districts & Notable Places\n\n- Districts:\n- Shops:\n- Temples:\n- Inns:\n- Danger zones:\n\n## Local Problems\n\n- Immediate problem:\n- Hidden problem:\n- Opportunity:\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'pois' || kind === 'maps') {
+    return `${yaml}\n\n${header}## Location Overview\n\n${summary}\n\n## Map / Access\n\n${item?.visualMapSvg ? item.visualMapSvg + '\n\n' : ''}- Entrances:\n- Routes:\n- Distance / travel time:\n- Visibility to players:\n\n## Features\n\n- Landmark feature:\n- Hazard:\n- Secret:\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'npcs' || kind === 'creatures' || kind === 'playerCharacters') {
+    return `${yaml}\n\n${header}## At a Glance\n\n- **Role:** ${item?.role || item?.className || ''}\n- **Ancestry / Species:** ${item?.race || ''}\n- **Location:** ${item?.location || ''}\n- **Status:** ${item?.status || 'Alive'}\n\n## Personality\n\n- **Traits:** ${item?.personality || ''}\n- **Ideals:** ${item?.ideals || ''}\n- **Bonds:** ${item?.bonds || ''}\n- **Flaws:** ${item?.flaws || ''}\n- **Voice / Mannerisms:** ${item?.voice || ''}\n\n## Stat Snapshot\n\n- **AC:** ${item?.ac || ''}\n- **HP:** ${item?.hpMax || item?.hp || ''}\n- **Speed:** ${item?.speed || ''}\n- **XP:** ${item?.xp || ''}\n\n## Hooks & Dialogue\n\n- Wants:\n- Fears:\n- Knows:\n- Quote:\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'quests' || kind === 'adventures') {
+    return `${yaml}\n\n${header}## Adventure / Quest Overview\n\n${summary}\n\n## Objectives\n\n- [ ] Objective 1\n- [ ] Objective 2\n- [ ] Objective 3\n\n## Beats & Branches\n\n| Beat | Trigger | Outcome |\n|---|---|---|\n| Opening | | |\n| Complication | | |\n| Resolution | | |\n\n## Rewards\n\n- **XP:** ${item?.xp || ''}\n- **Gold:** ${item?.gp || ''}\n- **Items:** ${item?.items || ''}\n- **Reputation:**\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'encounters') {
+    return `${yaml}\n\n${header}## Encounter Overview\n\n${summary}\n\n## Setup\n\n- **Difficulty:** ${item?.difficulty || ''}\n- **Environment:** ${item?.environment || ''}\n- **Lighting:** ${item?.lighting || ''}\n- **Weather:** ${item?.weather || ''}\n\n## Combatants / Threats\n\n${item?.creatures || item?.combatants || '- Creature / NPC:'}\n\n## Terrain & Tactics\n\n- Terrain:\n- Hazards:\n- Enemy tactics:\n- Objectives beyond combat:\n\n> [!trap] Traps / Hazards\n> Add triggers, DCs, effects, and countermeasures.\n\n> [!treasure] Loot\n> Add coins, items, clues, and complications.\n\n${gm}`;
+  }
+  if (kind === 'rules' || kind === 'conditions' || kind === 'damageTypes' || kind === 'homeRules') {
+    const playerSafe = item?.playerFacing || item?.summary || summary;
+    return `${yaml}\n\n${header}## Rule Text\n\n${summary}\n\n## At the Table\n\n- When it applies:\n- Who tracks it:\n- Edge cases:\n\n## Player-Facing Version\n\n${playerSafe}\n\n${gm}`;
+  }
+  if (kind === 'loot' || kind === 'homebrew') {
+    return `${yaml}\n\n${header}## Entry\n\n${summary}\n\n## Details\n\n${item?.description || item?.notes || ''}\n\n> [!treasure] Treasure / Reward\n> Coins, items, clues, ownership, and complications.\n\n${player}\n\n${gm}`;
+  }
+  if (kind === 'handouts') {
+    return `${yaml.replace('visibility: dm-only','visibility: player-visible')}\n\n${header}## Handout\n\n${summary}\n\n> [!info] Player-Safe\n> This note is intended for the player packet.\n`;
+  }
+  return `${yaml}\n\n${header}## Overview\n\n${summary}\n\n## Details\n\n${item?.description || item?.notes || ''}\n\n${player}\n\n${gm}`;
+}
+function phase78FolderForKey(key, item) {
+  const map = {
+    campaigns: '00 Dashboard', worlds: '01 World & Lore/Worlds', cosmology: '01 World & Lore/Cosmology', planes: '01 World & Lore/Planes', calendar: '01 World & Lore/Calendar', moons: '01 World & Lore/Moons', seasons: '01 World & Lore/Seasons', holidays: '01 World & Lore/Holidays', factions: '01 World & Lore/Factions', deities: '01 World & Lore/Deities', powers: '01 World & Lore/Powers', cultures: '01 World & Lore/Cultures', myths: '01 World & Lore/Legends Myths & Rumours', regions: '01 World & Lore/Regions', settlements: '02 Geography & Maps/Settlements', pois: '02 Geography & Maps/Points of Interest', maps: '02 Geography & Maps/Maps', npcs: '03 NPCs & Creatures/NPCs', creatures: '03 NPCs & Creatures/Creatures', adventures: '04 Adventures & Quests/Adventures', quests: '04 Adventures & Quests/Quests', stories: '04 Adventures & Quests/Stories', questChains: '04 Adventures & Quests/Quest Chains', encounters: '05 Encounters/Starting Encounters', traps: '05 Encounters/Traps', loot: '05 Encounters/Loot', rules: '06 Rules', magicRules: '06 Rules/Magic Rules', technologyRules: '06 Rules/Technology Rules', homeRules: '06 Rules/Home Rules', conditions: '06 Rules/Conditions', damageTypes: '06 Rules/Damage Types', downtime: '07 Downtime & Bases/Downtime', projects: '07 Downtime & Bases/Projects', bastions: '07 Downtime & Bases/Bastions', hirelings: '07 Downtime & Bases/Hirelings', sessions: '08 Sessions/Session Notes', milestones: '08 Sessions/Milestones', secrets: '09 Secrets/Secrets', handouts: '10 Player Packet/Handouts', compendium: 'Library/Compendium', homebrew: 'Library/Homebrew', tables: 'Library/Rollable Tables', playerCharacters: '03 NPCs & Creatures/Players'
+  };
+  return map[key] || map[item?.templateKind] || 'Library/Homebrew';
+}
+async function phase78WriteTemplateNote(plugin, campaign, key, item) {
+  const root = phase78CampaignRoot(plugin, campaign || activeCampaign(plugin.state));
+  const folder = phase78FolderForKey(key, item);
+  const filename = `${phase78Slug(item?.name || item?.title || ENTITY_LABELS[key] || key)}.md`;
+  const path = normalizePath(`${root}/${folder}/${filename}`);
+  const md = phase78TemplateFor(key, item, campaign || activeCampaign(plugin.state));
+  await writeFile(plugin, path, md);
+  return path;
+}
+async function writeEntityNote(plugin, key, item) {
+  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
+  new Notice(`Template note written: ${path}`);
+}
+mdEntity = function phase78MdEntity(key, item) {
+  return phase78TemplateFor(key, item, activeCampaign({ entities: { campaigns: [] } }));
+};
+function phase78MakeWizardEntry(key, name, campaign, values, visibility) {
+  const item = {
+    id: uid(key),
+    name: phase78Title(name),
+    summary: `${phase78Title(name)}.`,
+    campaignId: campaign.id,
+    visibility: visibility || (key === 'handouts' ? 'player-visible' : 'dm-only'),
+    tags: ['campaign-builder', String(key).replace(/s$/, '')]
+  };
+  if (key === 'rules' || key === 'homeRules') {
+    item.category = key === 'homeRules' ? 'Home Rule' : 'Rule';
+    item.playerFacing = `Table rule: ${phase78Title(name)}.`;
+    item.enabled = true;
+  }
+  if (key === 'deities') item.type = 'Deity / Pantheon';
+  if (key === 'regions') item.type = 'Region';
+  if (key === 'settlements') item.type = 'Settlement';
+  if (key === 'pois') item.type = 'Point of Interest';
+  return item;
+}
+async function phase78WriteCommaEntries(plugin, campaign, values, spec) {
+  const names = phase78SplitValues(values[spec.field]);
+  const written = [];
+  for (const name of names) {
+    const item = phase78MakeWizardEntry(spec.key, name, campaign, values, spec.visibility);
+    if (spec.storeKey) upsert(plugin.state, spec.storeKey, item);
+    const path = await phase78WriteTemplateNote(plugin, campaign, spec.templateKey || spec.key, item);
+    written.push({ name, path, item });
+  }
+  return written;
+}
+async function writeCampaignStructure(plugin, campaign, values) {
+  const root = phase78CampaignRoot(plugin, campaign);
+  const sectionFolders = ['00 Dashboard','01 World & Lore','02 Geography & Maps','03 NPCs & Creatures','04 Adventures & Quests','05 Encounters','06 Rules','07 Downtime & Bases','08 Sessions','09 Secrets','10 Player Packet'];
+  for (const folder of sectionFolders) await ensureFolder(plugin, `${root}/${folder}`);
+  await phase78WriteTemplateNote(plugin, campaign, 'campaigns', campaign);
+
+  const worldName = values.worldName || `${campaign.name} World`;
+  const world = { id: uid('world'), name: worldName, summary: `World created for ${campaign.name}.`, campaignId: campaign.id, visibility: 'dm-only', tags: ['campaign-builder','world'] };
+  upsert(plugin.state, 'worlds', world);
+  await phase78WriteTemplateNote(plugin, campaign, 'worlds', world);
+
+  const specs = [
+    { field: 'cosmology', key: 'cosmology', storeKey: 'myths' },
+    { field: 'planes', key: 'planes', storeKey: 'maps' },
+    { field: 'calendar', key: 'calendar', storeKey: 'myths' },
+    { field: 'moons', key: 'moons', storeKey: 'myths' },
+    { field: 'seasons', key: 'seasons', storeKey: 'myths' },
+    { field: 'holidays', key: 'holidays', storeKey: 'myths' },
+    { field: 'factions', key: 'factions', storeKey: 'factions' },
+    { field: 'deities', key: 'deities', storeKey: 'deities' },
+    { field: 'powers', key: 'powers', storeKey: 'deities', templateKey: 'powers' },
+    { field: 'regions', key: 'regions', storeKey: 'regions' },
+    { field: 'settlements', key: 'settlements', storeKey: 'settlements' },
+    { field: 'pois', key: 'pois', storeKey: 'pois' },
+    { field: 'npcs', key: 'npcs', storeKey: 'npcs' },
+    { field: 'story', key: 'stories', storeKey: 'adventures', templateKey: 'adventures' },
+    { field: 'questChains', key: 'questChains', storeKey: 'quests', templateKey: 'quests' },
+    { field: 'startingEncounters', key: 'encounters', storeKey: 'encounters' },
+    { field: 'traps', key: 'traps', storeKey: 'encounters', templateKey: 'encounters' },
+    { field: 'loot', key: 'loot', storeKey: 'homebrew', templateKey: 'loot' },
+    { field: 'magicRules', key: 'magicRules', storeKey: 'rules', templateKey: 'rules' },
+    { field: 'technologyRules', key: 'technologyRules', storeKey: 'rules', templateKey: 'rules' },
+    { field: 'homeRules', key: 'homeRules', storeKey: 'rules', templateKey: 'rules', visibility: 'player-visible' }
+  ];
+  const homeRuleLines = [];
+  for (const spec of specs) {
+    const written = await phase78WriteCommaEntries(plugin, campaign, values, spec);
+    if (spec.field === 'homeRules') written.forEach(w => homeRuleLines.push(`- [[${phase78Slug(w.item.name)}|${w.item.name}]]`));
+  }
+  if (phase78SplitValues(values.homeRules).length || values.homeRulesHandout) {
+    const handout = {
+      id: uid('handout'),
+      name: 'Home Rules',
+      summary: values.homeRulesHandout || `# Home Rules\n\nThese table rules are player-facing unless the DM says otherwise.\n\n${phase78SplitValues(values.homeRules).map(r => `- ${r}`).join('\n')}`,
+      campaignId: campaign.id,
+      visibility: 'player-visible',
+      tags: ['campaign-builder','home-rules','player-handout']
+    };
+    upsert(plugin.state, 'handouts', handout);
+    await writeFile(plugin, `${root}/10 Player Packet/Home Rules.md`, phase78TemplateFor('handouts', handout, campaign));
+  }
+  if (values.finalNotes) {
+    await writeFile(plugin, `${root}/00 Dashboard/Final Notes.md`, `# Final Notes\n\n${values.finalNotes}\n`);
+  }
+}
+
+const Phase78BaseCampaignWizardModal = CampaignWizardModal;
+CampaignWizardModal = class Phase78CampaignWizardModal extends Phase78BaseCampaignWizardModal {
+  constructor(app, plugin) {
+    super(app, plugin);
+    if (!this.steps.includes('Home Rules')) this.steps = ['Basic Info','World','Calendar','Factions','Geography','NPCs','Quests','Encounters','Home Rules','Finalise'];
+    this.values = Object.assign({ homeRules: '', homeRulesHandout: '' }, this.values || {}, plugin.state.wizardDraft || {});
+  }
+  render() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2', { text: `Campaign Builder Wizard — ${this.steps[this.step]}` });
+    const progress = contentEl.createDiv('ttrpg-progress');
+    progress.createDiv({ cls: 'ttrpg-progress-fill' }).style.width = `${((this.step + 1) / this.steps.length) * 100}%`;
+    const intro = contentEl.createDiv('ttrpg-muted ttrpg-wizard-note');
+    intro.textContent = 'Comma-separated entries become separate template-driven Markdown files in the matching campaign folder.';
+    const stepName = this.steps[this.step];
+    if (stepName === 'Basic Info') {
+      this.addWizardText(contentEl, 'Campaign Name', 'name');
+      this.addWizardTextArea(contentEl, 'Description / Pitch', 'summary');
+      this.addWizardText(contentEl, 'Theme', 'theme');
+      this.addWizardText(contentEl, 'Level Range', 'levelRange');
+    }
+    if (stepName === 'World') {
+      this.addWizardText(contentEl, 'World Name', 'worldName');
+      this.addWizardTextArea(contentEl, 'Cosmology', 'cosmology', 'Reality structure, afterlife, fate, gods, souls.');
+      this.addWizardTextArea(contentEl, 'Planes', 'planes', 'Realms/dimensions and planar travel.');
+      this.addWizardTextArea(contentEl, 'Magic Rules', 'magicRules', 'Spell access, rarity, limits, laws.');
+      this.addWizardTextArea(contentEl, 'Technology Rules', 'technologyRules', 'Tech level, tools, industry, limits.');
+    }
+    if (stepName === 'Calendar') {
+      this.addWizardTextArea(contentEl, 'Calendar', 'calendar');
+      this.addWizardTextArea(contentEl, 'Moons', 'moons');
+      this.addWizardTextArea(contentEl, 'Seasons', 'seasons');
+      this.addWizardTextArea(contentEl, 'Holidays', 'holidays');
+    }
+    if (stepName === 'Factions') {
+      this.addWizardTextArea(contentEl, 'Factions', 'factions');
+      this.addWizardTextArea(contentEl, 'Deities', 'deities');
+      this.addWizardTextArea(contentEl, 'Powers', 'powers');
+    }
+    if (stepName === 'Geography') {
+      this.addWizardTextArea(contentEl, 'Regions', 'regions');
+      this.addWizardTextArea(contentEl, 'Settlements', 'settlements');
+      this.addWizardTextArea(contentEl, 'Points of Interest', 'pois');
+    }
+    if (stepName === 'NPCs') this.addWizardTextArea(contentEl, 'Core NPCs', 'npcs');
+    if (stepName === 'Quests') {
+      this.addWizardTextArea(contentEl, 'Story', 'story');
+      this.addWizardTextArea(contentEl, 'Quest Chains', 'questChains');
+    }
+    if (stepName === 'Encounters') {
+      this.addWizardTextArea(contentEl, 'Starting Encounters', 'startingEncounters');
+      this.addWizardTextArea(contentEl, 'Traps', 'traps');
+      this.addWizardTextArea(contentEl, 'Loot', 'loot');
+    }
+    if (stepName === 'Home Rules') {
+      ce(contentEl, 'p', 'ttrpg-muted', 'Track personal table rules here. Each comma-separated rule creates a DM rule note and is also gathered into a player-facing handout.');
+      this.addWizardTextArea(contentEl, 'Home Rules', 'homeRules', 'Example: bonus-action potions, inspiration refresh, flanking rule.');
+      this.addWizardTextArea(contentEl, 'Player Handout Wording', 'homeRulesHandout', 'Optional player-safe wording. Leave blank to auto-build from Home Rules.');
+    }
+    if (stepName === 'Finalise') {
+      const summary = contentEl.createDiv('ttrpg-generated');
+      summary.createEl('strong', { text: 'Ready to generate template-driven campaign files.' });
+      summary.createEl('p', { text: 'The wizard will create structured notes, nested folders, home-rule files, and a player-facing Home Rules handout.' });
+      this.addWizardTextArea(contentEl, 'Final Notes', 'finalNotes');
+    }
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Back', 'ttrpg-btn', async () => { await this.saveDraft(); this.step = Math.max(0, this.step - 1); this.render(); });
+    btn(row, this.step === this.steps.length - 1 ? 'Generate Campaign' : 'Next', 'ttrpg-btn ttrpg-primary', async () => {
+      await this.saveDraft();
+      if (this.step < this.steps.length - 1) { this.step++; this.render(); }
+      else { await this.finalise(); }
+    });
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 79 — Campaign Wizard Completion + Campaign Note Action Fix
+ * Fixes: wizard not closing after final generation; campaign cards missing a
+ * clear create/update note action in the saved campaign list.
+ * -------------------------------------------------------------------------- */
+
+const Phase79BaseCampaignWizardModal = CampaignWizardModal;
+CampaignWizardModal = class Phase79CampaignWizardModal extends Phase79BaseCampaignWizardModal {
+  async finalise() {
+    if (!this.values || !this.values.name) {
+      new Notice('Campaign name is required.');
+      return;
+    }
+    try {
+      await super.finalise();
+      this.close();
+    } catch (error) {
+      console.error('TTRPG Table campaign wizard finalise failed:', error);
+      new Notice('Campaign generation failed. Check the developer console for details.');
+    }
+  }
+};
+
+const phase79ModalForKey = function(plugin, key, item) {
+  const special = {
+    npcs: NPCModal,
+    creatures: CreatureModal,
+    quests: QuestModal,
+    encounters: EncounterModal,
+    projects: ProjectModal,
+    sessions: SessionModal,
+    secrets: SecretModal,
+    maps: MapModal,
+    deities: DeityPantheonModal
+  };
+  const ModalClass = special[key] || EntityModal;
+  if (special[key]) return new ModalClass(plugin.app, plugin, item);
+  return new ModalClass(plugin.app, plugin, key, item);
+};
+
+itemCards = function phase79ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  if (typeof phase64EnsureState === 'function') phase64EnsureState(state);
+  const all = getStore(state, key);
+  const items = all.filter(x => matchesSearch(x, state.search));
+  const plural = PHASE64_PLURALS?.[key] || ENTITY_LABELS?.[key] || key;
+  if (!all.length) {
+    empty(parent, `No ${plural} yet.`, opts && opts.empty || 'Use the action buttons above to create one. Saved entries will appear here immediately.');
+    return;
+  }
+  if (!items.length) {
+    const e = ce(parent, 'div', 'ttrpg-empty');
+    ce(e, 'div', 'ttrpg-empty-icon', '🔎');
+    ce(e, 'h2', '', `No ${plural} match the current search.`);
+    ce(e, 'p', '', `There are ${all.length} saved entr${all.length === 1 ? 'y' : 'ies'}, but the search box is filtering them out.`);
+    btn(e, 'Clear Search', 'ttrpg-btn ttrpg-primary', async () => { state.search = ''; await plugin.saveState(); });
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(item => {
+    const c = card(g, item.name || item.title || ENTITY_LABELS[key] || 'Untitled Entry', item.summary || item.description || item.notes || item.type || item.category || 'Saved entry.', opts && opts.icon || '📜');
+    if (typeof phase64CardClick === 'function') phase64CardClick(c, () => phase79ModalForKey(plugin, key, item).open());
+
+    const portrait = item.portraitPath || item.imagePath || item.portrait;
+    if (portrait && typeof phase74PortraitSrc === 'function') {
+      const src = phase74PortraitSrc(plugin, portrait);
+      if (src) {
+        const img = c.createEl('img', { cls: 'ttrpg-card-portrait' });
+        img.src = src;
+        img.alt = `${item.name || item.title || 'Entry'} portrait`;
+        img.onerror = () => img.remove();
+      }
+    }
+
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    if (item.visibility) ce(meta, 'span', `ttrpg-tag ${item.visibility === 'player-visible' ? 'is-visible' : ''}`, item.visibility);
+    (item.tags || []).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => phase79ModalForKey(plugin, key, item).open());
+    btn(row, key === 'campaigns' ? 'Create / Update Note' : 'Note', 'ttrpg-btn', async () => {
+      await writeEntityNote(plugin, key, item);
+      new Notice(`${ENTITY_LABELS[key] || 'Entry'} note written.`);
+    });
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => {
+      remove(state, key, item.id);
+      await plugin.saveState();
+      new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`);
+    });
+  });
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 80 — Bidirectional Note Sync
+ * Keeps plugin entities and generated Markdown notes linked. Plugin edits update
+ * generated notes; note edits update plugin state by reading TTRPG frontmatter.
+ * -------------------------------------------------------------------------- */
+
+const PHASE80_VERSION = '1.31.0';
+const PHASE80_SYNC_KEYS = [
+  'campaigns','worlds','factions','deities','languages','cultures','myths','regions','settlements','pois','maps',
+  'npcs','creatures','playerCharacters','adventures','quests','encounters','rules','conditions','damageTypes',
+  'downtime','projects','bastions','hirelings','sessions','milestones','secrets','handouts','compendium','homebrew','tables'
+];
+const PHASE80_TYPE_TO_KEY = {
+  campaign: 'campaigns', campaigns: 'campaigns', world: 'worlds', worlds: 'worlds', faction: 'factions', factions: 'factions',
+  deity: 'deities', deities: 'deities', power: 'deities', powers: 'deities', language: 'languages', languages: 'languages',
+  culture: 'cultures', cultures: 'cultures', myth: 'myths', myths: 'myths', cosmology: 'myths', calendar: 'myths', moons: 'myths', seasons: 'myths', holidays: 'myths',
+  plane: 'maps', planes: 'maps', region: 'regions', regions: 'regions', settlement: 'settlements', settlements: 'settlements',
+  poi: 'pois', pois: 'pois', 'point of interest': 'pois', map: 'maps', maps: 'maps', npc: 'npcs', npcs: 'npcs', creature: 'creatures', creatures: 'creatures',
+  playercharacter: 'playerCharacters', playercharacters: 'playerCharacters', character: 'playerCharacters', characters: 'playerCharacters', pc: 'playerCharacters', pcs: 'playerCharacters',
+  adventure: 'adventures', adventures: 'adventures', quest: 'quests', quests: 'quests', story: 'adventures', stories: 'adventures', questchains: 'quests',
+  encounter: 'encounters', encounters: 'encounters', trap: 'encounters', traps: 'encounters', rule: 'rules', rules: 'rules', homerules: 'rules', magicrules: 'rules', technologyrules: 'rules',
+  condition: 'conditions', conditions: 'conditions', damagetype: 'damageTypes', damagetypes: 'damageTypes', downtime: 'downtime', project: 'projects', projects: 'projects',
+  bastion: 'bastions', bastions: 'bastions', hireling: 'hirelings', hirelings: 'hirelings', session: 'sessions', sessions: 'sessions', milestone: 'milestones', milestones: 'milestones',
+  secret: 'secrets', secrets: 'secrets', handout: 'handouts', handouts: 'handouts', compendium: 'compendium', homebrew: 'homebrew', table: 'tables', tables: 'tables', loot: 'homebrew'
+};
+const phase80SuppressedPaths = new Map();
+let phase80SyncingFromVault = false;
+let phase80SyncingToVault = false;
+
+function phase80CleanType(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+function phase80NormalizeFrontmatterValue(value) {
+  return String(value ?? '').trim().replace(/^['"]|['"]$/g, '');
+}
+function phase80ParseTags(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  if (raw.startsWith('[')) return raw.replace(/^\[|\]$/g, '').split(',').map(v => v.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  return raw.split(',').map(v => v.trim()).filter(Boolean);
+}
+function phase80ParseFrontmatter(markdown) {
+  const text = String(markdown || '');
+  if (!text.startsWith('---')) return { data: {}, body: text };
+  const end = text.indexOf('\n---', 3);
+  if (end < 0) return { data: {}, body: text };
+  const raw = text.slice(3, end).trim();
+  const data = {};
+  raw.split(/\r?\n/).forEach(line => {
+    const idx = line.indexOf(':');
+    if (idx < 0) return;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    data[key] = key === 'tags' ? phase80ParseTags(value) : phase80NormalizeFrontmatterValue(value);
+  });
+  return { data, body: text.slice(end + 4).replace(/^\s+/, '') };
+}
+function phase80ExtractTitle(body, fallback) {
+  const match = String(body || '').match(/^#\s+(.+)$/m);
+  return (match ? match[1].trim() : fallback) || 'Untitled';
+}
+function phase80StripCallouts(value) {
+  return String(value || '').split(/\r?\n/).map(line => line.replace(/^>\s?/, '')).filter(line => !/^\[!/.test(line.trim())).join('\n').trim();
+}
+function phase80Section(body, names) {
+  const text = String(body || '');
+  const wanted = safeArray(names).map(n => String(n).toLowerCase());
+  const lines = text.split(/\r?\n/);
+  let capture = false;
+  const out = [];
+  for (const line of lines) {
+    const heading = line.match(/^##\s+(.+)\s*$/);
+    if (heading) {
+      const normalized = heading[1].trim().toLowerCase();
+      if (capture) break;
+      capture = wanted.some(name => normalized.includes(name));
+      continue;
+    }
+    if (capture) out.push(line);
+  }
+  return phase80StripCallouts(out.join('\n'));
+}
+function phase80Field(body, label) {
+  const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^-\\s+\\*\\*${escaped}:\\*\\*\\s*(.*)$`, 'mi');
+  const match = String(body || '').match(re);
+  return match ? match[1].trim() : '';
+}
+function phase80InferKeyFromPath(path) {
+  const p = String(path || '').toLowerCase();
+  if (p.includes('/deities/')) return 'deities';
+  if (p.includes('/factions/')) return 'factions';
+  if (p.includes('/regions/')) return 'regions';
+  if (p.includes('/settlements/')) return 'settlements';
+  if (p.includes('/points of interest/')) return 'pois';
+  if (p.includes('/npcs/')) return 'npcs';
+  if (p.includes('/creatures/')) return 'creatures';
+  if (p.includes('/players/')) return 'playerCharacters';
+  if (p.includes('/quests/')) return 'quests';
+  if (p.includes('/adventures/')) return 'adventures';
+  if (p.includes('/encounters/')) return 'encounters';
+  if (p.includes('/rules/')) return 'rules';
+  if (p.includes('/sessions/')) return 'sessions';
+  if (p.includes('/secrets/')) return 'secrets';
+  if (p.includes('/handouts/')) return 'handouts';
+  if (p.includes('/maps/')) return 'maps';
+  return '';
+}
+function phase80KeyFromMarkdown(path, markdown) {
+  const parsed = phase80ParseFrontmatter(markdown);
+  const type = phase80CleanType(parsed.data.ttrpg_type || parsed.data.type || '');
+  return PHASE80_TYPE_TO_KEY[type] || phase80InferKeyFromPath(path);
+}
+function phase80EntityFromMarkdown(path, markdown) {
+  const parsed = phase80ParseFrontmatter(markdown);
+  const key = phase80KeyFromMarkdown(path, markdown);
+  if (!key) return null;
+  const body = parsed.body || '';
+  const data = parsed.data || {};
+  const item = {
+    id: data.id || uid(key),
+    name: phase80ExtractTitle(body, path.split('/').pop()?.replace(/\.md$/i, '') || 'Untitled'),
+    title: phase80ExtractTitle(body, path.split('/').pop()?.replace(/\.md$/i, '') || 'Untitled'),
+    summary: phase80Section(body, ['overview','campaign pitch','rule text','handout','adventure / quest overview','encounter overview','region overview','settlement overview','location overview','divine profile','faction overview']) || '',
+    description: phase80Section(body, ['details','worship & dogma','personality','geography','quick facts','setup']) || '',
+    notes: phase80Section(body, ['dm notes','session prep','at the table']) || '',
+    visibility: data.visibility || 'dm-only',
+    status: data.status || 'draft',
+    tags: safeArray(data.tags),
+    campaignId: data.campaign_id || data.campaignId || '',
+    campaign: data.campaign || '',
+    notePath: path,
+    lastSyncedFromNote: Date.now()
+  };
+  const fieldMap = {
+    theme: 'Theme', levelRange: 'Level Range', worldName: 'World', title: 'Title', domains: 'Domains', symbol: 'Symbol', alignment: 'Alignment / Ethos', pantheon: 'Pantheon',
+    type: 'Type', leader: 'Leader', location: 'Headquarters', resources: 'Resources', terrain: 'Terrain', climate: 'Climate', population: 'Population', government: 'Government', defenses: 'Defenses', economy: 'Economy',
+    role: 'Role', race: 'Ancestry / Species', ac: 'AC', hp: 'HP', speed: 'Speed', xp: 'XP', difficulty: 'Difficulty', environment: 'Environment', lighting: 'Lighting', weather: 'Weather', gp: 'Gold', items: 'Items'
+  };
+  Object.entries(fieldMap).forEach(([prop, label]) => {
+    const value = phase80Field(body, label);
+    if (value) item[prop] = value;
+  });
+  return { key, item };
+}
+function phase80IsTtrpgMarkdown(markdown) {
+  const fm = phase80ParseFrontmatter(markdown).data;
+  return Boolean(fm.ttrpg_type && fm.id);
+}
+async function phase80ReadFile(plugin, file) {
+  if (!file || file.extension !== 'md') return '';
+  return await plugin.app.vault.read(file);
+}
+function phase80Suppress(path) {
+  phase80SuppressedPaths.set(normalizePath(path), Date.now() + 1200);
+}
+function phase80IsSuppressed(path) {
+  const normalized = normalizePath(path || '');
+  const until = phase80SuppressedPaths.get(normalized) || 0;
+  if (until > Date.now()) return true;
+  if (until) phase80SuppressedPaths.delete(normalized);
+  return false;
+}
+async function phase80WriteFile(plugin, path, content) {
+  phase80Suppress(path);
+  await writeFile(plugin, path, content);
+}
+
+const phase80BaseTemplateFor = phase78TemplateFor;
+phase78TemplateFor = function phase80TemplateFor(kind, item, campaign, extra) {
+  const md = phase80BaseTemplateFor(kind, item, campaign, extra);
+  // Ensure legacy/generated notes have explicit sync metadata even when older templates are reused.
+  if (/^---[\s\S]*?\bttrpg_type:/m.test(md) && /^---[\s\S]*?\bid:/m.test(md)) return md;
+  const id = item?.id || uid(kind || 'entry');
+  const visibility = item?.visibility || extra?.visibility || 'dm-only';
+  return `---\nttrpg_type: ${phase78Yaml(kind)}\nid: ${phase78Yaml(id)}\ncampaign: ${phase78Yaml(campaign?.name || '')}\ncampaign_id: ${phase78Yaml(campaign?.id || item?.campaignId || '')}\nstatus: draft\nvisibility: ${phase78Yaml(visibility)}\ntags: ${phase78Tags(item?.tags || ['ttrpg'])}\n---\n\n${md}`;
+};
+
+const phase80BaseWriteTemplateNote = phase78WriteTemplateNote;
+phase78WriteTemplateNote = async function phase80WriteTemplateNote(plugin, campaign, key, item) {
+  const root = phase78CampaignRoot(plugin, campaign || activeCampaign(plugin.state));
+  const folder = phase78FolderForKey(key, item);
+  const filename = `${phase78Slug(item?.name || item?.title || ENTITY_LABELS[key] || key)}.md`;
+  const preferredPath = item?.notePath || item?.filePath || `${root}/${folder}/${filename}`;
+  const path = normalizePath(preferredPath);
+  const md = phase78TemplateFor(key, item, campaign || activeCampaign(plugin.state));
+  await phase80WriteFile(plugin, path, md);
+  if (item) {
+    item.notePath = path;
+    item.filePath = path;
+    item.lastSyncedToNote = Date.now();
+  }
+  return path;
+};
+
+writeEntityNote = async function phase80WriteEntityNote(plugin, key, item) {
+  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
+  const storeKey = key || phase80KeyFromMarkdown(path, phase78TemplateFor(key, item, campaign));
+  if (storeKey && item?.id) upsert(plugin.state, storeKey, item);
+  await plugin.saveData(plugin.state);
+  new Notice(`Synced note: ${path}`);
+};
+
+async function phase80SyncLinkedNotes(plugin) {
+  if (phase80SyncingFromVault || phase80SyncingToVault) return;
+  phase80SyncingToVault = true;
+  try {
+    const state = plugin.state || {};
+    for (const key of PHASE80_SYNC_KEYS) {
+      for (const item of safeArray(state.entities?.[key])) {
+        if (!item || !item.id || !(item.notePath || item.filePath)) continue;
+        await phase78WriteTemplateNote(plugin, activeCampaign(state) || { name: item.campaign || 'Loose Notes', id: item.campaignId || '' }, key, item);
+      }
+    }
+  } catch (error) {
+    console.error('TTRPG Table note sync failed:', error);
+    console.warn('TTRPG note sync failed. Check the developer console.');
+  } finally {
+    phase80SyncingToVault = false;
+  }
+}
+
+async function phase80SyncMarkdownToState(plugin, file) {
+  if (!file || file.extension !== 'md' || phase80SyncingToVault || phase80IsSuppressed(file.path)) return;
+  const markdown = await phase80ReadFile(plugin, file);
+  if (!phase80IsTtrpgMarkdown(markdown)) return;
+  const parsed = phase80EntityFromMarkdown(file.path, markdown);
+  if (!parsed || !parsed.key || !parsed.item) return;
+  phase80SyncingFromVault = true;
+  try {
+    if (!plugin.state.entities) plugin.state.entities = createDefaultState().entities;
+    const existing = getStore(plugin.state, parsed.key).find(x => x.id === parsed.item.id) || {};
+    const merged = Object.assign({}, existing, parsed.item, { notePath: file.path, filePath: file.path });
+    upsert(plugin.state, parsed.key, merged);
+    await plugin.saveData(plugin.state);
+    plugin.refreshViews?.();
+  } catch (error) {
+    console.error('TTRPG Table note-to-plugin sync failed:', error);
+  } finally {
+    phase80SyncingFromVault = false;
+  }
+}
+
+async function phase80HandleMarkdownDelete(plugin, file) {
+  if (!file || file.extension !== 'md') return;
+  const path = normalizePath(file.path || '');
+  let changed = false;
+  for (const key of PHASE80_SYNC_KEYS) {
+    for (const item of safeArray(plugin.state.entities?.[key])) {
+      if (normalizePath(item.notePath || item.filePath || '') === path) {
+        item.notePath = '';
+        item.filePath = '';
+        item.syncStatus = 'note-missing';
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    await plugin.saveData(plugin.state);
+    plugin.refreshViews?.();
+  }
+}
+
+const phase80BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase80Onload() {
+  await phase80BaseOnload.call(this);
+  this.state.version = PHASE80_VERSION;
+  this.state.settings = Object.assign({ noteSync: true }, this.state.settings || {});
+  this.registerEvent(this.app.vault.on('modify', file => phase80SyncMarkdownToState(this, file)));
+  this.registerEvent(this.app.vault.on('create', file => phase80SyncMarkdownToState(this, file)));
+  this.registerEvent(this.app.vault.on('delete', file => phase80HandleMarkdownDelete(this, file)));
+};
+
+const phase80BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+TTRPGTablePlugin.prototype.saveState = async function phase80SaveState() {
+  this.state.version = PHASE80_VERSION;
+  if (this.state.settings?.noteSync !== false) await phase80SyncLinkedNotes(this);
+  await phase80BaseSaveState.call(this);
+};
+
+const phase80BaseItemCards = itemCards;
+itemCards = function phase80ItemCards(parent, plugin, key, opts) {
+  phase80BaseItemCards(parent, plugin, key, opts);
+  // Add lightweight sync status chips after existing renderer has built the cards.
+  parent.querySelectorAll?.('.ttrpg-card').forEach(cardEl => {
+    const title = cardEl.querySelector('h3')?.textContent || '';
+    const item = getStore(plugin.state, key).find(x => (x.name || x.title || ENTITY_LABELS[key]) === title);
+    if (!item) return;
+    const meta = cardEl.querySelector('.ttrpg-tags') || ce(cardEl, 'div', 'ttrpg-tags');
+    if (item.notePath || item.filePath) ce(meta, 'span', 'ttrpg-tag', 'note-linked');
+    if (item.syncStatus === 'note-missing') ce(meta, 'span', 'ttrpg-tag', 'note-missing');
+  });
+};
+
+
+/* --------------------------------------------------------------------------
+ * Phase 81 — Campaign Wizard copy, bundled legal data, and SVG map files
+ * - Removes unnecessary Campaign Wizard final-step folder/copy text.
+ * - Uses the expanded local data/*.json files when available.
+ * - Hides raw visualMapSvg text from cards/notes.
+ * - Writes procedural maps as actual .svg vault files under Geography & Maps/Maps.
+ * - Randomises map generation so repeated maps are no longer identical.
+ * -------------------------------------------------------------------------- */
+
+function phase81RandomSeed() {
+  return Math.floor(Math.random() * 2147483647) + Date.now();
+}
+function phase81HashSeed(value) {
+  const base = String(value || '') + ':' + phase81RandomSeed();
+  let h = 2166136261;
+  for (let i = 0; i < base.length; i++) {
+    h ^= base.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+function phase81Rand(seed) {
+  let s = Number(seed || phase81RandomSeed()) >>> 0;
+  return function() {
+    s = Math.imul(1664525, s) + 1013904223 >>> 0;
+    return s / 4294967296;
+  };
+}
+function phase81Pick(rand, list) {
+  return list[Math.floor(rand() * list.length)] || list[0];
+}
+function phase81PlainEntries(entries) {
+  if (!entries) return '';
+  const walk = value => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value.replace(/\{@(?:spell|item|feat|skill|damage|dice|variantrule|filter)\s+([^}|]+)(?:\|[^}]*)?\}/g, '$1');
+    if (Array.isArray(value)) return value.map(walk).filter(Boolean).join(' ');
+    if (typeof value === 'object') {
+      if (value.entry) return walk(value.entry);
+      if (value.entries) return walk(value.entries);
+      if (value.items) return walk(value.items);
+      return Object.values(value).map(walk).filter(Boolean).join(' ');
+    }
+    return String(value);
+  };
+  return phase67CleanInline(walk(entries)).slice(0, 500);
+}
+function phase81NormaliseSpell(s) {
+  const level = Number(s.level || 0) === 0 ? 'Cantrip' : String(s.level ?? '');
+  const schoolMap = { A:'Abjuration', C:'Conjuration', D:'Divination', E:'Enchantment', V:'Evocation', I:'Illusion', N:'Necromancy', T:'Transmutation' };
+  return {
+    id: s.id || uid('spell'),
+    name: s.name || 'Unnamed Spell',
+    level,
+    school: schoolMap[s.school] || s.school || '',
+    classes: Array.isArray(s.classes) ? s.classes : [],
+    source: s.source || '',
+    summary: phase81PlainEntries(s.entries || s.description || s.summary),
+    raw: s
+  };
+}
+function phase81NormaliseFeat(f) {
+  return {
+    id: f.id || uid('feat'),
+    name: f.name || 'Unnamed Feat',
+    prerequisite: phase81PlainEntries(f.prerequisite || f.prerequisites || ''),
+    summary: phase81PlainEntries(f.entries || f.summary || f.description),
+    source: f.source || '',
+    raw: f
+  };
+}
+function phase81Money(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const gp = n / 100;
+  if (gp >= 1) return `${Number.isInteger(gp) ? gp : gp.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} gp`;
+  const sp = n / 10;
+  if (sp >= 1) return `${Number.isInteger(sp) ? sp : sp.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} sp`;
+  return `${n} cp`;
+}
+function phase81NormaliseItem(i) {
+  return {
+    id: i.id || uid('item'),
+    name: i.name || 'Unnamed Item',
+    type: i.type || i.category || 'Item',
+    weight: Number(i.weight || 0),
+    value: typeof i.value === 'number' ? phase81Money(i.value) : (i.value || ''),
+    summary: phase81PlainEntries(i.entries || i.summary || i.description || `${i.type || 'Item'}${i.weight ? `, ${i.weight} lb` : ''}`),
+    source: i.source || '',
+    raw: i
+  };
+}
+async function phase81ReadPluginJson(plugin, fileName) {
+  const candidates = [
+    `${plugin.manifest?.dir || ''}/data/${fileName}`,
+    `.obsidian/plugins/${plugin.manifest?.id || 'ttrpg-table'}/data/${fileName}`,
+    `data/${fileName}`
+  ].filter(Boolean).map(normalizePath);
+  for (const path of candidates) {
+    try {
+      const raw = await plugin.app.vault.adapter.read(path);
+      return JSON.parse(raw);
+    } catch (e) {}
+  }
+  return null;
+}
+async function phase81LoadExpandedData(plugin) {
+  try {
+    const [spells, feats, equipment] = await Promise.all([
+      phase81ReadPluginJson(plugin, 'spells.json'),
+      phase81ReadPluginJson(plugin, 'feats.json'),
+      phase81ReadPluginJson(plugin, 'equipment.json')
+    ]);
+    if (Array.isArray(spells) && spells.length && Array.isArray(PHASE70_SPELLS)) {
+      PHASE70_SPELLS.splice(0, PHASE70_SPELLS.length, ...spells.map(phase81NormaliseSpell));
+    }
+    if (Array.isArray(feats) && feats.length && Array.isArray(PHASE70_FEATS)) {
+      PHASE70_FEATS.splice(0, PHASE70_FEATS.length, ...feats.map(phase81NormaliseFeat));
+    }
+    if (Array.isArray(equipment) && equipment.length && Array.isArray(PHASE70_ITEMS)) {
+      PHASE70_ITEMS.splice(0, PHASE70_ITEMS.length, ...equipment.map(phase81NormaliseItem));
+    }
+    phase70EnsureBuiltInCompendium(plugin.state);
+    await plugin.saveData(plugin.state);
+  } catch (error) {
+    console.warn('TTRPG Table expanded data load skipped:', error);
+  }
+}
+
+const phase81BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase81Onload() {
+  await phase81BaseOnload.call(this);
+  await phase81LoadExpandedData(this);
+};
+
+// Hide backend/heavy map SVG fields from every polished card and generator field list.
+const phase81HiddenCardKeys = new Set(['visualMapSvg', 'svg', 'raw', 'metadata', 'mapSeed']);
+const phase81BaseDisplayableKey = phase67IsDisplayableKey;
+phase67IsDisplayableKey = function phase81DisplayableKey(key) {
+  return !phase81HiddenCardKeys.has(String(key)) && phase81BaseDisplayableKey(key);
+};
+const phase81BaseRenderGenerated = phase66RenderGenerated;
+phase66RenderGenerated = function phase81RenderGenerated(parent, textOrEntry) {
+  if (textOrEntry && typeof textOrEntry === 'object' && !Array.isArray(textOrEntry)) {
+    const clone = Object.assign({}, textOrEntry);
+    phase81HiddenCardKeys.forEach(k => delete clone[k]);
+    return phase81BaseRenderGenerated(parent, clone);
+  }
+  return phase81BaseRenderGenerated(parent, textOrEntry);
+};
+
+function phase81MapSvg(entry) {
+  const seed = Number(entry?.mapSeed || phase81HashSeed(entry?.name || 'map'));
+  const rand = phase81Rand(seed);
+  const name = phase70EscapeSvg(entry?.name || phase81Pick(rand, ['Mistvale', 'Redbarrow', 'Greyhaven', 'Moonford', 'Ashmere']));
+  const type = phase70EscapeSvg(entry?.type || phase81Pick(rand, ['Settlement', 'Town', 'City', 'Region']));
+  const terrain = phase70EscapeSvg(entry?.terrain || entry?.terrainType || phase81Pick(rand, ['coastal marsh', 'river valley', 'rocky highlands', 'deep forest', 'trade road']));
+  const coast = Math.floor(rand() * 3);
+  const riverY = 145 + Math.floor(rand() * 145);
+  const roadY = 170 + Math.floor(rand() * 120);
+  const forestX = 390 + Math.floor(rand() * 100);
+  const mountainX = 80 + Math.floor(rand() * 120);
+  const points = ['Gate','Market','Shrine','Keep','Old Road','Watchtower','Hidden Site'].slice(0, 4 + Math.floor(rand() * 4)).map(label => [label, 75 + Math.floor(rand() * 490), 86 + Math.floor(rand() * 265)]);
+  const labels = points.map(([label,x,y], i) => `<g><circle cx="${x}" cy="${y}" r="${8 + (i % 2)}" fill="#8C2318" stroke="#2B241E" stroke-width="3"/><text x="${Number(x)+14}" y="${Number(y)+5}" font-size="16" fill="#1A1612">${phase70EscapeSvg(label)}</text></g>`).join('');
+  const coastPath = coast === 0
+    ? `<path d="M0,0 C42,74 38,152 18,226 C2,286 38,359 0,420 Z" fill="#324A5F" opacity="0.32"/>`
+    : coast === 1
+      ? `<path d="M640,0 C588,84 606,158 620,230 C635,306 586,368 640,420 Z" fill="#324A5F" opacity="0.32"/>`
+      : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-label="Generated fantasy map for ${name}">
+  <defs>
+    <linearGradient id="paper-${seed}" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F2E8D0"/><stop offset="1" stop-color="#D9C89E"/></linearGradient>
+    <filter id="rough-${seed}"><feTurbulence type="fractalNoise" baseFrequency="${(0.01 + rand() * 0.02).toFixed(3)}" numOctaves="2" seed="${seed % 997}"/><feColorMatrix type="saturate" values="0.25"/><feBlend mode="multiply" in2="SourceGraphic"/></filter>
+  </defs>
+  <rect width="640" height="420" rx="24" fill="url(#paper-${seed})"/>
+  ${coastPath}
+  <path d="M${45+Math.floor(rand()*40)},${310+Math.floor(rand()*40)} C${110+Math.floor(rand()*65)},${230+Math.floor(rand()*50)} ${90+Math.floor(rand()*90)},${110+Math.floor(rand()*70)} ${165+Math.floor(rand()*80)},${76+Math.floor(rand()*40)} C${255+Math.floor(rand()*70)},${32+Math.floor(rand()*35)} ${370+Math.floor(rand()*80)},${43+Math.floor(rand()*45)} ${475+Math.floor(rand()*70)},${86+Math.floor(rand()*50)} C${555+Math.floor(rand()*45)},${130+Math.floor(rand()*65)} ${585+Math.floor(rand()*30)},${225+Math.floor(rand()*55)} ${550+Math.floor(rand()*35)},${295+Math.floor(rand()*60)} C${500+Math.floor(rand()*40)},${372+Math.floor(rand()*35)} ${385+Math.floor(rand()*50)},${390-Math.floor(rand()*40)} ${295+Math.floor(rand()*40)},${366+Math.floor(rand()*25)} C${190+Math.floor(rand()*45)},${340+Math.floor(rand()*40)} ${105+Math.floor(rand()*50)},${380-Math.floor(rand()*45)} ${45+Math.floor(rand()*40)},${310+Math.floor(rand()*40)} Z" fill="#c9b77f" stroke="#704214" stroke-width="4" opacity="0.75" filter="url(#rough-${seed})"/>
+  <path d="M62,${riverY} C150,${riverY - 48 + Math.floor(rand()*90)} 248,${riverY + 42 - Math.floor(rand()*80)} 330,${riverY + Math.floor(rand()*50)-25} C430,${riverY + 50 - Math.floor(rand()*90)} 510,${riverY - 45 + Math.floor(rand()*90)} 598,${riverY + Math.floor(rand()*40)-20}" fill="none" stroke="#324A5F" stroke-width="${10 + Math.floor(rand()*8)}" opacity="0.45"/>
+  <path d="M70,${roadY} C158,${roadY - 30 + Math.floor(rand()*60)} 235,${roadY + 25 - Math.floor(rand()*50)} 318,${roadY + Math.floor(rand()*46)-23} C408,${roadY + 35 - Math.floor(rand()*70)} 488,${roadY - 30 + Math.floor(rand()*60)} 565,${roadY + Math.floor(rand()*34)-17}" fill="none" stroke="#704214" stroke-width="7" stroke-dasharray="12 10" opacity="0.65"/>
+  <path d="M${forestX},54 L${forestX+28},104 L${forestX+80},111 L${forestX+42},147 L${forestX+52},199 L${forestX+4},174 L${forestX-42},199 L${forestX-34},146 L${forestX-72},109 L${forestX-19},102 Z" fill="#3A5F41" opacity="0.38" stroke="#2B241E"/>
+  <path d="M${mountainX},96 l20,-38 l22,40 l-21,-8 z M${mountainX+38},112 l25,-48 l25,48 l-26,-11 z M${mountainX+86},103 l21,-42 l25,43 l-25,-10 z" fill="#324A5F" opacity="0.5" stroke="#2B241E"/>
+  ${labels}
+  <text x="320" y="38" text-anchor="middle" font-size="26" font-family="Georgia, serif" font-weight="700" fill="#704214">${name}</text>
+  <text x="320" y="64" text-anchor="middle" font-size="14" font-family="Georgia, serif" fill="#1A1612">${type} • ${terrain} • Seed ${seed}</text>
+</svg>`;
+}
+phase70MapSvg = function phase81MapSvgOverride(entry) {
+  if (entry && !entry.mapSeed) entry.mapSeed = phase81HashSeed(entry.name || 'map');
+  return phase81MapSvg(entry || {});
+};
+async function phase81WriteSvgFile(plugin, entry) {
+  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const root = phase78CampaignRoot(plugin, campaign);
+  const folder = `${root}/02 Geography & Maps/Maps`;
+  if (!entry.mapSeed) entry.mapSeed = phase81HashSeed(entry.name || 'map');
+  const svg = phase81MapSvg(entry);
+  const base = phase78Slug(entry.name || entry.title || 'generated-map');
+  const path = normalizePath(`${folder}/${base}-map.svg`);
+  await writeFile(plugin, path, svg);
+  entry.mapImagePath = path;
+  entry.imagePath = path;
+  entry.visualMapPath = path;
+  delete entry.visualMapSvg;
+  return path;
+}
+function phase81ResourcePath(plugin, path) {
+  try {
+    const file = plugin.app.vault.getAbstractFileByPath(normalizePath(path || ''));
+    if (file && plugin.app.vault.getResourcePath) return plugin.app.vault.getResourcePath(file);
+  } catch (e) {}
+  return '';
+}
+phase70RenderMapPreview = function phase81RenderMapPreview(parent, entry) {
+  if (!entry) return;
+  const wrap = ce(parent, 'div', 'ttrpg-map-preview');
+  if (entry.visualMapSvg) {
+    wrap.innerHTML = entry.visualMapSvg;
+    return;
+  }
+  const path = entry.mapImagePath || entry.visualMapPath || entry.imagePath;
+  const plugin = window?.app?.plugins?.plugins?.['ttrpg-table'];
+  const src = plugin ? phase81ResourcePath(plugin, path) : '';
+  if (src) {
+    const img = wrap.createEl('img', { attr: { src, alt: entry.name || 'Generated map' } });
+    img.addClass('ttrpg-map-image');
+  } else if (path) {
+    ce(wrap, 'p', 'ttrpg-muted', `Map file: ${path}`);
+  }
+};
+phase70MakeMapEntryFromLocation = function phase81MakeMapEntryFromLocation(entry) {
+  if (!entry.mapSeed) entry.mapSeed = phase81HashSeed(entry.name || 'map');
+  return {
+    id: uid('map'),
+    name: `${entry.name || 'Generated Location'} Map`,
+    type: 'Rendered Fantasy Map',
+    summary: `Visual map rendered from ${entry.name || 'generated location'} details.`,
+    sourceLocationId: entry.id,
+    terrain: entry.terrain || entry.terrainType || '',
+    mapSeed: entry.mapSeed,
+    tags: ['generated', 'map', 'svg-map'],
+    visibility: entry.visibility || 'dm-only'
+  };
+};
+
+const phase81BaseTemplateFor = phase78TemplateFor;
+phase78TemplateFor = function phase81TemplateFor(kind, item, campaign, extra) {
+  if (kind === 'maps' || kind === 'pois') {
+    const clean = Object.assign({}, item || {});
+    delete clean.visualMapSvg;
+    const md = phase81BaseTemplateFor(kind, clean, campaign, extra);
+    const mapPath = clean.mapImagePath || clean.visualMapPath || clean.imagePath;
+    if (mapPath && !md.includes(`![[${mapPath}]]`)) {
+      return md.replace('## Map / Access\n\n', `## Map / Access\n\n![[${mapPath}]]\n\n`);
+    }
+    return md;
+  }
+  return phase81BaseTemplateFor(kind, item, campaign, extra);
+};
+
+// Final Campaign Wizard copy cleanup: no folder/settings reminder text.
+const Phase81BaseCampaignWizardModal = CampaignWizardModal;
+CampaignWizardModal = class Phase81CampaignWizardModal extends Phase81BaseCampaignWizardModal {
+  render() {
+    super.render();
+    const finalCopy = Array.from(this.contentEl.querySelectorAll('p')).find(p => /Folder structure is now|structured notes, nested folders/i.test(p.textContent || ''));
+    if (finalCopy) finalCopy.remove();
+  }
+};
+
+// Generator modal rebuilt only where needed: SVGs save as vault files and map seeds randomise.
+GeneratorModal = class Phase81GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){ this.render(); }
+  render(){
+    const {contentEl}=this;
+    clear(contentEl);
+    contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2',{text:'Generator Suite'});
+    ce(contentEl, 'p', 'ttrpg-muted', 'Pick one generator, create a complete entry, preview it, then save it. Location and fantasy map generators can create real .svg files in the campaign Maps folder.');
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,PHASE69_GENERATOR_TYPES,v=>{ this.type=v; this.generated=null; this.render(); });
+    const actions = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(actions,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{
+      this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      if (this.generated?.entry && (this.type === 'Location / Settlement / Town / City' || this.type === 'Fantasy Map')) {
+        this.generated.entry.mapSeed = phase81HashSeed(this.generated.entry.name || this.type);
+        this.generated.entry.visualMapSvg = phase81MapSvg(this.generated.entry);
+      }
+      phase66GeneratedPreview(out, this.generated);
+    });
+    if (this.type === 'Location / Settlement / Town / City' || this.type === 'Fantasy Map') {
+      btn(actions,'Render Random Visual Map', 'ttrpg-btn',()=>{
+        if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+        this.generated.entry.mapSeed = phase81HashSeed(this.generated.entry.name || this.type);
+        this.generated.entry.visualMapSvg = phase81MapSvg(this.generated.entry);
+        phase66GeneratedPreview(out, this.generated);
+      });
+      btn(actions,'Save Location + SVG Map', 'ttrpg-btn', async()=>{
+        if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+        if (!this.generated.entry.mapSeed) this.generated.entry.mapSeed = phase81HashSeed(this.generated.entry.name || this.type);
+        const entry = this.generated.entry;
+        upsert(this.plugin.state,this.generated.kind,entry);
+        const mapEntry = this.generated.kind === 'maps' ? entry : phase70MakeMapEntryFromLocation(entry);
+        await phase81WriteSvgFile(this.plugin, mapEntry);
+        upsert(this.plugin.state,'maps',mapEntry);
+        this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:Object.assign({}, entry, { visualMapSvg: undefined }), target:this.generated.kind, entryId:entry.id, createdAt:Date.now() });
+        await this.plugin.saveState();
+        new Notice(`Generated entry and SVG map saved: ${mapEntry.mapImagePath}`);
+        this.close();
+      });
+    }
+    btn(actions,'Save Generated Entry', 'ttrpg-btn', async()=>{
+      if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      if (this.generated.kind === 'maps' || this.type === 'Fantasy Map') await phase81WriteSvgFile(this.plugin, this.generated.entry);
+      if (this.generated.entry) delete this.generated.entry.visualMapSvg;
+      upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() });
+      await this.plugin.saveState();
+      new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`);
+      this.close();
+    });
+    btn(actions,'Save & Start Combat', 'ttrpg-btn ttrpg-primary', async()=>{
+      if(!this.generated || this.generated.kind !== 'encounters') this.generated=phase64FullGenerator('Full Encounter',this.plugin.state);
+      upsert(this.plugin.state,'encounters',this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.generated.type || 'Full Encounter', result:generate('Full Encounter',this.plugin.state), entry:this.generated.entry, target:'encounters', entryId:this.generated.entry.id, createdAt:Date.now() });
+      await startCombatFromEncounter(this.plugin, this.generated.entry);
+      this.close();
+    });
+    phase66GeneratedPreview(out, this.generated);
+  }
+};
+
+// If a user clicks Note on a map entry with a procedural map, make sure the SVG exists before writing the note.
+const phase81BaseWriteEntityNote = writeEntityNote;
+writeEntityNote = async function phase81WriteEntityNote(plugin, key, item) {
+  if (key === 'maps' && item && !item.mapImagePath) {
+    await phase81WriteSvgFile(plugin, item);
+  }
+  return phase81BaseWriteEntityNote(plugin, key, item);
+};
+
+const phase81BaseCard = card;
+card = function phase81Card(parent, title, text, icon, actions) {
+  const c = phase81BaseCard(parent, title, text, icon, actions);
+  if (text && typeof text === 'object' && !c.querySelector('.ttrpg-map-preview')) {
+    const mapPath = text.mapImagePath || text.visualMapPath || text.imagePath;
+    if (mapPath) {
+      const wrap = ce(c, 'div', 'ttrpg-map-preview');
+      const plugin = window?.app?.plugins?.plugins?.['ttrpg-table'];
+      const src = plugin ? phase81ResourcePath(plugin, mapPath) : '';
+      if (src) {
+        const img = wrap.createEl('img', { attr: { src, alt: text.name || 'Generated map' } });
+        img.addClass('ttrpg-map-image');
+      } else {
+        ce(wrap, 'p', 'ttrpg-muted', `Map file: ${mapPath}`);
+      }
+      const head = c.querySelector('.ttrpg-card-head');
+      if (head && head.nextSibling) c.insertBefore(wrap, head.nextSibling);
+    }
+  }
+  return c;
+};
+
+
+
+/* --------------------------------------------------------------------------
+ * Phase 82 — DM Homebrew Forge
+ * Adds a dedicated DM-side module for fast, rules-guided homebrew creation.
+ * Uses local data/reference patterns only; no network calls.
+ * -------------------------------------------------------------------------- */
+
+const PHASE82_HOMEBREW_CATEGORIES = [
+  'Nonmagical Item', 'Magic Item', 'Potion / Poison', 'Creature / Monster', 'Spell',
+  'Race / Ancestry', 'Class / Subclass', 'Feat', 'Background', 'Trap', 'Environment',
+  'NPC', 'Encounter', 'Rule Variant', 'World / Campaign'
+];
+const PHASE82_RARITIES = ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary', 'Artifact'];
+const PHASE82_ACTION_ECONOMY = ['Passive', 'Action', 'Bonus Action', 'Reaction', 'Free / Interaction', '1 minute+', 'Downtime'];
+const PHASE82_RESET_OPTIONS = ['None', 'At Will', 'Once', 'Short Rest', 'Long Rest', 'Dawn', 'Daily', 'Charges'];
+
+function phase82EnsureState(state) {
+  phase68EnsureState(state);
+  state.entities = state.entities || {};
+  ['homebrew','creatures','encounters','npcs','rules'].forEach(k => { if (!Array.isArray(state.entities[k])) state.entities[k] = []; });
+}
+
+const PHASE82_DM_NAV = [
+  ['dashboard', '🏰', 'Dashboard'], ['campaignList', '📚', 'Campaigns'], ['campaign', '🧙', 'Campaign Wizard'],
+  ['world', '🌌', 'World & Lore'], ['geography', '🗺️', 'Geography & Maps'], ['npcs', '👤', 'NPCs & Creatures'],
+  ['adventure', '📝', 'Adventures & Quests'], ['combat', '⚔️', 'Combat & Encounters'], ['generators', '🎲', 'Generators'],
+  ['homebrewForge', '🛠️', 'Homebrew Forge'], ['rules', '⚙️', 'Rules & Mechanics'], ['downtime', '⏳', 'Downtime & Bases'],
+  ['sessions', '📅', 'Sessions & Timeline'], ['secrets', '🔒', 'Secrets & Reveals'], ['library', '📚', 'Library & Compendium']
+];
+phase64VisibleNav = function phase82VisibleNav(state) { return state.mode === 'PLAYER' ? PHASE64_PLAYER_NAV : PHASE82_DM_NAV; };
+const phase82BaseRenderSection = renderSection;
+renderSection = function phase82RenderSection(main, plugin, section) {
+  if (section === 'homebrewForge') return renderHomebrewForge(main, plugin);
+  return phase82BaseRenderSection(main, plugin, section);
+};
+const phase82BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase82Onload() {
+  await phase82BaseOnload.call(this);
+  phase82EnsureState(this.state);
+  this.addCommand({ id: 'open-homebrew-forge', name: 'Open Homebrew Forge', callback: async () => { this.state.mode = 'DM'; this.state.activeSection = 'homebrewForge'; await this.saveState(); await this.activateView(); } });
+  this.addCommand({ id: 'new-homebrew-item', name: 'Create Homebrew Item', callback: () => new HomebrewForgeModal(this.app, this, 'Magic Item').open() });
+};
+
+function phase82TargetForCategory(category) {
+  switch (category) {
+    case 'Creature / Monster': return { key: 'creatures', type: 'Homebrew Creature', icon: '🐉' };
+    case 'NPC': return { key: 'npcs', type: 'Homebrew NPC', icon: '👤' };
+    case 'Encounter': return { key: 'encounters', type: 'Homebrew Encounter', icon: '⚔️' };
+    case 'Trap': return { key: 'encounters', type: 'Trap', icon: '🪤' };
+    case 'Rule Variant': return { key: 'rules', type: 'Home Rule / Variant', icon: '⚙️' };
+    default: return { key: 'homebrew', type: category || 'Homebrew Entry', icon: '🛠️' };
+  }
+}
+function phase82ReferenceSuggestion(category) {
+  const items = Array.isArray(PHASE70_ITEMS) ? PHASE70_ITEMS : [];
+  const spells = Array.isArray(PHASE70_SPELLS) ? PHASE70_SPELLS : [];
+  const feats = Array.isArray(PHASE70_FEATS) ? PHASE70_FEATS : [];
+  const firstItem = items.find(x => x && x.name) || { name: 'Comparable equipment' };
+  const firstSpell = spells.find(x => x && x.name) || { name: 'Comparable spell' };
+  const firstFeat = feats.find(x => x && x.name) || { name: 'Comparable feat' };
+  if (category === 'Spell') return firstSpell.name;
+  if (category === 'Feat') return firstFeat.name;
+  if (category === 'Nonmagical Item' || category === 'Magic Item' || category === 'Potion / Poison') return firstItem.name;
+  if (category === 'Creature / Monster') return 'Monster Manual-style stat block / target CR table';
+  if (category === 'Trap') return 'Trap DC / damage by tier';
+  return 'Existing official/SRD-style entry of similar scope';
+}
+function phase82RarityGuidance(rarity) {
+  const map = {
+    Common: 'Minor utility, flavour, small convenience, usually no attunement.',
+    Uncommon: '+1-scale or one useful limited effect; sometimes attunement.',
+    Rare: 'Strong effect, limited powerful use, usually attunement.',
+    'Very Rare': 'Major power, multiple effects, normally attunement.',
+    Legendary: 'Campaign-shaping, unique, strong limits and story weight.',
+    Artifact: 'World-altering, unique, required story consequences.'
+  };
+  return map[rarity] || map.Common;
+}
+function phase82CategoryGuidance(category, values) {
+  const rarity = values.rarity || 'Uncommon';
+  const level = Number(values.level || 1);
+  const cr = values.targetCr || '1';
+  const base = ['Compare against an existing official/SRD-style option before allowing table use.', 'Avoid free extra actions, permanent advantage, infinite healing, and unlimited control effects.', 'Prefer charges, once-per-rest limits, clear action costs, saves, or attunement for strong effects.'];
+  switch (category) {
+    case 'Nonmagical Item': return ['Define category, weight, cost, properties, tools required, and mundane use.', 'Price against comparable PHB-style equipment. Crafting cost is usually half market value.'].concat(base).join('\n');
+    case 'Magic Item': return [phase82RarityGuidance(rarity), 'Attunement is recommended for permanent bonuses or broad combat power.', 'Use charges / daily limits for active powers.'].concat(base).join('\n');
+    case 'Potion / Poison': return ['Set rarity, delivery method, save DC, duration, identify DC, brewing tools, materials, and side effects.', 'Typical save DC range: easy/common 10-12, mid-tier 13-15, high-tier 16-18+.'].concat(base).join('\n');
+    case 'Creature / Monster': return ['Build around role, target CR, AC, HP, damage per round, attack bonus / save DC, and action economy.', 'Target CR: ' + cr + '. Legendary/lair actions are best reserved for boss creatures around CR 10+.', 'Give 1-3 memorable traits/actions rather than a wall of tiny modifiers.'].concat(base).join('\n');
+    case 'Spell': return ['Set level, school, casting time, range, components, duration, save/attack type, scaling, and class access.', 'Level ' + level + ' should be compared to spells with similar damage/control/utility impact.'].concat(base).join('\n');
+    case 'Feat': return ['A clean feat usually gives either +1 ability and a modest feature, or one bigger feature with a clear limit.', 'Avoid +2 ability plus major power in the same feat.'].concat(base).join('\n');
+    case 'Trap': return ['Define trigger, detection DC, disable DC, attack/save, damage, condition, reset, and counterplay.', 'Players should be able to notice, avoid, disable, or mitigate it somehow.'].concat(base).join('\n');
+    case 'Encounter': return ['Define goal, environment, opponents, non-combat objectives, tactics, terrain, complications, and rewards.', 'Avoid making victory equal only to killing everything.'].concat(base).join('\n');
+    case 'Rule Variant': return ['Write the rule, table trigger, player-facing version, DM-only edge cases, and rollback note.', 'Good house rules reduce friction; bad ones create bookkeeping goblins.'].concat(base).join('\n');
+    default: return ['Define concept, table purpose, scope, player-facing rules, DM notes, and balance comparison.'].concat(base).join('\n');
+  }
+}
+function phase82AutoName(category, values) {
+  const stem = String(values.concept || '').split(/[.,;:]/)[0].trim();
+  if (stem && stem.length <= 60) return stem.replace(/^./, c => c.toUpperCase());
+  const map = { 'Nonmagical Item': 'Custom Gear', 'Magic Item': 'Unnamed Wonder', 'Potion / Poison': 'Experimental Draught', 'Creature / Monster': 'Uncatalogued Creature', Spell: 'Unnamed Spell', Feat: 'Custom Feat', Trap: 'Hidden Trap', NPC: 'New NPC', Encounter: 'Homebrew Encounter', 'Rule Variant': 'Table Rule' };
+  return map[category] || 'Homebrew Entry';
+}
+function phase82SuggestedDc(rarity) { if (rarity === 'Common') return 12; if (rarity === 'Uncommon') return 13; if (rarity === 'Rare') return 15; if (rarity === 'Very Rare') return 17; if (rarity === 'Legendary' || rarity === 'Artifact') return 18; return 13; }
+function phase82DefaultMechanics(category, values) {
+  const dc = values.dc || phase82SuggestedDc(values.rarity || 'Uncommon');
+  switch (category) {
+    case 'Nonmagical Item': return 'Define one clear utility use, weight, cost, and any required ability/tool check.';
+    case 'Magic Item': return 'While used or worn, the item grants one focused benefit. Strong effects require a save DC ' + dc + ' or limited use.';
+    case 'Potion / Poison': return 'As an action, a creature drinks/applies it. The target makes a DC ' + dc + ' save if harmful; on a failure, apply the effect for the listed duration.';
+    case 'Creature / Monster': return 'Use target CR ' + (values.targetCr || '1') + '. Give one main attack, one signature trait, and one tactical behaviour.';
+    case 'Spell': return 'Casting time: 1 action. Range and duration should match the effect. Save DC uses the caster spell save DC.';
+    case 'Feat': return 'Gain one focused benefit. Add +1 to a relevant ability only if the active benefit is modest.';
+    case 'Trap': return 'Trigger: entering/handling the area. Detect DC ' + dc + '. Disable DC ' + dc + '. Failed save/check causes damage or condition.';
+    case 'Encounter': return 'Include a tactical goal, 1-2 complications, terrain feature, and reward/clue. Enemies act with clear tactics.';
+    case 'Rule Variant': return 'When the trigger occurs, apply this rule instead of the default table procedure.';
+    default: return 'Write concise mechanics using official terms, one trigger, one effect, and one limit.';
+  }
+}
+function phase82DefaultLimits(category, values) {
+  const reset = values.reset || 'Long Rest';
+  if (category === 'Nonmagical Item') return 'Limited by equipment access, weight, tools, price, and DM adjudication.';
+  if (category === 'Creature / Monster') return 'Recharge 5-6 or 1/day for strong powers. Do not add free extra actions unless boss-level.';
+  if (category === 'Spell') return 'Balance by spell level, concentration, components, duration, range, save type, and scaling.';
+  if (category === 'Rule Variant') return 'Review after one session. Revert or revise if it slows play or creates loopholes.';
+  return 'Uses reset: ' + reset + '. Add attunement, charges, saves, or material cost if the effect is strong.';
+}
+function phase82DefaultCrafting(category, values) {
+  const rarity = values.rarity || 'Uncommon';
+  if (category === 'Nonmagical Item') return 'Cost: half market price in materials. Time: about 1 day per 10 GP value. Relevant tool proficiency required.';
+  if (category === 'Magic Item' || category === 'Potion / Poison') return rarity + ' ingredients, relevant tool proficiency, special component, downtime, and one meaningful ability check.';
+  if (category === 'Creature / Monster' || category === 'NPC' || category === 'Encounter' || category === 'Trap') return 'Prep cost is DM design time. Use after balance check and table fit review.';
+  return 'Define cost, time, prerequisites, tools, and what failure means.';
+}
+function phase82Summary(category, name, rarity, concept, mechanics, limits) { return ['**Category:** ' + category, '**Rarity / Tier:** ' + rarity, '**Concept:** ' + concept, '**Mechanics:** ' + mechanics, '**Limits:** ' + limits].join('\n'); }
+function phase82DefaultPlayerText(name, category, mechanics, limits) { return name + ' — ' + category + '. ' + mechanics + ' Limit: ' + limits; }
+function phase82BuildDraft(values) {
+  const category = values.category || 'Magic Item';
+  const rarity = values.rarity || 'Uncommon';
+  const target = phase82TargetForCategory(category);
+  const name = values.name || phase82AutoName(category, values);
+  const concept = values.concept || 'A fast homebrew idea created at the table.';
+  const mechanics = values.mechanics || phase82DefaultMechanics(category, values);
+  const limits = values.limits || phase82DefaultLimits(category, values);
+  const crafting = values.crafting || phase82DefaultCrafting(category, values);
+  const balance = phase82CategoryGuidance(category, values);
+  const playerFacing = values.playerFacing || phase82DefaultPlayerText(name, category, mechanics, limits);
+  const dmNotes = values.dmNotes || 'Playtest once. If it steals spotlight, reduce frequency, damage, bonus, or duration.';
+  const summary = phase82Summary(category, name, rarity, concept, mechanics, limits);
+  return { id: values.id || uid('homebrew'), name, title: name, type: target.type, category, rarity, level: values.level || '', targetCr: values.targetCr || '', actionCost: values.actionCost || 'Action', reset: values.reset || 'Long Rest', attunement: values.attunement || (['Rare','Very Rare','Legendary','Artifact'].includes(rarity) ? 'Yes' : 'No'), reference: values.reference || phase82ReferenceSuggestion(category), concept, mechanics, limits, crafting, balance, playerFacing, dmNotes, summary, description: summary, visibility: values.visibility || 'dm-only', tags: ['homebrew', String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-'), rarity.toLowerCase().replace(/\s+/g, '-')].filter(Boolean), source: 'Homebrew Forge', createdAt: Date.now(), templateKind: target.key === 'homebrew' ? 'homebrew' : target.key };
+}
+function phase82MarkdownPreview(entry) {
+  return ['# ' + (entry.name || 'Homebrew Entry'), '', '- **Category:** ' + (entry.category || ''), '- **Rarity / Tier:** ' + (entry.rarity || ''), '- **Reference:** ' + (entry.reference || ''), '- **Action Cost:** ' + (entry.actionCost || ''), '- **Reset / Uses:** ' + (entry.reset || ''), '- **Attunement:** ' + (entry.attunement || ''), '', '## Concept', entry.concept || '', '', '## Mechanics', entry.mechanics || '', '', '## Limits', entry.limits || '', '', '## Crafting / Creation', entry.crafting || '', '', '## Balance Check', entry.balance || '', '', '> [!info] Player-Facing Version', '> ' + String(entry.playerFacing || '').replace(/\n/g, '\n> '), '', '> [!gm-direction] DM Notes', '> ' + String(entry.dmNotes || '').replace(/\n/g, '\n> ')].join('\n');
+}
+function phase82AddHelp(parent, text) { return ce(parent, 'p', 'ttrpg-muted ttrpg-forge-help', text); }
+function phase82RenderEntryPreview(parent, entry) {
+  const box = ce(parent, 'div', 'ttrpg-forge-preview'); ce(box, 'h3', '', entry.name || 'Homebrew Preview');
+  const gridEl = ce(box, 'div', 'ttrpg-forge-fieldgrid');
+  [['Category', entry.category], ['Rarity / Tier', entry.rarity], ['Reference', entry.reference], ['Action', entry.actionCost], ['Reset', entry.reset], ['Attunement', entry.attunement]].forEach(([label, value]) => { const row = ce(gridEl, 'div', 'ttrpg-field-row'); ce(row, 'strong', '', label); ce(row, 'span', '', value || '—'); });
+  [['Concept', entry.concept], ['Mechanics', entry.mechanics], ['Limits', entry.limits], ['Crafting / Creation', entry.crafting], ['Balance Check', entry.balance], ['Player-Facing Version', entry.playerFacing], ['DM Notes', entry.dmNotes]].forEach(([label, value]) => { const sec = ce(box, 'section', 'ttrpg-forge-preview-section'); ce(sec, 'h4', '', label); ce(sec, 'p', '', value || '—'); });
+}
+function renderHomebrewForge(main, plugin) {
+  phase82EnsureState(plugin.state);
+  header(main, 'Homebrew Forge', 'Fast DM-side homebrew creation with category templates, balance checks, limits, crafting notes, and clean note output.', [
+    { label: 'Forge Homebrew', primary: true, onClick: () => new HomebrewForgeModal(plugin.app, plugin).open() }, { label: 'Magic Item', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Magic Item').open() }, { label: 'Creature', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Creature / Monster').open() }, { label: 'Spell', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Spell').open() }, { label: 'Trap', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Trap').open() }
+  ]);
+  const cards = grid(main, 'ttrpg-grid ttrpg-mini-grid');
+  card(cards, 'Quick Forge', 'Choose a category, enter a concept, generate a balanced draft, then save it into the right plugin section.', '🛠️', [{ label: 'Open Forge', primary: true, onClick: () => new HomebrewForgeModal(plugin.app, plugin).open() }]);
+  card(cards, 'Balance Guardrails', 'Rarity, CR, attunement, charges, saves, crafting cost, and action economy are included as design checks.', '⚖️', [{ label: 'Magic Item', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Magic Item').open() }]);
+  card(cards, 'Table-Ready Output', 'Saves as plugin data and writes clean Markdown notes without embedded JSON scaffolding.', '📄', [{ label: 'Rule Variant', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Rule Variant').open() }]);
+  const catWrap = ce(main, 'section', 'ttrpg-card ttrpg-forge-categories'); ce(catWrap, 'h3', '', 'Supported Homebrew Categories');
+  const tags = ce(catWrap, 'div', 'ttrpg-tags'); PHASE82_HOMEBREW_CATEGORIES.forEach(category => { const tag = ce(tags, 'button', 'ttrpg-tag ttrpg-click-tag', category); tag.type = 'button'; tag.addEventListener('click', () => new HomebrewForgeModal(plugin.app, plugin, category).open()); });
+  const ref = ce(main, 'section', 'ttrpg-card'); ce(ref, 'h3', '', 'Built-In Design References'); ce(ref, 'p', 'ttrpg-muted', 'Use SRD/legal local data, PHB/DMG/MM-style comparison, rarity tiers, CR targets, attunement, charges, action economy, and playtest notes. External websites are reference-only and are not called by the plugin.');
+  phase64SectionTitle(main, 'homebrew'); itemCards(main, plugin, 'homebrew', { icon: '🛠️', empty: 'No homebrew entries yet. Open the forge to create one at the table.' });
+}
+class HomebrewForgeModal extends Modal {
+  constructor(app, plugin, category, item) { super(app); this.plugin = plugin; this.values = Object.assign({ id: uid('homebrew'), category: category || 'Magic Item', name: '', rarity: 'Uncommon', level: 1, targetCr: '1', dc: '', actionCost: 'Action', reset: 'Long Rest', attunement: 'No', reference: '', concept: '', mechanics: '', limits: '', crafting: '', playerFacing: '', dmNotes: '', visibility: 'dm-only' }, item || {}); this.preview = item ? phase82BuildDraft(this.values) : null; }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.addClass('ttrpg-homebrew-forge-modal'); contentEl.createEl('h2', { text: 'Homebrew Forge' }); phase82AddHelp(contentEl, 'Create table-ready homebrew quickly. Pick a category, add a concept, generate a rules-guided draft, then save it into the matching DM section.');
+    addSelect(contentEl, 'Category', this.values.category, PHASE82_HOMEBREW_CATEGORIES, v => { this.values.category = v; this.values.reference = this.values.reference || phase82ReferenceSuggestion(v); this.preview = null; this.render(); });
+    addText(contentEl, 'Name', this.values.name, v => this.values.name = v); addTextArea(contentEl, 'Concept & Purpose', this.values.concept, v => this.values.concept = v);
+    const two = ce(contentEl, 'div', 'ttrpg-forge-two-col'); const left = ce(two, 'div', 'ttrpg-forge-col'); const right = ce(two, 'div', 'ttrpg-forge-col');
+    addSelect(left, 'Rarity / Tier', this.values.rarity, PHASE82_RARITIES, v => this.values.rarity = v); addText(left, 'Target Level', this.values.level, v => this.values.level = v); addText(left, 'Target CR', this.values.targetCr, v => this.values.targetCr = v); addText(left, 'Save / Check DC', this.values.dc, v => this.values.dc = v);
+    addSelect(right, 'Action Economy', this.values.actionCost, PHASE82_ACTION_ECONOMY, v => this.values.actionCost = v); addSelect(right, 'Uses / Reset', this.values.reset, PHASE82_RESET_OPTIONS, v => this.values.reset = v); addSelect(right, 'Attunement', this.values.attunement, ['No', 'Yes', 'Recommended', 'Required'], v => this.values.attunement = v); addSelect(right, 'Visibility', this.values.visibility, ['dm-only', 'player-visible', 'secret', 'reveal-date'], v => this.values.visibility = v);
+    addText(contentEl, 'Comparable Reference', this.values.reference || phase82ReferenceSuggestion(this.values.category), v => this.values.reference = v); addTextArea(contentEl, 'Mechanics', this.values.mechanics, v => this.values.mechanics = v); addTextArea(contentEl, 'Limits / Charges / Saves', this.values.limits, v => this.values.limits = v); addTextArea(contentEl, 'Crafting / Creation Requirements', this.values.crafting, v => this.values.crafting = v); addTextArea(contentEl, 'Player-Facing Text', this.values.playerFacing, v => this.values.playerFacing = v); addTextArea(contentEl, 'DM Notes / Balance Concerns', this.values.dmNotes, v => this.values.dmNotes = v);
+    const actionRow = ce(contentEl, 'div', 'ttrpg-modal-buttons'); btn(actionRow, 'Generate Draft', 'ttrpg-btn ttrpg-primary', () => { this.preview = phase82BuildDraft(this.values); this.values = Object.assign(this.values, this.preview); this.render(); }); btn(actionRow, 'Balance Check Only', 'ttrpg-btn', () => { this.preview = Object.assign(phase82BuildDraft(this.values), { mechanics: this.values.mechanics, limits: this.values.limits, crafting: this.values.crafting }); this.preview.balance = phase82CategoryGuidance(this.values.category, this.values); this.render(); });
+    if (this.preview) { phase82RenderEntryPreview(contentEl, this.preview); const mdBox = ce(contentEl, 'details', 'ttrpg-forge-md'); ce(mdBox, 'summary', '', 'Markdown Preview'); const pre = ce(mdBox, 'pre', '', phase82MarkdownPreview(this.preview)); pre.addClass('ttrpg-code-preview'); }
+    const buttons = ce(contentEl, 'div', 'ttrpg-modal-buttons'); btn(buttons, 'Cancel', 'ttrpg-btn', () => this.close()); btn(buttons, 'Save Homebrew', 'ttrpg-btn ttrpg-primary', async () => this.save(false)); btn(buttons, 'Save & Write Note', 'ttrpg-btn ttrpg-primary', async () => this.save(true));
+  }
+  async save(writeNote) {
+    phase82EnsureState(this.plugin.state); const entry = phase82BuildDraft(this.values); const target = phase82TargetForCategory(entry.category); entry.id = this.values.id || entry.id || uid(target.key); entry.name = entry.name || this.values.name || 'Homebrew Entry'; entry.templateKind = target.key;
+    if (entry.category === 'Rule Variant') entry.enabled = true;
+    if (entry.category === 'Trap') { entry.difficulty = entry.rarity || 'Uncommon'; entry.traps = entry.mechanics; entry.hazards = entry.limits; }
+    if (entry.category === 'Creature / Monster') { entry.cr = entry.targetCr || '1'; entry.ac = entry.ac || ''; entry.hp = entry.hp || ''; entry.actions = entry.mechanics; entry.tactics = entry.dmNotes; }
+    upsert(this.plugin.state, target.key, entry);
+    if (target.key !== 'homebrew') { const copy = Object.assign({}, entry, { id: entry.id + '-homebrew-index', linkedId: entry.id, targetSection: target.key }); upsert(this.plugin.state, 'homebrew', copy); }
+    await this.plugin.saveState(); if (writeNote) await writeEntityNote(this.plugin, target.key, entry); new Notice('Homebrew saved to ' + (ENTITY_LABELS[target.key] || target.key) + '.'); this.close();
+  }
+}
+const phase82BaseTemplateFor = phase78TemplateFor;
+phase78TemplateFor = function phase82TemplateFor(kind, item, campaign) {
+  if (item && item.source === 'Homebrew Forge') {
+    const yaml = phase78Yaml(kind, item, campaign); const header = '# ' + (item.name || item.title || 'Homebrew Entry') + '\n';
+    return [yaml, '', header, '## Homebrew Summary', '', '- **Category:** ' + (item.category || item.type || 'Homebrew'), '- **Rarity / Tier:** ' + (item.rarity || ''), '- **Comparable Reference:** ' + (item.reference || ''), '- **Action Economy:** ' + (item.actionCost || ''), '- **Uses / Reset:** ' + (item.reset || ''), '- **Attunement:** ' + (item.attunement || ''), '', '## Concept', '', item.concept || item.summary || '', '', '## Mechanics', '', item.mechanics || '', '', '## Limits', '', item.limits || '', '', '## Crafting / Creation', '', item.crafting || '', '', '> [!info] Player-Facing Version', '> ' + String(item.playerFacing || '').replace(/\n/g, '\n> '), '', '> [!gm-direction] Balance Check', '> ' + String(item.balance || '').replace(/\n/g, '\n> '), '', '> [!gm-direction] DM Notes', '> ' + String(item.dmNotes || '').replace(/\n/g, '\n> '), '', '## Playtest Log', '', '| Session | Result | Adjustment |', '|---|---|---|', '| | | |'].join('\n');
+  }
+  return phase82BaseTemplateFor(kind, item, campaign);
+};
+if (Array.isArray(PHASE68_SEARCH_KEYS) && !PHASE68_SEARCH_KEYS.includes('homebrew')) PHASE68_SEARCH_KEYS.push('homebrew');
+
+/* --------------------------------------------------------------------------
+ * Phase 83 — Hybrid Ancestry Builder
+ * Adds Player/DM race hybridisation as a rules-guided module.
+ * -------------------------------------------------------------------------- */
+
+function phase83EnsureState(state) {
+  phase82EnsureState(state);
+  state.entities = state.entities || {};
+  if (!Array.isArray(state.entities.hybridAncestries)) state.entities.hybridAncestries = [];
+  phase83RegisterSavedHybrids(state);
+}
+function phase83RegisterSavedHybrids(state) {
+  safeArray(state.entities && state.entities.hybridAncestries).forEach(h => phase83RegisterHybridAsAncestry(h));
+}
+function phase83RegisterHybridAsAncestry(h) {
+  if (!h || !h.name || !PC_RULES || !PC_RULES.ancestries) return;
+  const bonuses = h.bonuses || phase83ParseBonuses(h.asi || '+2 dex, +1 cha');
+  PC_RULES.ancestries[h.name] = {
+    speed: h.speed || '30 ft',
+    bonuses,
+    languages: h.languages || 'Common + two inherited languages',
+    traits: textList(h.traits || h.selectedTraits || h.summary).slice(0, 6)
+  };
+}
+function phase83ParseBonuses(text) {
+  const out = {};
+  String(text || '').replace(/([+-]\s*\d+)\s*([a-z]{3})/gi, (_, amount, ability) => {
+    const key = ability.toLowerCase();
+    if (PC_RULES.abilities.includes(key)) out[key] = (out[key] || 0) + Number(String(amount).replace(/\s+/g,''));
+    return '';
+  });
+  return Object.keys(out).length ? out : { dex: 2, cha: 1 };
+}
+function phase83RaceLabel(name) { return name || 'Unknown Ancestry'; }
+function phase83RaceData(name) { return PC_RULES.ancestries[name] || { speed:'30 ft', bonuses:{}, languages:'Common', traits:[] }; }
+function phase83TraitList(name) { return textList((phase83RaceData(name).traits || []).join ? phase83RaceData(name).traits.join(', ') : phase83RaceData(name).traits); }
+function phase83BonusEntries(name) { return Object.entries(phase83RaceData(name).bonuses || {}).map(([k,v]) => `${k.toUpperCase()} +${v}`); }
+function phase83TotalBonus(bonuses) { return Object.values(bonuses || {}).reduce((a,b) => a + Number(b || 0), 0); }
+function phase83DefaultHybridName(dominant, recessive) {
+  if (!dominant || !recessive) return 'Hybrid Ancestry';
+  return `${dominant}-${recessive} Hybrid`;
+}
+function phase83PickBonuses(dominant, recessive, mode) {
+  const d = phase83RaceData(dominant).bonuses || {};
+  const r = phase83RaceData(recessive).bonuses || {};
+  if (mode === '+1 / +1 / +1 spread') {
+    const keys = uniqueList([...Object.keys(d), ...Object.keys(r), 'dex','con','cha']).filter(k => PC_RULES.abilities.includes(k)).slice(0, 3);
+    return keys.reduce((acc, k) => { acc[k] = 1; return acc; }, {});
+  }
+  const dBest = Object.entries(d).sort((a,b)=>Number(b[1])-Number(a[1]))[0] || ['dex',2];
+  const rBest = Object.entries(r).filter(([k]) => k !== dBest[0]).sort((a,b)=>Number(b[1])-Number(a[1]))[0] || Object.entries(r).sort((a,b)=>Number(b[1])-Number(a[1]))[0] || ['cha',1];
+  const out = {}; out[dBest[0]] = 2; out[rBest[0]] = (out[rBest[0]] || 0) + 1; return out;
+}
+function phase83FormatBonuses(bonuses) { return Object.entries(bonuses || {}).map(([k,v]) => `+${v} ${k.toUpperCase()}`).join(', ') || '+2 / +1 flexible'; }
+function phase83BestDarkvision(dominant, recessive) {
+  const all = [...phase83TraitList(dominant), ...phase83TraitList(recessive)].join(' | ');
+  if (/120\s*ft|superior/i.test(all)) return 'Darkvision 120 ft. Take the better inherited darkvision once.';
+  if (/darkvision/i.test(all)) return 'Darkvision 60 ft. Take inherited darkvision once.';
+  return '';
+}
+function phase83LanguageMerge(dominant, recessive) {
+  const langText = `${phase83RaceData(dominant).languages || ''}, ${phase83RaceData(recessive).languages || ''}`;
+  const known = uniqueList(langText.replace(/\+[^,]+/g, '').split(/,|and/).map(x => x.trim()).filter(Boolean));
+  const base = known.filter(x => !/one extra|two extra|extra language/i.test(x));
+  return uniqueList(['Common', ...base]).slice(0, 4).join(', ') || 'Common + two inherited languages';
+}
+function phase83BuildHybrid(values) {
+  const dominant = values.dominant || 'Human';
+  const recessive = values.recessive || 'Tiefling';
+  const bonuses = phase83PickBonuses(dominant, recessive, values.asiMode || '+2 dominant / +1 recessive');
+  const dTraits = phase83TraitList(dominant);
+  const rTraits = phase83TraitList(recessive);
+  const darkvision = phase83BestDarkvision(dominant, recessive);
+  const defensive = values.defensiveTrait || dTraits.concat(rTraits).find(t => /resistance|advantage|charmed|sleep|resilience|endurance/i.test(t)) || 'One inherited defensive trait chosen at creation.';
+  const magic = values.magicTrait || dTraits.concat(rTraits).find(t => /magic|legacy|cantrip|spell/i.test(t)) || '';
+  const utility = values.utilityTrait || dTraits.concat(rTraits).find(t => /skill|proficiency|training|stealth|senses|cunning|nimbleness|weapon/i.test(t)) || 'One skill, tool, language, or weapon proficiency chosen at creation.';
+  const selected = uniqueList([darkvision, defensive, magic, utility, values.extraTrait].filter(Boolean)).slice(0, 5);
+  const total = phase83TotalBonus(bonuses);
+  const warnings = [];
+  if (total > 3) warnings.push('ASI exceeds +3. Reduce bonuses before table use.');
+  if (selected.length > 5) warnings.push('Too many meaningful traits. Keep this to 4–5 max.');
+  if (selected.filter(t => /resistance/i.test(t)).length > 1) warnings.push('Multiple resistances detected. Keep only one.');
+  if (selected.filter(t => /spell|cantrip|magic|legacy/i.test(t)).length > 1) warnings.push('Multiple spellcasting traits detected. Merge into one limited trait.');
+  const name = values.name || phase83DefaultHybridName(dominant, recessive);
+  return {
+    id: values.id || uid('hybrid'), name, type: 'Hybrid Ancestry', dominant, recessive,
+    asi: phase83FormatBonuses(bonuses), bonuses,
+    size: values.size || 'Medium', speed: values.speed || phase83RaceData(dominant).speed || '30 ft',
+    age: values.age || `Between ${dominant} and ${recessive}; choose a table-appropriate lifespan/adulthood point.`,
+    languages: values.languages || phase83LanguageMerge(dominant, recessive),
+    traits: selected.join('\n'), appearance: values.appearance || `Mostly ${dominant} in silhouette, with visible ${recessive} influence.`,
+    playerFacing: values.playerFacing || '', dmNotes: values.dmNotes || '',
+    balanceNotes: [
+      'Balance rules: total ASI must be +3 max; 4–5 meaningful traits max; no stacked resistances, darkvision, or spellcasting packages.',
+      `Dominant ancestry: ${dominant}. Recessive ancestry: ${recessive}.`,
+      `Selected ASI: ${phase83FormatBonuses(bonuses)}.`,
+      `Trait count: ${selected.length}.`,
+      warnings.length ? `Warnings: ${warnings.join(' ')}` : 'Balance check passed for draft use.'
+    ].join('\n'),
+    summary: `${phase83FormatBonuses(bonuses)} • ${values.size || 'Medium'} • ${values.speed || phase83RaceData(dominant).speed || '30 ft'} • ${selected.length} traits`,
+    visibility: values.visibility || 'player-visible', tags: ['homebrew','hybrid-ancestry', slugify(dominant).toLowerCase(), slugify(recessive).toLowerCase()], createdAt: Date.now(), templateKind: 'hybridAncestry'
+  };
+}
+function phase83HybridMarkdown(h) {
+  const safe = h || {};
+  return [
+    '---', `ttrpg_type: hybrid-ancestry`, `id: ${safe.id || uid('hybrid')}`, `visibility: ${safe.visibility || 'player-visible'}`, `tags: [homebrew, hybrid-ancestry]`, '---', '',
+    `# ${safe.name || 'Hybrid Ancestry'}`, '',
+    `> [!info] Hybrid Balance`,
+    `> Total ASI should stay at +3 max. Keep traits to 4–5 meaningful features. Do not stack duplicate resistances, darkvision, or spellcasting packages.`, '',
+    '## Lineage', `- **Dominant:** ${safe.dominant || ''}`, `- **Recessive:** ${safe.recessive || ''}`, '',
+    '## Core Traits', `- **ASI:** ${safe.asi || ''}`, `- **Size:** ${safe.size || ''}`, `- **Speed:** ${safe.speed || ''}`, `- **Age:** ${safe.age || ''}`, `- **Languages:** ${safe.languages || ''}`, '',
+    '## Features', textList(safe.traits).map(t => `- ${t}`).join('\n') || '- None selected yet.', '',
+    '## Appearance', safe.appearance || '', '',
+    '## Player-Facing Notes', safe.playerFacing || '', '',
+    '## DM Notes', safe.dmNotes || '', '',
+    '## Balance Notes', safe.balanceNotes || ''
+  ].join('\n');
+}
+async function phase83WriteHybridNote(plugin, h) {
+  const campaign = activeCampaign(plugin.state);
+  const base = campaign ? `${plugin.state.settings.campaignRoot || 'TTRPG Campaigns'}/${slugify(campaign.name || 'Campaign')}/01 World & Lore/Ancestries/Hybrid Ancestries` : `${plugin.state.settings.campaignRoot || 'TTRPG Campaigns'}/Hybrid Ancestries`;
+  const path = `${base}/${slugify(h.name || 'Hybrid Ancestry')}.md`;
+  await writeFile(plugin, path, phase83HybridMarkdown(h));
+  h.notePath = path;
+  return path;
+}
+
+const PHASE83_PLAYER_NAV = [['player', '👁️', 'Player View'], ['hybridAncestry', '🧬', 'Hybrid Ancestry']];
+const PHASE83_DM_NAV = [
+  ['dashboard', '🏰', 'Dashboard'], ['campaignList', '📚', 'Campaigns'], ['campaign', '🧙', 'Campaign Wizard'],
+  ['world', '🌌', 'World & Lore'], ['geography', '🗺️', 'Geography & Maps'], ['npcs', '👤', 'NPCs & Creatures'],
+  ['adventure', '📝', 'Adventures & Quests'], ['combat', '⚔️', 'Combat & Encounters'], ['generators', '🎲', 'Generators'],
+  ['homebrewForge', '🛠️', 'Homebrew Forge'], ['hybridAncestry', '🧬', 'Hybrid Ancestry'], ['rules', '⚙️', 'Rules & Mechanics'], ['downtime', '⏳', 'Downtime & Bases'],
+  ['sessions', '📅', 'Sessions & Timeline'], ['secrets', '🔒', 'Secrets & Reveals'], ['library', '📚', 'Library & Compendium']
+];
+phase64VisibleNav = function phase83VisibleNav(state) { return state.mode === 'PLAYER' ? PHASE83_PLAYER_NAV : PHASE83_DM_NAV; };
+const phase83BaseRenderSection = renderSection;
+renderSection = function phase83RenderSection(main, plugin, section) {
+  if (section === 'hybridAncestry') return renderHybridAncestry(main, plugin);
+  return phase83BaseRenderSection(main, plugin, section);
+};
+const phase83BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase83Onload() {
+  await phase83BaseOnload.call(this);
+  phase83EnsureState(this.state);
+  this.addCommand({ id: 'open-hybrid-ancestry-builder', name: 'Open Hybrid Ancestry Builder', callback: async () => { this.state.activeSection = 'hybridAncestry'; await this.saveState(); await this.activateView(); } });
+};
+
+function renderHybridAncestry(main, plugin) {
+  phase83EnsureState(plugin.state);
+  const modeWord = plugin.state.mode === 'PLAYER' ? 'Player' : 'DM';
+  header(main, 'Hybrid Ancestry Builder', `${modeWord}-available race hybridisation with dominant/recessive ancestry selection, +3 ASI guardrails, trait limits, and clean Markdown output.`, [
+    { label: 'Create Hybrid', primary: true, onClick: () => new HybridAncestryModal(plugin.app, plugin).open() }
+  ]);
+  const rules = ce(main, 'section', 'ttrpg-builder-callout');
+  rules.createEl('strong', { text: 'Core balance rules: ' });
+  rules.createSpan({ text: 'Total ASI +3 max; 4–5 meaningful traits max; do not stack resistances, darkvision, or spellcasting packages; choose one dominant ancestry and one recessive ancestry.' });
+  const hybrids = safeArray(plugin.state.entities.hybridAncestries).filter(h => plugin.state.mode === 'DM' || playerVisible(h));
+  if (!hybrids.length) {
+    empty(main, 'No hybrid ancestries created yet.', 'Create one by choosing a dominant ancestry, recessive ancestry, ASI method, and limited trait package.');
+    return;
+  }
+  const g = grid(main);
+  hybrids.forEach(h => card(g, h.name || 'Hybrid Ancestry', `${h.summary || ''}\nDominant: ${h.dominant || '—'}\nRecessive: ${h.recessive || '—'}\n\n${h.traits || ''}\n\n${h.balanceNotes || ''}`, '🧬', [
+    { label: 'Edit', onClick: () => new HybridAncestryModal(plugin.app, plugin, h).open() },
+    { label: 'Write Note', onClick: async () => { const path = await phase83WriteHybridNote(plugin, h); upsert(plugin.state, 'hybridAncestries', h); phase83RegisterHybridAsAncestry(h); await plugin.saveState(); new Notice(`Hybrid note written: ${path}`); } },
+    { label: 'Use for New PC', primary: true, onClick: () => { phase83RegisterHybridAsAncestry(h); const pc = rebuildCharacterFromRules(Object.assign(seedPlayerCharacter(), { race: h.name, className: 'Fighter', background: 'Outlander' }), 'Standard array by class'); new PCModal(plugin.app, plugin, pc).open(); } },
+    ...(plugin.state.mode === 'DM' ? [{ label: 'Delete', onClick: async () => { remove(plugin.state, 'hybridAncestries', h.id); await plugin.saveState(); } }] : [])
+  ]));
+}
+
+class HybridAncestryModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app); this.plugin = plugin; this.values = Object.assign({ dominant:'High Elf', recessive:'Tiefling', asiMode:'+2 dominant / +1 recessive', visibility:'player-visible' }, item || {});
+  }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.addClass('ttrpg-hybrid-modal');
+    const draft = phase83BuildHybrid(this.values);
+    contentEl.createEl('h2', { text: 'Hybrid Ancestry Builder' });
+    phase82AddHelp(contentEl, 'Pick two ancestries. The dominant ancestry supplies the main identity; the recessive ancestry adds flavour and 1–2 limited traits. The builder keeps the result inside a standard race power budget.');
+    const basics = contentEl.createDiv('ttrpg-builder-section'); basics.createEl('h3', { text: '1. Parents & Identity' });
+    addText(basics, 'Hybrid Name', this.values.name || draft.name, v => this.values.name = v);
+    addSelect(basics, 'Dominant Ancestry', this.values.dominant || 'High Elf', ancestryOptions(), v => { this.values.dominant = v; if (!this.values.name) this.values.name = phase83DefaultHybridName(v, this.values.recessive); this.render(); });
+    addSelect(basics, 'Recessive Ancestry', this.values.recessive || 'Tiefling', ancestryOptions(), v => { this.values.recessive = v; if (!this.values.name) this.values.name = phase83DefaultHybridName(this.values.dominant, v); this.render(); });
+    addSelect(basics, 'Visibility', this.values.visibility || 'player-visible', ['player-visible','dm-only','secret'], v => this.values.visibility = v);
+
+    const core = contentEl.createDiv('ttrpg-builder-section'); core.createEl('h3', { text: '2. Core Rules' });
+    addSelect(core, 'ASI Method', this.values.asiMode || '+2 dominant / +1 recessive', ['+2 dominant / +1 recessive', '+1 / +1 / +1 spread'], v => { this.values.asiMode = v; this.render(); });
+    addText(core, 'Size', this.values.size || draft.size, v => this.values.size = v);
+    addText(core, 'Speed', this.values.speed || draft.speed, v => this.values.speed = v);
+    addText(core, 'Age', this.values.age || draft.age, v => this.values.age = v);
+    addText(core, 'Languages', this.values.languages || draft.languages, v => this.values.languages = v);
+
+    const traits = contentEl.createDiv('ttrpg-builder-section'); traits.createEl('h3', { text: '3. Trait Package' });
+    const pool = uniqueList([...phase83TraitList(this.values.dominant), ...phase83TraitList(this.values.recessive)]);
+    const poolText = pool.length ? pool.join(', ') : 'No trait pool found for selected ancestries.';
+    traits.createEl('p', { cls:'ttrpg-muted', text:`Available inherited trait pool: ${poolText}` });
+    addTextArea(traits, 'Defensive Trait', this.values.defensiveTrait || '', v => this.values.defensiveTrait = v);
+    addTextArea(traits, 'Magic Trait / Merged Spell Trait', this.values.magicTrait || '', v => this.values.magicTrait = v);
+    addTextArea(traits, 'Utility Trait', this.values.utilityTrait || '', v => this.values.utilityTrait = v);
+    addTextArea(traits, 'Extra Trait / Flavour Trait', this.values.extraTrait || '', v => this.values.extraTrait = v);
+
+    const flavour = contentEl.createDiv('ttrpg-builder-section'); flavour.createEl('h3', { text: '4. Flavour & Notes' });
+    addTextArea(flavour, 'Appearance', this.values.appearance || draft.appearance, v => this.values.appearance = v);
+    addTextArea(flavour, 'Player-Facing Notes', this.values.playerFacing || '', v => this.values.playerFacing = v);
+    addTextArea(flavour, 'DM Notes', this.values.dmNotes || '', v => this.values.dmNotes = v);
+
+    const preview = contentEl.createDiv('ttrpg-builder-preview'); preview.createEl('h3', { text: 'Preview & Balance Check' });
+    preview.createEl('pre', { text: `Name: ${draft.name}\nASI: ${draft.asi}\nSize/Speed: ${draft.size}, ${draft.speed}\nLanguages: ${draft.languages}\n\nTraits:\n${draft.traits}\n\n${draft.balanceNotes}` });
+
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Rebuild Preview', 'ttrpg-btn', () => this.render());
+    btn(row, 'Save Hybrid', 'ttrpg-btn ttrpg-primary', async () => { const h = phase83BuildHybrid(this.values); upsert(this.plugin.state, 'hybridAncestries', h); phase83RegisterHybridAsAncestry(h); await this.plugin.saveState(); new Notice('Hybrid ancestry saved.'); this.close(); });
+    btn(row, 'Save + Write Note', 'ttrpg-btn', async () => { const h = phase83BuildHybrid(this.values); const path = await phase83WriteHybridNote(this.plugin, h); upsert(this.plugin.state, 'hybridAncestries', h); phase83RegisterHybridAsAncestry(h); await this.plugin.saveState(); new Notice(`Hybrid ancestry note written: ${path}`); this.close(); });
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 84 — Player Hybrid Navigation + Data-Driven Selectors
+ * Fixes Player Mode Hybrid Ancestry nav, updates selectable fields from the
+ * bundled data/*.json folder, and gives the NPC builder the same ancestry/item
+ * selector approach as the PC builder.
+ * -------------------------------------------------------------------------- */
+
+const PHASE84_DATA = {
+  races: [], backgrounds: [], skills: [], languages: [], deities: [], traps: [], conditions: [],
+  equipment: [], feats: [], spells: [], vehicles: [], objects: [], actions: [], rewards: []
+};
+
+function phase84Text(value) {
+  try { return phase81PlainEntries(value); } catch (_) { return String(value || ''); }
+}
+function phase84Array(value) { return Array.isArray(value) ? value : []; }
+function phase84UniqueNames(list) { return [...new Set(phase84Array(list).map(x => String(x && x.name || '').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)); }
+function phase84SpeedText(speed) {
+  if (speed === null || speed === undefined || speed === '') return '30 ft';
+  if (typeof speed === 'number') return `${speed} ft`;
+  if (typeof speed === 'string') return speed;
+  if (typeof speed === 'object') {
+    const parts = [];
+    if (speed.walk) parts.push(`${speed.walk} ft`);
+    ['fly','swim','climb','burrow'].forEach(k => { if (speed[k]) parts.push(`${k} ${speed[k]} ft`); });
+    return parts.join(', ') || '30 ft';
+  }
+  return '30 ft';
+}
+function phase84AbilityBonuses(ability) {
+  const bonuses = {};
+  phase84Array(ability).forEach(a => {
+    if (!a || typeof a !== 'object') return;
+    ['str','dex','con','int','wis','cha'].forEach(k => { if (typeof a[k] === 'number') bonuses[k] = Math.max(Number(bonuses[k] || 0), Number(a[k] || 0)); });
+  });
+  return bonuses;
+}
+function phase84SkillNamesFromProfs(profs) {
+  const names = [];
+  phase84Array(profs).forEach(p => {
+    if (!p || typeof p !== 'object') return;
+    Object.keys(p).forEach(k => { if (p[k] === true) names.push(k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())); });
+  });
+  return names;
+}
+function phase84NormaliseRaceForRules(r) {
+  const existing = PC_RULES.ancestries[r.name] || {};
+  const traitParts = [];
+  if (r.size) traitParts.push(`Size: ${phase84Array(r.size).join('/') || r.size}`);
+  phase84Array(r.traitTags).forEach(t => traitParts.push(String(t)));
+  const summary = phase84Text(r.entries || r.summary || '').slice(0, 900);
+  if (summary) traitParts.push(summary);
+  const bonuses = Object.keys(phase84AbilityBonuses(r.ability)).length ? phase84AbilityBonuses(r.ability) : (existing.bonuses || {});
+  return Object.assign({}, existing, {
+    speed: phase84SpeedText(r.speed || existing.speed),
+    bonuses,
+    languages: existing.languages || 'Choose from ancestry/language data as appropriate',
+    traits: phase84Array(existing.traits).concat(traitParts).filter(Boolean),
+    source: r.source || existing.source || 'Local data',
+    raw: r
+  });
+}
+function phase84NormaliseBackgroundForRules(b) {
+  const existing = PC_RULES.backgrounds[b.name] || {};
+  const skills = phase84SkillNamesFromProfs(b.skillProficiencies);
+  const summary = phase84Text(b.entries || b.summary || '').slice(0, 900);
+  return Object.assign({}, existing, {
+    skillProficiencies: skills.length ? skills : (existing.skillProficiencies || []),
+    feature: existing.feature || (summary ? summary.slice(0, 160) : 'Background feature from local data'),
+    equipment: existing.equipment || phase84Text(b.startingEquipment || '').slice(0, 300),
+    summary,
+    source: b.source || existing.source || 'Local data',
+    raw: b
+  });
+}
+function phase84RefreshRuleOptionsFromData() {
+  if (PHASE84_DATA.skills.length) {
+    const skills = PHASE84_DATA.skills.map(s => [s.name, String(s.ability || '').toLowerCase() || 'dex']).filter(x => x[0]);
+    if (skills.length) PC_RULES.skills = skills;
+  }
+  PHASE84_DATA.races.forEach(r => { if (r && r.name) PC_RULES.ancestries[r.name] = phase84NormaliseRaceForRules(r); });
+  PHASE84_DATA.backgrounds.forEach(b => { if (b && b.name) PC_RULES.backgrounds[b.name] = phase84NormaliseBackgroundForRules(b); });
+}
+async function phase84ReadAllData(plugin) {
+  const files = Object.keys(PHASE84_DATA).map(k => `${k}.json`);
+  await Promise.all(files.map(async file => {
+    const key = file.replace(/\.json$/, '');
+    const data = await phase81ReadPluginJson(plugin, file);
+    if (Array.isArray(data)) PHASE84_DATA[key] = data;
+  }));
+  phase84RefreshRuleOptionsFromData();
+  if (Array.isArray(PHASE70_SPELLS) && PHASE84_DATA.spells.length) PHASE70_SPELLS.splice(0, PHASE70_SPELLS.length, ...PHASE84_DATA.spells.map(phase81NormaliseSpell));
+  if (Array.isArray(PHASE70_FEATS) && PHASE84_DATA.feats.length) PHASE70_FEATS.splice(0, PHASE70_FEATS.length, ...PHASE84_DATA.feats.map(phase81NormaliseFeat));
+  if (Array.isArray(PHASE70_ITEMS) && PHASE84_DATA.equipment.length) PHASE70_ITEMS.splice(0, PHASE70_ITEMS.length, ...PHASE84_DATA.equipment.map(phase81NormaliseItem));
+  try { phase70EnsureBuiltInCompendium(plugin.state); } catch (_) {}
+}
+const phase84BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase84Onload() {
+  await phase84BaseOnload.call(this);
+  await phase84ReadAllData(this);
+};
+
+// Make Player Mode respect the selected player-side module instead of always
+// forcing the Player View. This fixes Player Mode → Hybrid Ancestry.
+attachStableSearch = function phase84StableSearch(search, view, main) {
+  const state = view.plugin.state;
+  search.addEventListener('input', e => {
+    const input = e.target;
+    state.search = input.value;
+    persistSearchSilently(view.plugin);
+    clear(main);
+    if (String(state.search || '').trim()) renderGlobalSearch(main, view.plugin);
+    else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, view.plugin, 'hybridAncestry');
+    else if (state.mode === 'PLAYER') renderPlayerView(main, view.plugin);
+    else renderSection(main, view.plugin, state.activeSection || 'dashboard');
+    window.setTimeout(() => { try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (_) {} }, 0);
+  });
+};
+TTRPGMainView.prototype.render = function phase84MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase68EnsureState(state); phase83EnsureState(state);
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (state.activeSection === 'player') state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; if (!['player','hybridAncestry'].includes(state.activeSection)) state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search this plugin…'; search.value = state.search || ''; search.title = 'Search saved plugin entries';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary ttrpg-top-action', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn ttrpg-top-action', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase64VisibleNav(state).forEach(([id, icon, label]) => {
+    const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+    const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; state.search = ''; await this.plugin.saveState(); });
+    item.dataset.section = id; item.title = label;
+  });
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (String(state.search || '').trim()) renderGlobalSearch(main, this.plugin);
+  else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, this.plugin, 'hybridAncestry');
+  else if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin);
+  else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+function phase84AppendDataPicker(parent, label, items, onPick, toLabel) {
+  const opts = phase84Array(items).filter(x => x && x.name);
+  if (!opts.length) return;
+  let chosen = opts[0];
+  new Setting(parent)
+    .setName(label)
+    .addDropdown(d => {
+      opts.slice(0, 1200).forEach((o, idx) => d.addOption(String(idx), toLabel ? toLabel(o) : `${o.name}${o.source ? ` — ${o.source}` : ''}`));
+      d.onChange(v => { chosen = opts[Number(v)] || opts[0]; });
+    })
+    .addButton(b => b.setButtonText('Use').onClick(() => { if (chosen) onPick(chosen); }));
+}
+function phase84ApplyAncestryToNpc(values, raceName) {
+  const ancestry = PC_RULES.ancestries[raceName] || {};
+  values.race = raceName;
+  if (ancestry.speed) values.speed = ancestry.speed;
+  if (!values.traits && ancestry.traits) values.traits = phase84Array(ancestry.traits).slice(0, 8).join('\n');
+  if (!values.languages && ancestry.languages) values.languages = ancestry.languages;
+  return values;
+}
+
+NPCModal.prototype.onOpen = function phase84NPCOpenDataDriven() {
+  const { contentEl } = this;
+  clear(contentEl);
+  contentEl.addClass('ttrpg-modal');
+  contentEl.createEl('h2', { text: 'Full NPC Builder' });
+  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (_) {}
+
+  const basics = contentEl.createDiv('ttrpg-builder-section');
+  basics.createEl('h3', { text: 'Identity & Rules Data' });
+  addText(basics, 'Name', this.values.name, v => this.values.name = v);
+  addSelect(basics, 'Race / Ancestry', this.values.race || 'Human', ancestryOptions(), v => { phase84ApplyAncestryToNpc(this.values, v); this.onOpen(); });
+  addText(basics, 'Role / Job / Rank', this.values.role, v => this.values.role = v);
+  addSelect(basics, 'Status', this.values.status || 'Alive', ['Alive','Dead','Missing','Captured','Retired'], v => this.values.status = v);
+  addSelect(basics, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+
+  const statsBlock = contentEl.createDiv('ttrpg-builder-section');
+  statsBlock.createEl('h3', { text: 'Stats' });
+  addNumber(statsBlock,'AC',this.values.ac,v=>this.values.ac=v);
+  addNumber(statsBlock,'HP',this.values.hp,v=>this.values.hp=v);
+  addText(statsBlock,'Speed',this.values.speed,v=>this.values.speed=v);
+  ['str','dex','con','int','wis','cha'].forEach(a=>addNumber(statsBlock,`${a.toUpperCase()} (${modifier(this.values[a]) >= 0 ? '+' : ''}${modifier(this.values[a])})`,this.values[a],v=>this.values[a]=v));
+  btn(statsBlock, 'Roll NPC Stats', 'ttrpg-btn', () => {
+    const rolled = phase76RollAbilityArray();
+    PC_RULES.abilities.forEach(a => { this.values[a] = rolled.scores[a]; });
+    this.values.rolledStatsDetail = Object.entries(rolled.detail).map(([a,v]) => `${a.toUpperCase()}: ${this.values[a]} (${v})`).join('\n');
+    this.onOpen();
+  });
+  if (this.values.rolledStatsDetail) ce(statsBlock, 'pre', 'ttrpg-roll-detail', this.values.rolledStatsDetail);
+
+  const build = contentEl.createDiv('ttrpg-builder-section');
+  build.createEl('h3', { text: 'Data-Driven Adders' });
+  phase70AddAppendSelect(build, 'Add Built-In Item / Equipment', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.onOpen(); });
+  phase84AppendDataPicker(build, 'Use Built-In Language', PHASE84_DATA.languages, lang => { this.values.languages = phase70MergeCsv(this.values.languages, lang.name); this.onOpen(); });
+  phase84AppendDataPicker(build, 'Use Built-In Deity / Power', PHASE84_DATA.deities, d => { this.values.deity = d.name; this.values.summary = this.values.summary || `${d.name}${d.pantheon ? ` of the ${d.pantheon} pantheon` : ''}.`; this.onOpen(); });
+
+  const details = contentEl.createDiv('ttrpg-builder-section');
+  details.createEl('h3', { text: 'Details' });
+  ['attacks','spells','equipment','traits','languages','deity','ideals','bonds','flaws','quirks','voice','appearance','motives','secrets','relationships','dialogue','schedule','summary','notes'].forEach(f=>addTextArea(details, nice(f), this.values[f] || '', v=>this.values[f]=v));
+  addSelect(details,'Starting / Current Attitude',this.values.attitude || 'Indifferent',['Friendly','Indifferent','Hostile'],v=>this.values.attitude=v);
+  addText(details,'Tags', (this.values.tags||[]).join(', '), v=>this.values.tags=tagsFromText(v));
+
+  modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'npcs',this.values); await this.plugin.saveState(); new Notice('NPC saved.'); this.close(); });
+};
+
+// Make generic entries a little more data-aware without rewriting every modal.
+const phase84OldEntityOpen = EntityModal.prototype.onOpen;
+EntityModal.prototype.onOpen = function phase84EntityOpenWithDataPicker() {
+  phase84OldEntityOpen.call(this);
+  const insertBefore = this.contentEl.querySelector('.ttrpg-modal-buttons') || null;
+  const holder = this.contentEl.createDiv('ttrpg-builder-section');
+  holder.createEl('h3', { text: 'Built-In Data Picker' });
+  let used = false;
+  const useNamed = obj => {
+    this.values.name = obj.name || this.values.name;
+    this.values.source = obj.source || this.values.source;
+    this.values.summary = this.values.summary || phase84Text(obj.entries || obj.summary || obj.description || obj.symbol || obj.pantheon || '').slice(0, 700);
+    this.values.type = this.values.type || obj.type || obj.category || '';
+    this.onOpen();
+  };
+  if (this.key === 'deities') { phase84AppendDataPicker(holder, 'Load Deity / Power', PHASE84_DATA.deities, d => { this.values.pantheon = d.pantheon || this.values.pantheon; this.values.alignment = phase84Array(d.alignment).join('') || this.values.alignment; this.values.domains = phase84Array(d.domains).join(', ') || this.values.domains; useNamed(d); }); used = true; }
+  if (this.key === 'languages') { phase84AppendDataPicker(holder, 'Load Language', PHASE84_DATA.languages, useNamed); used = true; }
+  if (this.key === 'conditions') { phase84AppendDataPicker(holder, 'Load Condition', PHASE84_DATA.conditions, useNamed); used = true; }
+  if (this.key === 'rules') { phase84AppendDataPicker(holder, 'Load Action / Rule Reference', PHASE84_DATA.actions, useNamed); used = true; }
+  if (this.key === 'encounters') { phase84AppendDataPicker(holder, 'Load Trap / Hazard', PHASE84_DATA.traps, useNamed); used = true; }
+  if (this.key === 'homebrew' || this.key === 'compendium') {
+    const all = [].concat(PHASE84_DATA.actions, PHASE84_DATA.rewards, PHASE84_DATA.objects, PHASE84_DATA.vehicles, PHASE84_DATA.traps);
+    phase84AppendDataPicker(holder, 'Load Local Data Entry', all, useNamed); used = true;
+  }
+  if (!used) holder.remove(); else if (insertBefore) this.contentEl.insertBefore(holder, insertBefore);
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 85 — Player Hybridiser Navigation Fix
+ * The previous Player Mode fix exposed the nav item, but the older
+ * phase64EnsureState() still forced every PLAYER render back to `player`.
+ * This override preserves valid player-side modules, including Hybrid Ancestry.
+ * -------------------------------------------------------------------------- */
+
+const PHASE85_PLAYER_SECTIONS = ['player', 'hybridAncestry'];
+
+phase64EnsureState = function phase85EnsureState(state) {
+  state.settings = Object.assign({ sidebarCollapsed: false }, state.settings || {});
+  state.entities = Object.assign(createDefaultState().entities, state.entities || {});
+  Object.keys(PHASE64_PLURALS).forEach(k => { if (!Array.isArray(state.entities[k])) state.entities[k] = []; });
+  if (!state.mode) state.mode = 'DM';
+  if (state.mode === 'PLAYER' && !PHASE85_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'player';
+  if (state.mode === 'DM' && PHASE85_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'dashboard';
+};
+
+phase64VisibleNav = function phase85VisibleNav(state) {
+  return state.mode === 'PLAYER' ? PHASE83_PLAYER_NAV : PHASE83_DM_NAV;
+};
+
+TTRPGMainView.prototype.render = function phase85MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase68EnsureState(state); phase83EnsureState(state);
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (PHASE85_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; if (!PHASE85_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search this plugin…'; search.value = state.search || ''; search.title = 'Search saved plugin entries';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary ttrpg-top-action', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn ttrpg-top-action', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase64VisibleNav(state).forEach(([id, icon, label]) => {
+    const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+    const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; state.search = ''; await this.plugin.saveState(); });
+    item.dataset.section = id; item.title = label;
+  });
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (String(state.search || '').trim()) renderGlobalSearch(main, this.plugin);
+  else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, this.plugin, 'hybridAncestry');
+  else if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin);
+  else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 86 — Campaign Named Root Folder
+ * Campaign Wizard output now uses the campaign name as the campaign root
+ * folder instead of nesting every campaign under a pre-set Campaign Folder.
+ * Example: campaign name "Curse of Saltmarsh" => Curse of Saltmarsh/...
+ * -------------------------------------------------------------------------- */
+function phase86CleanFolderName(value) {
+  return String(value || 'Campaign')
+    .trim()
+    .replace(/[\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+|\.+$/g, '') || 'Campaign';
+}
+function phase86CampaignRoot(plugin, campaign) {
+  const explicit = campaign?.folderPath || campaign?.campaignFolder || campaign?.rootFolder;
+  if (explicit) return normalizePath(phase86CleanFolderName(explicit));
+  return normalizePath(phase86CleanFolderName(campaign?.name || 'Campaign'));
+}
+phase78CampaignRoot = phase86CampaignRoot;
+
+const Phase86BaseCampaignWizardModal = CampaignWizardModal;
+CampaignWizardModal = class Phase86CampaignWizardModal extends Phase86BaseCampaignWizardModal {
+  async finalise() {
+    if (this.values && this.values.name) {
+      this.values.folderPath = phase86CleanFolderName(this.values.name);
+    }
+    return await super.finalise();
+  }
+};
+
+const Phase86BaseSettingsModal = SettingsModal;
+SettingsModal = class Phase86SettingsModal extends Phase86BaseSettingsModal {
+  onOpen() {
+    Phase86BaseSettingsModal.prototype.onOpen.call(this);
+    const info = this.contentEl.createDiv('ttrpg-muted');
+    info.setText('Campaign Wizard folders are now named after each campaign. The legacy Campaign folder setting is only used by older/manual tools.');
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 88 — DM Hybrid Ancestry Navigation Fix
+ * Hybrid Ancestry is valid in both DM and Player modes. Phase 85 accidentally
+ * treated it as player-only and reset DM clicks back to Dashboard.
+ * -------------------------------------------------------------------------- */
+const PHASE88_PLAYER_SECTIONS = ['player', 'hybridAncestry'];
+
+phase64EnsureState = function phase88EnsureState(state) {
+  state.settings = Object.assign({ sidebarCollapsed: false }, state.settings || {});
+  state.entities = Object.assign(createDefaultState().entities, state.entities || {});
+  Object.keys(PHASE64_PLURALS).forEach(k => { if (!Array.isArray(state.entities[k])) state.entities[k] = []; });
+  if (!state.mode) state.mode = 'DM';
+  if (state.mode === 'PLAYER' && !PHASE88_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'player';
+  if (state.mode === 'DM' && state.activeSection === 'player') state.activeSection = 'dashboard';
+};
+
+TTRPGMainView.prototype.render = function phase88MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase68EnsureState(state); phase83EnsureState(state);
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (state.activeSection === 'player') state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; if (!PHASE88_PLAYER_SECTIONS.includes(state.activeSection)) state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search this plugin…'; search.value = state.search || ''; search.title = 'Search saved plugin entries';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary ttrpg-top-action', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn ttrpg-top-action', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase64VisibleNav(state).forEach(([id, icon, label]) => {
+    const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+    const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => { state.activeSection = id; state.search = ''; await this.plugin.saveState(); });
+    item.dataset.section = id; item.title = label;
+  });
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (String(state.search || '').trim()) renderGlobalSearch(main, this.plugin);
+  else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, this.plugin, 'hybridAncestry');
+  else if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin);
+  else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 89 — Markdown Campaign Importer
+ * Lets DMs import an existing pre-built campaign vault/folder of .md files and
+ * have the plugin index/link them as campaign data. Existing notes stay human-
+ * readable; optional frontmatter adds bidirectional sync metadata.
+ * -------------------------------------------------------------------------- */
+const PHASE89_IMPORTABLE_KEYS = [
+  'campaigns','worlds','cosmology','planes','calendar','moons','seasons','holidays','factions','deities','powers','languages','cultures','myths','regions','settlements','pois','maps','npcs','creatures','playerCharacters','adventures','quests','encounters','rules','conditions','damageTypes','downtime','projects','bastions','hirelings','sessions','milestones','secrets','handouts','compendium','homebrew','tables'
+];
+
+const PHASE89_PATH_PATTERNS = [
+  [/deit(y|ies)|pantheon|gods?/i, 'deities'],
+  [/factions?|organisations?|organizations?|guilds?/i, 'factions'],
+  [/languages?|tongues?/i, 'languages'],
+  [/ancestr(y|ies)|races?|species|cultures?/i, 'cultures'],
+  [/cosmolog(y|ies)/i, 'cosmology'],
+  [/planes?|realms?|dimensions?/i, 'planes'],
+  [/calendars?/i, 'calendar'],
+  [/moons?/i, 'moons'],
+  [/seasons?/i, 'seasons'],
+  [/holidays?|festivals?/i, 'holidays'],
+  [/myths?|legends?|rumours?|rumors?|prophec(y|ies)/i, 'myths'],
+  [/regions?|continents?|geographic/i, 'regions'],
+  [/settlements?|cities|towns|villages|outposts/i, 'settlements'],
+  [/points? of interest|poi|landmarks?|locations\/.*poi/i, 'pois'],
+  [/maps?|cartograph/i, 'maps'],
+  [/players?|player characters?|pcs?\b/i, 'playerCharacters'],
+  [/npcs?|non[- ]?player/i, 'npcs'],
+  [/creatures?|monsters?|bestiary/i, 'creatures'],
+  [/adventures?|acts?|chapters?/i, 'adventures'],
+  [/quests?|missions?/i, 'quests'],
+  [/encounters?|combat/i, 'encounters'],
+  [/traps?|hazards?/i, 'encounters'],
+  [/rules?|home rules?|house rules?/i, 'rules'],
+  [/conditions?/i, 'conditions'],
+  [/damage types?/i, 'damageTypes'],
+  [/downtime|activities/i, 'downtime'],
+  [/projects?|crafting|research/i, 'projects'],
+  [/bastions?|strongholds?|bases?/i, 'bastions'],
+  [/hirelings?|staff|followers/i, 'hirelings'],
+  [/sessions?|session notes?|logs?/i, 'sessions'],
+  [/milestones?|achievements?/i, 'milestones'],
+  [/secrets?|gm only|dm only/i, 'secrets'],
+  [/handouts?|player packet|player[- ]?facing/i, 'handouts'],
+  [/spells?|items?|equipment|library|compendium/i, 'compendium'],
+  [/homebrew/i, 'homebrew'],
+  [/tables?|rollable/i, 'tables']
+];
+
+function phase89FolderBaseName(path) {
+  const clean = normalizePath(String(path || '')).replace(/\/$/, '');
+  return clean.split('/').filter(Boolean).pop() || 'Imported Campaign';
+}
+function phase89TitleFromFile(file) {
+  return String(file?.basename || file?.name || 'Untitled').replace(/\.md$/i, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
+}
+function phase89InferKeyFromPath(path) {
+  const clean = String(path || '').replace(/\\/g, '/');
+  const existing = phase80InferKeyFromPath(clean);
+  if (existing) return existing;
+  for (const [pattern, key] of PHASE89_PATH_PATTERNS) if (pattern.test(clean)) return key;
+  return 'homebrew';
+}
+function phase89FirstParagraph(body) {
+  const text = String(body || '').replace(/^#\s+.+$/m, '').split(/\n\s*\n/).map(x => x.trim()).find(Boolean) || '';
+  return text.replace(/^>\s?/gm, '').replace(/^[-*]\s+/gm, '').slice(0, 700);
+}
+function phase89EntityFromAnyMarkdown(file, markdown, campaign) {
+  const ttrpg = phase80EntityFromMarkdown(file.path, markdown);
+  if (ttrpg && ttrpg.key && ttrpg.item) {
+    ttrpg.item.campaignId = ttrpg.item.campaignId || campaign.id;
+    ttrpg.item.campaign = ttrpg.item.campaign || campaign.name;
+    ttrpg.item.notePath = file.path;
+    ttrpg.item.filePath = file.path;
+    ttrpg.item.tags = Array.from(new Set([...(safeArray(ttrpg.item.tags)), 'imported']));
+    return ttrpg;
+  }
+  const parsed = phase80ParseFrontmatter(markdown);
+  const body = parsed.body || markdown || '';
+  const key = phase89InferKeyFromPath(file.path);
+  const item = {
+    id: uid(key),
+    name: phase80ExtractTitle(body, phase89TitleFromFile(file)),
+    title: phase80ExtractTitle(body, phase89TitleFromFile(file)),
+    summary: phase80Section(body, ['overview','summary','description','campaign pitch','quick facts','player-facing notes']) || phase89FirstParagraph(body),
+    description: phase80Section(body, ['details','lore','background','history','features','mechanics']) || '',
+    notes: phase80Section(body, ['dm notes','gm notes','secrets','private notes','session prep']) || '',
+    visibility: /player packet|handouts?|player[- ]?facing|public/i.test(file.path) ? 'player-visible' : (/secrets?|dm only|gm only/i.test(file.path) ? 'dm-only' : 'dm-only'),
+    status: 'imported',
+    tags: Array.from(new Set([...(phase80ParseTags(parsed.data.tags)), 'imported', key.replace(/([A-Z])/g, '-$1').toLowerCase()])),
+    campaignId: campaign.id,
+    campaign: campaign.name,
+    notePath: file.path,
+    filePath: file.path,
+    importedAt: Date.now()
+  };
+  return { key, item };
+}
+function phase89HasSyncFrontmatter(markdown) {
+  return Boolean(phase80ParseFrontmatter(markdown).data.ttrpg_type);
+}
+function phase89FrontmatterForImport(key, item, campaign) {
+  return [
+    '---',
+    `ttrpg_type: ${phase78Yaml(key)}`,
+    `id: ${phase78Yaml(item.id)}`,
+    `campaign: ${phase78Yaml(campaign.name)}`,
+    `campaign_id: ${phase78Yaml(campaign.id)}`,
+    `status: imported`,
+    `visibility: ${phase78Yaml(item.visibility || 'dm-only')}`,
+    `tags: ${phase78Tags(item.tags || ['imported'])}`,
+    '---',
+    ''
+  ].join('\n');
+}
+async function phase89AddSyncFrontmatter(plugin, file, key, item, campaign, original) {
+  if (phase89HasSyncFrontmatter(original)) return false;
+  const updated = phase89FrontmatterForImport(key, item, campaign) + String(original || '').replace(/^\uFEFF/, '');
+  phase80Suppress(file.path);
+  await plugin.app.vault.modify(file, updated);
+  return true;
+}
+async function phase89ImportFolder(plugin, options) {
+  const root = normalizePath(String(options.root || '').trim().replace(/^\/+|\/+$/g, ''));
+  if (!root) throw new Error('Choose a campaign folder path first.');
+  const exists = await plugin.app.vault.adapter.exists(root);
+  if (!exists) throw new Error(`Folder not found: ${root}`);
+  const files = plugin.app.vault.getMarkdownFiles().filter(file => normalizePath(file.path).startsWith(root + '/') || normalizePath(file.path) === root);
+  const campaignName = String(options.campaignName || phase89FolderBaseName(root)).trim() || phase89FolderBaseName(root);
+  let campaign = safeArray(plugin.state.entities.campaigns).find(c => String(c.name || '').toLowerCase() === campaignName.toLowerCase());
+  if (!campaign) {
+    campaign = { id: uid('campaign'), name: campaignName, summary: `Imported from existing Markdown folder: ${root}.`, folderPath: root, rootFolder: root, visibility: 'dm-only', tags: ['campaign', 'imported'], notePath: '' };
+    upsert(plugin.state, 'campaigns', campaign);
+  } else {
+    campaign.folderPath = campaign.folderPath || root;
+    campaign.rootFolder = campaign.rootFolder || root;
+    campaign.tags = Array.from(new Set([...(safeArray(campaign.tags)), 'imported']));
+  }
+  plugin.state.activeCampaignId = campaign.id;
+  const counts = {};
+  let touched = 0;
+  let skipped = 0;
+  for (const file of files) {
+    try {
+      const markdown = await plugin.app.vault.read(file);
+      const parsed = phase89EntityFromAnyMarkdown(file, markdown, campaign);
+      if (!parsed || !parsed.key || !parsed.item) { skipped++; continue; }
+      if (!PHASE89_IMPORTABLE_KEYS.includes(parsed.key)) parsed.key = 'homebrew';
+      const existingByPath = getStore(plugin.state, parsed.key).find(x => normalizePath(x.notePath || x.filePath || '') === normalizePath(file.path));
+      if (existingByPath) parsed.item.id = existingByPath.id;
+      upsert(plugin.state, parsed.key, parsed.item);
+      counts[parsed.key] = (counts[parsed.key] || 0) + 1;
+      if (options.addFrontmatter) touched += await phase89AddSyncFrontmatter(plugin, file, parsed.key, parsed.item, campaign, markdown) ? 1 : 0;
+    } catch (error) {
+      console.error('TTRPG import skipped file:', file.path, error);
+      skipped++;
+    }
+  }
+  await plugin.saveState();
+  return { root, campaign, files: files.length, counts, touched, skipped };
+}
+function phase89RenderImportSummary(parent, result) {
+  const box = ce(parent, 'div', 'ttrpg-card');
+  ce(box, 'h3', '', 'Import Summary');
+  ce(box, 'p', 'ttrpg-muted', `Campaign: ${result.campaign.name}`);
+  ce(box, 'p', 'ttrpg-muted', `Scanned ${result.files} Markdown file(s). Added sync metadata to ${result.touched} file(s). Skipped ${result.skipped}.`);
+  const tags = ce(box, 'div', 'ttrpg-tags');
+  Object.keys(result.counts).sort().forEach(key => ce(tags, 'span', 'ttrpg-tag', `${ENTITY_LABELS[key] || key}: ${result.counts[key]}`));
+}
+class MarkdownCampaignImportModal extends Modal {
+  constructor(app, plugin) { super(app); this.plugin = plugin; this.root = ''; this.campaignName = ''; this.addFrontmatter = true; this.lastResult = null; }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.addClass('ttrpg-import-modal');
+    contentEl.createEl('h2', { text: 'Import Existing Markdown Campaign' });
+    const help = contentEl.createDiv('ttrpg-muted');
+    help.setText('Point this at the root folder of an existing campaign. The plugin will scan Markdown files, infer their type from folder names/frontmatter, link them to plugin entries, and optionally add sync frontmatter so edits work both ways.');
+    addText(contentEl, 'Campaign Folder Path', this.root, v => { this.root = v; if (!this.campaignName) this.campaignName = phase89FolderBaseName(v); });
+    addText(contentEl, 'Campaign Name', this.campaignName, v => this.campaignName = v);
+    new Setting(contentEl).setName('Add sync frontmatter to imported notes').setDesc('Recommended. This preserves the note body but adds YAML metadata so future edits sync with the plugin.').addToggle(t => t.setValue(this.addFrontmatter).onChange(v => this.addFrontmatter = v));
+    const tip = contentEl.createDiv('ttrpg-card');
+    tip.createEl('h3', { text: 'Painless import recipe' });
+    const list = tip.createEl('ol');
+    ['Put the campaign folder in your vault.', 'Paste that folder path here, for example: Threnodya', 'Keep sync frontmatter enabled.', 'Import once. After that, edit either the notes or the plugin cards.'].forEach(x => list.createEl('li', { text: x }));
+    const actions = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(actions, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(actions, 'Import Campaign Folder', 'ttrpg-btn ttrpg-primary', async () => {
+      try {
+        const result = await phase89ImportFolder(this.plugin, { root: this.root, campaignName: this.campaignName, addFrontmatter: this.addFrontmatter });
+        new Notice(`Imported ${result.files - result.skipped} Markdown file(s) from ${result.root}.`);
+        this.lastResult = result;
+        this.onOpen();
+        phase89RenderImportSummary(this.contentEl, result);
+      } catch (error) {
+        console.error('TTRPG Markdown import failed:', error);
+        new Notice(error.message || 'Import failed. Check the developer console.');
+      }
+    });
+  }
+}
+
+const phase89BaseRenderLibrary = renderLibrary;
+renderLibrary = function phase89RenderLibrary(main, plugin) {
+  header(main, 'Library & Compendium', 'Import existing Markdown campaigns, manage legal local data, homebrew, compendium entries, rollable tables, and player-safe library content.', [
+    { label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() },
+    { label: 'Homebrew Entry', onClick: () => new EntityModal(plugin.app, plugin, 'homebrew').open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() }
+  ]);
+  const g = grid(main);
+  card(g, 'Import Existing Campaign Vault', 'Scan a folder of Markdown files, infer campaign entities, link notes to plugin cards, and optionally add sync frontmatter for bidirectional updates.', '📥', [{ label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() }]);
+  card(g, 'Homebrew', `${getStore(plugin.state, 'homebrew').length} saved entries.`, '🛠️', [{ label: 'New Homebrew', onClick: () => new EntityModal(plugin.app, plugin, 'homebrew').open() }]);
+  card(g, 'Compendium', `${getStore(plugin.state, 'compendium').length} saved/imported entries.`, '📚', [{ label: 'New Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() }]);
+  itemCards(main, plugin, 'homebrew', { icon: '🛠️', empty: 'Imported or forged homebrew appears here.' });
+};
+
+const phase89BaseRenderCampaignList = typeof renderCampaignList === 'function' ? renderCampaignList : null;
+if (phase89BaseRenderCampaignList) {
+  renderCampaignList = function phase89RenderCampaignList(main, plugin) {
+    phase89BaseRenderCampaignList(main, plugin);
+    const panel = ce(main, 'section', 'ttrpg-card');
+    ce(panel, 'h3', '', 'Import Existing Campaign');
+    ce(panel, 'p', 'ttrpg-muted', 'Already have a campaign vault/folder? Import its Markdown files and link them to the plugin.');
+    const row = ce(panel, 'div', 'ttrpg-card-actions');
+    btn(row, 'Import Markdown Campaign', 'ttrpg-btn ttrpg-primary', () => new MarkdownCampaignImportModal(plugin.app, plugin).open());
+  };
+}
+
+const phase89BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase89Onload() {
+  await phase89BaseOnload.call(this);
+  this.addCommand({ id: 'import-markdown-campaign', name: 'Import Existing Markdown Campaign', callback: () => new MarkdownCampaignImportModal(this.app, this).open() });
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 90 — DM polish: dashboard rules chip, shop catalogues, combat compendium tools,
+ * map manager regeneration, library compendium chips, and homebrew-to-compendium routing.
+ * -------------------------------------------------------------------------- */
+function phase90CleanText(value) {
+  return String(value == null ? '' : value)
+    .replace(/Created from Campaign Builder Wizard:?\s*/gi, '')
+    .replace(/Created from campaign builder wizard:?\s*/gi, '')
+    .replace(/Created from Campaign Builder:?\s*/gi, '')
+    .trim();
+}
+const phase90BaseCard = card;
+card = function phase90Card(parent, title, text, icon, actions) {
+  return phase90BaseCard(parent, phase90CleanText(title), phase90CleanText(text), icon, actions);
+};
+function phase90SetSection(plugin, section) {
+  plugin.state.activeSection = section;
+  return plugin.saveState();
+}
+function phase90StoreTags(item) {
+  return uniqueList([item.type, item.category, item.source, ...(safeArray(item.tags))].filter(Boolean).map(String));
+}
+function phase90GetConditions(plugin) {
+  return uniqueList([
+    ...safeArray(plugin.state.entities.conditions).map(x => x.name),
+    ...safeArray(PHASE84_DATA && PHASE84_DATA.conditions).map(x => x.name),
+    'Blinded','Charmed','Deafened','Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified','Poisoned','Prone','Restrained','Stunned','Unconscious','Exhaustion'
+  ].filter(Boolean));
+}
+function phase90GetTrapsHazardsEffects(plugin) {
+  const traps = safeArray(PHASE84_DATA && PHASE84_DATA.traps).map(x => ({ name: x.name, type: 'Trap', summary: phase81PlainEntries(x.entries || x.summary || '') }));
+  const savedTraps = safeArray(plugin.state.entities.encounters).filter(x => /trap|hazard|effect/i.test(`${x.type || ''} ${x.tags || ''} ${x.name || ''}`));
+  const compendium = safeArray(plugin.state.entities.compendium).filter(x => /trap|hazard|effect|condition/i.test(`${x.type || ''} ${x.category || ''} ${x.tags || ''} ${x.name || ''}`));
+  return traps.concat(savedTraps, compendium).filter(x => x && x.name);
+}
+function phase90EquipmentList() { return safeArray(PHASE70_ITEMS).filter(x => x && x.name); }
+function phase90PriceText(item) {
+  const v = item.value || item.cost || item.price || '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return phase81Money ? phase81Money(v) : `${v} cp`;
+  if (v && typeof v === 'object') return Object.entries(v).filter(([,n]) => Number(n)).map(([k,n]) => `${n} ${String(k).toUpperCase()}`).join(', ');
+  return '';
+}
+function phase90RelevantShopItems(shopType, count) {
+  const type = String(shopType || '').toLowerCase();
+  const items = phase90EquipmentList();
+  const tests = {
+    blacksmith: x => /weapon|armor|shield|martial|simple/i.test(`${x.type || ''} ${x.category || ''} ${x.name || ''}`) || /sword|axe|mace|hammer|mail|plate|dagger|spear|bow|crossbow|shield|armor|armour/i.test(x.name || ''),
+    apothecary: x => /potion|poison|herb|healer|alchemist|acid|antitoxin|holy water|vial|flask|perfume|soap|oil/i.test(`${x.type || ''} ${x.name || ''}`),
+    tavern: x => /ale|wine|beer|meal|ration|bread|cheese|meat|mug|pitcher|food|drink|lodging|room/i.test(`${x.type || ''} ${x.name || ''}`),
+    inn: x => /meal|ration|lodging|room|blanket|bedroll|torch|candle|lamp|oil|rope|feed|stabling|mug|pitcher|ale|wine/i.test(`${x.type || ''} ${x.name || ''}`),
+    general: x => !/martial|heavy armor|plate|spell scroll/i.test(`${x.type || ''} ${x.name || ''}`) && /gear|adventuring|tool|kit|rope|torch|lantern|oil|pack|rations|bedroll|blanket|clothes|bag|chest|sack|tent|waterskin|chalk|paper|ink|candle/i.test(`${x.type || ''} ${x.name || ''}`),
+    shop: x => /gear|tool|kit|adventuring|food|drink|container|clothes|pack|rope|torch|lantern|oil|rations/i.test(`${x.type || ''} ${x.name || ''}`)
+  };
+  const fn = tests[type] || tests.shop;
+  let filtered = items.filter(fn);
+  if (!filtered.length) filtered = items.filter(tests.shop);
+  if (!filtered.length) filtered = items.slice(0, 50);
+  const bag = filtered.slice();
+  const out = [];
+  while (bag.length && out.length < (count || 8)) {
+    const i = Math.floor(Math.random() * bag.length);
+    out.push(bag.splice(i, 1)[0]);
+  }
+  return out.map(x => `${x.name}${phase90PriceText(x) ? ` (${phase90PriceText(x)})` : ''}`);
+}
+function phase90ShopKindFromGenerator(type) {
+  const s = String(type || '').toLowerCase();
+  if (s.includes('blacksmith')) return 'Blacksmith';
+  if (s.includes('general')) return 'General Store';
+  if (s.includes('apothec')) return 'Apothecary';
+  if (s.includes('inn')) return 'Inn';
+  if (s.includes('tavern')) return 'Tavern';
+  return pick(['Tavern','Inn','Blacksmith','General Store','Apothecary']);
+}
+function phase90ShopEntry(type) {
+  const shopType = phase90ShopKindFromGenerator(type);
+  const nameBits = {
+    Tavern: ['The Copper Wyvern','The Drunken Basilisk','The Fox and Flagon','The Ninth Lantern'],
+    Inn: ['The Hearth & Hart','The Pilgrim Pillow','Wayside Lantern Inn','The Three Keys'],
+    Blacksmith: ['Ashen Anvil','Mira’s Forge','Black Bell Smithy','The Tempered Crown'],
+    'General Store': ['Barrow & Sons Provisions','The Packed Mule','Lantern Market Goods','Old Road Sundries'],
+    Apothecary: ['Glassleaf Remedies','The Green Mortar','Saint Vey’s Tonics','Mooncap Apothecary']
+  };
+  const catalogue = phase90RelevantShopItems(shopType, shopType === 'Tavern' || shopType === 'Inn' ? 7 : 10);
+  const servicesByType = {
+    Tavern: 'Meals, drinks, rumours, games, contacts, and cheap trouble.',
+    Inn: 'Rooms, meals, stabling, guides, messages, and travel gossip.',
+    Blacksmith: 'Weapon repair, armour fitting, horseshoes, tools, custom orders.',
+    'General Store': 'Adventuring supplies, provisions, containers, tools, and local maps.',
+    Apothecary: 'Herbs, antitoxins, minor remedies, alchemical goods, and suspicious teas.'
+  };
+  return { kind: 'pois', entry: {
+    id: uid('shop'), name: pick(nameBits[shopType] || nameBits.Tavern), type: shopType,
+    summary: `Generated ${shopType.toLowerCase()} with owner, services, catalogue/menu, rumour, and secret.`,
+    owner: pick(['Aelric Thorn','Mira Vale','Brakka Stonejaw','Sable Merrow','Edrin Foxglove','Nyx Underbough','Ser Caldus Vey']),
+    services: servicesByType[shopType] || servicesByType['General Store'],
+    catalogue: catalogue.join('\n'), menu: (shopType === 'Tavern' || shopType === 'Inn') ? catalogue.join('\n') : '',
+    atmosphere: pick(['warm, crowded, and watched', 'quiet, expensive, and too clean', 'rowdy, smoky, and mercenary-heavy', 'cosy, haunted, and overly polite']),
+    rumour: pick(['The mayor has not been seen in daylight.', 'The old well sings names at midnight.', 'A saint’s relic is fake but still works.', 'The bandits pay taxes to someone worse.']),
+    secret: pick(['The cellar connects to an escape tunnel.', 'The owner keeps a monster ledger.', 'A faction meets upstairs on new moons.', 'One regular is a disguised noble.']),
+    tags: ['generated','shop', shopType.toLowerCase().replace(/\s+/g,'-')], visibility: 'dm-only'
+  } };
+}
+try {
+  if (Array.isArray(PHASE69_GENERATOR_TYPES)) {
+    ['Full Blacksmith','Full General Store','Full Inn','Full Tavern','Full Apothecary'].forEach(t => { if (!PHASE69_GENERATOR_TYPES.includes(t)) PHASE69_GENERATOR_TYPES.push(t); });
+  }
+} catch (e) {}
+const phase90BaseFullGenerator = phase64FullGenerator;
+phase64FullGenerator = function phase90FullGenerator(type, state) {
+  if (/tavern|shop|blacksmith|general store|inn|apothecary/i.test(String(type || ''))) return phase90ShopEntry(type);
+  return phase90BaseFullGenerator(type, state);
+};
+
+renderDashboard = function phase90RenderDashboard(main, plugin) {
+  header(main, 'Dungeon Master Console', 'One box for campaign building, prep, session tracking, secrecy, and running the table.', [
+    { label: 'New Campaign', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+    { label: 'Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
+    { label: 'Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) }
+  ]);
+  const chips = ce(main, 'div', 'ttrpg-dashboard-chips');
+  btn(chips, 'Check House Rules', 'ttrpg-chip-btn', async () => { plugin.state.activeSection = 'rules'; plugin.state.search = 'home'; await plugin.saveState(); });
+  btn(chips, 'Live Combat', 'ttrpg-chip-btn', () => phase90SetSection(plugin, 'combat'));
+  btn(chips, 'Secrets', 'ttrpg-chip-btn', () => phase90SetSection(plugin, 'secrets'));
+  stats(main, plugin);
+  const g = grid(main);
+  phase64CardClick(card(g, 'Campaigns', 'View saved campaigns and active campaign details.', '📚', [{ label: 'Open Campaigns', onClick: () => phase90SetSection(plugin, 'campaignList') }]), () => phase90SetSection(plugin, 'campaignList'));
+  phase64CardClick(card(g, 'Campaign Builder Wizard', 'Create a new campaign through the multi-step wizard.', '🧙', [{ label: 'Launch Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() }]), () => new CampaignWizardModal(plugin.app, plugin).open());
+  phase64CardClick(card(g, 'World & Lore', 'Worlds, factions, deities, languages, cultures, myths, rumours, and pantheons.', '🌌', [{ label: 'Open World', onClick: () => phase90SetSection(plugin, 'world') }]), () => phase90SetSection(plugin, 'world'));
+  phase64CardClick(card(g, 'Geography & Maps', 'Regions, settlements, POIs, map layers, fog, and reveal states.', '🗺️', [{ label: 'Open Maps', onClick: () => phase90SetSection(plugin, 'geography') }]), () => phase90SetSection(plugin, 'geography'));
+  phase64CardClick(card(g, 'NPCs & Creatures', 'NPC builder, creature builder, relationships, secrets, schedules, tactics, and ecology.', '👤', [{ label: 'Open NPCs', onClick: () => phase90SetSection(plugin, 'npcs') }]), () => phase90SetSection(plugin, 'npcs'));
+  phase64CardClick(card(g, 'Generators', 'Generate NPCs, encounters, shops, maps, loot, travel events, rumours, and hooks.', '🎲', [{ label: 'Open Generators', onClick: () => phase90SetSection(plugin, 'generators') }]), () => phase90SetSection(plugin, 'generators'));
+};
+
+renderWorld = function phase90RenderWorld(main, plugin) {
+  header(main, 'World, Lore & Cosmology', 'World overview, planes, timelines, calendars, deities, cultures, languages, factions, magic/tech rules, legends, myths, and rumours.', [
+    { label: 'World Overview', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'worlds').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() }
+  ]);
+  const chipGrid = ce(main, 'div', 'ttrpg-world-chip-grid');
+  [
+    ['worlds','🌍','Worlds', () => new EntityModal(plugin.app, plugin, 'worlds').open()],
+    ['factions','⚜️','Factions', () => new EntityModal(plugin.app, plugin, 'factions').open()],
+    ['deities','☀️','Deities', () => new EntityModal(plugin.app, plugin, 'deities').open()],
+    ['languages','🗣️','Languages', () => new EntityModal(plugin.app, plugin, 'languages').open()],
+    ['cultures','🧬','Cultures', () => new EntityModal(plugin.app, plugin, 'cultures').open()],
+    ['myths','📜','Myths & Rumours', () => new EntityModal(plugin.app, plugin, 'myths').open()]
+  ].forEach(([key, icon, label, open]) => {
+    const b = btn(chipGrid, `${icon} ${label} (${phase64Count(plugin, key)})`, 'ttrpg-chip-btn ttrpg-world-chip', open);
+    b.title = `Create or review ${label}`;
+  });
+  ['worlds','factions','deities','languages','cultures','myths'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', (ENTITY_LABELS[k] || k) + 's'); itemCards(main, plugin, k, { icon: k === 'deities' ? '☀️' : '🌌' }); });
+};
+
+class Phase90ApplyConditionModal extends Modal {
+  constructor(app, plugin) { super(app); this.plugin = plugin; this.combatantId = ''; this.condition = ''; }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Apply Condition' });
+    const combatants = safeArray(this.plugin.state.combat && this.plugin.state.combat.combatants);
+    addSelect(contentEl, 'Combatant', this.combatantId || (combatants[0] && combatants[0].id) || '', combatants.map(c => c.id), v => this.combatantId = v);
+    const names = phase90GetConditions(this.plugin); addSelect(contentEl, 'Condition', this.condition || names[0] || 'Prone', names, v => this.condition = v);
+    const row = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Apply', 'ttrpg-btn ttrpg-primary', async () => {
+      const combat = this.plugin.state.combat || {}; const target = safeArray(combat.combatants).find(c => c.id === (this.combatantId || (combatants[0] && combatants[0].id)));
+      if (!target) return new Notice('No combatant selected.');
+      const cond = this.condition || names[0] || 'Prone'; target.conditions = uniqueList([...(target.conditions || []), cond]); combat.log = safeArray(combat.log); combat.log.unshift(`${target.name} gained condition: ${cond}`);
+      await phase68SaveCombat(this.plugin); this.close();
+    });
+  }
+}
+class Phase90ApplyTrapHazardModal extends Modal {
+  constructor(app, plugin) { super(app); this.plugin = plugin; this.effectName = ''; }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Apply Trap / Hazard / Effect' });
+    const opts = phase90GetTrapsHazardsEffects(this.plugin); addSelect(contentEl, 'Trap / Hazard / Effect', this.effectName || (opts[0] && opts[0].name) || '', opts.map(x => x.name), v => this.effectName = v);
+    const row = ce(contentEl, 'div', 'ttrpg-modal-actions'); btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Add to Combat Log', 'ttrpg-btn ttrpg-primary', async () => {
+      const chosen = opts.find(x => x.name === this.effectName) || opts[0]; if (!chosen) return new Notice('No trap/hazard/effect found.');
+      const combat = this.plugin.state.combat || {}; combat.log = safeArray(combat.log); combat.log.unshift(`${chosen.type || 'Effect'} applied: ${chosen.name}${chosen.summary ? ` — ${phase90CleanText(chosen.summary).slice(0, 180)}` : ''}`);
+      await phase68SaveCombat(this.plugin); this.close();
+    });
+  }
+}
+function phase90CreatureOptions(plugin) {
+  return safeArray(plugin.state.entities.creatures).concat(safeArray(plugin.state.entities.npcs), safeArray(plugin.state.entities.compendium).filter(x => /creature|monster|npc|enemy/i.test(`${x.type || ''} ${x.category || ''} ${x.tags || ''}`))).filter(x => x && (x.name || x.title));
+}
+class Phase90AddEnemyFromCompendiumModal extends Modal {
+  constructor(app, plugin) { super(app); this.plugin = plugin; this.enemyName = ''; }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Add Enemy from Compendium' });
+    const opts = phase90CreatureOptions(this.plugin); addSelect(contentEl, 'Creature / NPC / Enemy', this.enemyName || (opts[0] && (opts[0].name || opts[0].title)) || '', opts.map(x => x.name || x.title), v => this.enemyName = v);
+    const row = ce(contentEl, 'div', 'ttrpg-modal-actions'); btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Add Enemy', 'ttrpg-btn ttrpg-primary', async () => {
+      const src = opts.find(x => (x.name || x.title) === this.enemyName) || opts[0]; if (!src) return new Notice('No compendium enemy found.');
+      if (!this.plugin.state.combat) phase68EnsureCombat(this.plugin.state);
+      const hp = Number(src.hpMax || src.hp || src.hitPoints || src.cr && 10 + Number(String(src.cr).replace(/[^0-9.]/g,''))*8 || 10) || 10;
+      const c = { id: uid('combatant'), name: src.name || src.title, type: 'Enemy', ac: Number(src.ac || src.armorClass || 12) || 12, hpMax: hp, hpCurrent: hp, initiative: phase68RollInitiative(), conditions: [], notes: phase90CleanText(src.tactics || src.summary || src.description || '') };
+      this.plugin.state.combat.combatants = safeArray(this.plugin.state.combat.combatants); this.plugin.state.combat.combatants.push(c); this.plugin.state.combat.active = true; this.plugin.state.combat.log = safeArray(this.plugin.state.combat.log); this.plugin.state.combat.log.unshift(`Added enemy: ${c.name}`);
+      await phase68SaveCombat(this.plugin); this.close();
+    });
+  }
+}
+const phase90BaseRenderCombat = renderCombat;
+renderCombat = function phase90RenderCombat(main, plugin) {
+  phase90BaseRenderCombat(main, plugin);
+  const tools = ce(main, 'section', 'ttrpg-card ttrpg-combat-tools');
+  ce(tools, 'h3', '', 'Compendium Combat Tools');
+  ce(tools, 'p', 'ttrpg-muted', 'Add enemies from the compendium, or apply built-in conditions, traps, hazards, and effects during live combat.');
+  const row = ce(tools, 'div', 'ttrpg-card-actions');
+  btn(row, 'Add Enemy from Compendium', 'ttrpg-btn ttrpg-primary', () => new Phase90AddEnemyFromCompendiumModal(plugin.app, plugin).open());
+  btn(row, 'Apply Condition', 'ttrpg-btn', () => new Phase90ApplyConditionModal(plugin.app, plugin).open());
+  btn(row, 'Apply Trap / Hazard / Effect', 'ttrpg-btn', () => new Phase90ApplyTrapHazardModal(plugin.app, plugin).open());
+};
+
+MapModal = class Phase90MapModal extends Modal {
+  constructor(app, plugin, item) { super(app); this.plugin = plugin; this.values = Object.assign({ id: uid('map'), name:'', type:'Settlement Map', imagePath:'', pins:'', layers:'DM, Player, Fog', fogOfWar:'Unrevealed', distanceScale:'1 square = 5 ft.', terrain:'', playerVisible:false }, item || {}); }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Interactive Map Manager' });
+    const preview = ce(contentEl, 'div', 'ttrpg-generated-preview');
+    addText(contentEl, 'Name', this.values.name || '', v => this.values.name = v);
+    addSelect(contentEl, 'Map Type', this.values.type || 'Settlement Map', ['Settlement Map','Town Map','Village Map','City Map','Point of Interest Map','Dungeon Map','Battlemap','Region Map','World Map'], v => this.values.type = v);
+    addText(contentEl, 'Terrain / Theme', this.values.terrain || '', v => this.values.terrain = v);
+    addText(contentEl, 'Distance Scale', this.values.distanceScale || '', v => this.values.distanceScale = v);
+    addText(contentEl, 'Fog / Reveal State', this.values.fogOfWar || '', v => this.values.fogOfWar = v);
+    addTextArea(contentEl, 'Pins / Rooms / Landmarks', this.values.pins || '', v => this.values.pins = v);
+    addTextArea(contentEl, 'Layers', this.values.layers || '', v => this.values.layers = v);
+    addSelect(contentEl, 'Player Visible', String(!!this.values.playerVisible), ['false','true'], v => this.values.playerVisible = v === 'true');
+    phase70RenderMapPreview(preview, this.values);
+    const row = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(row, 'Generate / Regenerate SVG Map', 'ttrpg-btn', async () => {
+      this.values.mapSeed = phase81HashSeed(`${this.values.name || this.values.type || 'map'}-${Date.now()}-${Math.random()}`);
+      await phase81WriteSvgFile(this.plugin, this.values);
+      new Notice('SVG map generated.'); this.render();
+    });
+    btn(row, 'Save Map', 'ttrpg-btn ttrpg-primary', async () => { upsert(this.plugin.state, 'maps', this.values); await this.plugin.saveState(); new Notice('Map saved.'); this.close(); });
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+  }
+};
+
+renderGeography = function phase90RenderGeography(main, plugin) {
+  header(main, 'Geography, Settlements & Maps', 'Regions, settlements, points of interest, map pins, fog/reveal states, wilderness rules, terrain, hazards, and location linking.', [
+    { label: 'Region', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'regions').open() },
+    { label: 'Settlement', onClick: () => new EntityModal(plugin.app, plugin, 'settlements').open() },
+    { label: 'Point of Interest', onClick: () => new EntityModal(plugin.app, plugin, 'pois').open() },
+    { label: 'Map', onClick: () => new MapModal(plugin.app, plugin).open() }
+  ]);
+  const mapTools = ce(main, 'section', 'ttrpg-card');
+  ce(mapTools, 'h3', '', 'Simple Map Creation');
+  ce(mapTools, 'p', 'ttrpg-muted', 'Create or regenerate SVG maps for settlements, towns, villages, cities, POIs, dungeons, battlemaps, regions, and worlds.');
+  const row = ce(mapTools, 'div', 'ttrpg-card-actions');
+  ['Settlement Map','Town Map','Village Map','City Map','Point of Interest Map','Dungeon Map','Battlemap'].forEach(t => btn(row, t.replace(' Map',''), 'ttrpg-btn', () => new MapModal(plugin.app, plugin, { type: t, name: t.replace(' Map','') }).open()));
+  ['regions','settlements','pois','maps'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', (ENTITY_LABELS[k] || k) + 's'); itemCards(main, plugin, k, { icon: '🗺️' }); });
+};
+
+// Route plugin-generated homebrew into the compendium instead of the old Homebrew list.
+phase82TargetForCategory = function phase90TargetForCategory(category) {
+  return { key: 'compendium', type: category || 'Homebrew Entry', icon: '🛠️' };
+};
+renderHomebrewForge = function phase90RenderHomebrewForge(main, plugin) {
+  header(main, 'Homebrew Forge', 'Create table-ready custom items, creatures, spells, feats, traps, rules, and more with quick balance guardrails.', [
+    { label: 'Forge Entry', primary: true, onClick: () => new HomebrewForgeModal(plugin.app, plugin).open() },
+    { label: 'Magic Item', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Magic Item').open() },
+    { label: 'Creature', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Creature / Monster').open() },
+    { label: 'Spell', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Spell').open() },
+    { label: 'Trap', onClick: () => new HomebrewForgeModal(plugin.app, plugin, 'Trap').open() }
+  ]);
+  const cards = grid(main);
+  card(cards, 'Quick Forge', 'Choose a category, enter a concept, generate a balanced draft, then save it into the compendium.', '🛠️', [{ label: 'Open Forge', primary: true, onClick: () => new HomebrewForgeModal(plugin.app, plugin).open() }]);
+  card(cards, 'Balance Guardrails', 'Rarity, CR, attunement, charges, saves, crafting cost, and action economy are included as design checks.', '⚖️');
+  card(cards, 'Compendium Output', 'Saved forged entries are indexed in the compendium for searching, linking, notes, and later reuse.', '📚');
+  const catWrap = ce(main, 'section', 'ttrpg-card'); ce(catWrap, 'h3', '', 'Forge Categories');
+  const tags = ce(catWrap, 'div', 'ttrpg-tags'); PHASE82_HOMEBREW_CATEGORIES.forEach(category => { const tag = ce(tags, 'button', 'ttrpg-tag ttrpg-click-tag', category); tag.type = 'button'; tag.addEventListener('click', () => new HomebrewForgeModal(plugin.app, plugin, category).open()); });
+  ce(main, 'h2', 'ttrpg-section-title', 'Forged Compendium Entries');
+  const forged = getStore(plugin.state, 'compendium').filter(x => x.source === 'Homebrew Forge' || safeArray(x.tags).includes('homebrew'));
+  if (!forged.length) empty(main, 'No forged entries yet.', 'Use the forge above and saved entries will appear here and in the Library compendium.');
+  else { const g = grid(main); forged.slice(0, 24).forEach(item => { const c = card(g, item.name || item.title, item.summary || item.mechanics || item.category || '', '🛠️'); const row = ce(c, 'div', 'ttrpg-card-actions'); btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'compendium', item).open()); btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, 'compendium', item)); }); }
+};
+
+renderLibrary = function phase90RenderLibrary(main, plugin) {
+  header(main, 'Library & Compendium', 'Search, filter, import, and manage compendium entries and local legal data.', [
+    { label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() }
+  ]);
+  const controls = ce(main, 'section', 'ttrpg-card ttrpg-library-controls');
+  ce(controls, 'h3', '', 'Compendium Search');
+  const input = ce(controls, 'input', 'ttrpg-input'); input.type = 'search'; input.placeholder = 'Search compendium entries...'; input.value = plugin.state.librarySearch || '';
+  input.addEventListener('input', () => { plugin.state.librarySearch = input.value; plugin.refreshViews(); });
+  const comp = getStore(plugin.state, 'compendium');
+  const categories = uniqueList(comp.flatMap(phase90StoreTags)).filter(Boolean).slice(0, 30);
+  const chips = ce(controls, 'div', 'ttrpg-tags ttrpg-library-chip-row');
+  const all = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${!plugin.state.libraryCategory ? 'is-active' : ''}`, 'All'); all.type = 'button'; all.addEventListener('click', async () => { plugin.state.libraryCategory = ''; await plugin.saveState(); });
+  categories.forEach(cat => { const b = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${plugin.state.libraryCategory === cat ? 'is-active' : ''}`, cat); b.type = 'button'; b.addEventListener('click', async () => { plugin.state.libraryCategory = cat; await plugin.saveState(); }); });
+  const q = String(plugin.state.librarySearch || plugin.state.search || '').toLowerCase(); const cat = plugin.state.libraryCategory;
+  const items = comp.filter(x => (!q || JSON.stringify(x).toLowerCase().includes(q)) && (!cat || phase90StoreTags(x).includes(cat)));
+  ce(main, 'h2', 'ttrpg-section-title', `Compendium Entries (${items.length})`);
+  if (!items.length) empty(main, 'No matching compendium entries.', 'Change the search, pick another chip, or import/add compendium data.');
+  else { const g = grid(main); items.slice(0, 80).forEach(item => { const c = card(g, item.name || item.title || 'Compendium Entry', item.summary || item.description || item.mechanics || item.type || '', '📚'); const tags = ce(c, 'div', 'ttrpg-tags'); phase90StoreTags(item).slice(0, 5).forEach(t => ce(tags, 'span', 'ttrpg-tag', t)); const row = ce(c, 'div', 'ttrpg-card-actions'); btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'compendium', item).open()); btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, 'compendium', item)); }); if (items.length > 80) ce(main, 'p', 'ttrpg-muted', `Showing first 80 results. Narrow with search or chips.`); }
+};
+
+// Keep labels/nav clean: homebrew now lives in Forge, library is the compendium.
+try {
+  if (Array.isArray(PHASE82_DM_NAV)) {
+    const lib = PHASE82_DM_NAV.find(x => x[0] === 'library'); if (lib) lib[2] = 'Library & Compendium';
+  }
+  if (ENTITY_LABELS.homebrew) ENTITY_LABELS.homebrew = 'Forge Entry';
+} catch (e) {}
+
+/* --------------------------------------------------------------------------
+ * Phase 91 — Randomised Map Generator Upgrade
+ * - Fix deterministic map seeds: render/regenerate now uses a true fresh seed.
+ * - Add distinct procedural SVG layouts for Settlement, Town, Village, City,
+ *   Point of Interest, Dungeon, Battlemap, Region, and World maps.
+ * - Keep generated maps as actual SVG files in the campaign Maps folder.
+ * - Add map generator notes for future token/asset-pack support.
+ * -------------------------------------------------------------------------- */
+function phase91FreshSeed(label) {
+  const entropy = `${label || 'map'}-${Date.now()}-${Math.random()}-${Math.floor(Math.random() * 1e9)}`;
+  return phase81HashSeed(entropy);
+}
+function phase91Rng(seed) {
+  let s = Number(seed || 1) >>> 0;
+  return function rand() {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+function phase91Num(rand, min, max) { return Math.floor(min + rand() * (max - min + 1)); }
+function phase91PickRand(rand, arr) { return arr[Math.floor(rand() * arr.length)] || arr[0]; }
+function phase91SvgText(text) { return phase70EscapeSvg(text || ''); }
+function phase91MapKind(entry) {
+  const raw = `${entry?.type || ''} ${entry?.mapType || ''} ${entry?.tags || ''} ${entry?.summary || ''}`.toLowerCase();
+  if (/battle/.test(raw)) return 'battlemap';
+  if (/dungeon|cavern|crypt|lair/.test(raw)) return 'dungeon';
+  if (/city|metropolis/.test(raw)) return 'city';
+  if (/town/.test(raw)) return 'town';
+  if (/village|hamlet/.test(raw)) return 'village';
+  if (/settlement|fortress|outpost/.test(raw)) return 'settlement';
+  if (/point of interest|poi|landmark|ruin|tower|temple/.test(raw)) return 'poi';
+  if (/world/.test(raw)) return 'world';
+  return 'region';
+}
+function phase91Building(rand, x, y, w, h, rot, label, roof) {
+  const r = rot || 0;
+  const fill = roof || phase91PickRand(rand, ['#9b5f3b','#8c4d32','#b47b45','#6f5e67','#77655a']);
+  const num = label ? `<text x="${x + w / 2}" y="${y + h / 2 + 6}" text-anchor="middle" font-size="22" font-family="Georgia, serif" font-weight="700" fill="#1A1612">${phase91SvgText(label)}</text>` : '';
+  return `<g transform="rotate(${r} ${x + w/2} ${y + h/2})"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="#2b241e" stroke-width="2"/><path d="M${x+4},${y+4} L${x+w-4},${y+4} M${x+4},${y+h-4} L${x+w-4},${y+h-4} M${x+w/2},${y+2} L${x+w/2},${y+h-2}" stroke="#2b241e" stroke-width="1" opacity="0.35"/>${num}</g>`;
+}
+function phase91Tree(rand, x, y, size) {
+  const s = size || phase91Num(rand, 10, 22);
+  return `<g><circle cx="${x}" cy="${y}" r="${s}" fill="#4A7C59" stroke="#2b241e" stroke-width="1.5" opacity="0.88"/><circle cx="${x-5}" cy="${y+2}" r="${Math.max(5, s-5)}" fill="#3A5F41" opacity="0.55"/><path d="M${x-s/2},${y} C${x-4},${y-8} ${x+4},${y+8} ${x+s/2},${y}" stroke="#1A1612" stroke-width="1" fill="none" opacity="0.28"/></g>`;
+}
+function phase91Grid(width, height, step, opacity) {
+  const lines = [];
+  for (let x = 0; x <= width; x += step) lines.push(`<path d="M${x},0 V${height}"/>`);
+  for (let y = 0; y <= height; y += step) lines.push(`<path d="M0,${y} H${width}"/>`);
+  return `<g stroke="#1A1612" stroke-width="1" opacity="${opacity || 0.13}">${lines.join('')}</g>`;
+}
+function phase91BaseSvg(entry, body, options) {
+  const seed = Number(entry.mapSeed || phase91FreshSeed(entry.name || entry.type || 'map'));
+  const name = phase91SvgText(entry.name || 'Generated Map');
+  const type = phase91SvgText(entry.type || options?.label || 'Map');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-label="Generated ${type} for ${name}">
+  <defs>
+    <linearGradient id="phase91-paper-${seed}" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6efd9"/><stop offset="1" stop-color="#d9ccb0"/></linearGradient>
+    <filter id="phase91-rough-${seed}"><feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="3" seed="${seed % 997}"/><feColorMatrix type="saturate" values="0.18"/><feBlend mode="multiply" in2="SourceGraphic"/></filter>
+  </defs>
+  <rect width="900" height="620" fill="url(#phase91-paper-${seed})"/>
+  <rect x="12" y="12" width="876" height="596" rx="14" fill="none" stroke="#2b241e" stroke-width="2" opacity="0.35"/>
+  ${body}
+  <rect x="24" y="24" width="390" height="54" rx="8" fill="#f6efd9" opacity="0.82" stroke="#2b241e"/>
+  <text x="42" y="58" font-family="Georgia, serif" font-size="26" font-weight="700" fill="#1A1612">${name}</text>
+  <text x="42" y="92" font-family="Georgia, serif" font-size="13" fill="#1A1612" opacity="0.78">${type} • Seed ${seed}</text>
+</svg>`;
+}
+function phase91SettlementSvg(entry, kind) {
+  const rand = phase91Rng(entry.mapSeed);
+  const count = kind === 'village' ? 9 : kind === 'town' ? 19 : kind === 'city' ? 54 : 14;
+  let body = `<rect width="900" height="620" fill="#b9c98c" opacity="0.9"/>${phase91Grid(900,620,40,0.08)}`;
+  body += `<path d="M-10,${phase91Num(rand,250,370)} C180,${phase91Num(rand,210,330)} 300,${phase91Num(rand,390,500)} 490,${phase91Num(rand,300,420)} C650,${phase91Num(rand,220,350)} 760,${phase91Num(rand,270,440)} 920,${phase91Num(rand,190,340)}" fill="none" stroke="#e8dcc1" stroke-width="42" stroke-linecap="round" opacity="0.96"/><path d="M-10,${phase91Num(rand,110,210)} C180,${phase91Num(rand,130,230)} 260,${phase91Num(rand,80,150)} 430,${phase91Num(rand,155,255)} C590,${phase91Num(rand,240,335)} 710,${phase91Num(rand,190,280)} 920,${phase91Num(rand,250,370)}" fill="none" stroke="#e8dcc1" stroke-width="28" stroke-linecap="round" opacity="0.92"/>`;
+  if (kind === 'city') body += `<path d="M70,115 H805 V532 H82 Z" fill="none" stroke="#2b241e" stroke-width="8" opacity="0.65"/><path d="M70,318 H805 M442,115 V532" stroke="#2b241e" stroke-width="4" opacity="0.25"/>`;
+  for (let i=0;i<count;i++) {
+    const w = kind === 'city' ? phase91Num(rand,28,72) : phase91Num(rand,46,110);
+    const h = kind === 'city' ? phase91Num(rand,26,78) : phase91Num(rand,34,92);
+    const x = phase91Num(rand,70,790 - w);
+    const y = phase91Num(rand,105,535 - h);
+    if (kind !== 'city' && rand() < 0.2) continue;
+    body += phase91Building(rand, x, y, w, h, phase91Num(rand,-15,15), kind === 'settlement' && i < 9 ? String(i+1) : '', undefined);
+  }
+  const treeCount = kind === 'city' ? 20 : kind === 'town' ? 34 : 52;
+  for (let i=0;i<treeCount;i++) body += phase91Tree(rand, phase91Num(rand,30,870), phase91Num(rand,90,585), phase91Num(rand,7,18));
+  if (kind === 'village' || kind === 'settlement') body += `<circle cx="${phase91Num(rand,365,535)}" cy="${phase91Num(rand,275,390)}" r="${phase91Num(rand,24,42)}" fill="#6aa0b8" stroke="#2b241e" stroke-width="3" opacity="0.75"/>`;
+  return phase91BaseSvg(entry, body, { label: kind });
+}
+function phase91DungeonSvg(entry) {
+  const rand = phase91Rng(entry.mapSeed);
+  let body = `<rect width="900" height="620" fill="#f8f8f4"/>${phase91Grid(900,620,35,0.16)}`;
+  const rooms = [];
+  const n = phase91Num(rand, 8, 15);
+  for (let i=0;i<n;i++) rooms.push({x:phase91Num(rand,70,760), y:phase91Num(rand,100,500), w:phase91Num(rand,55,145), h:phase91Num(rand,45,120)});
+  rooms.forEach((r,i) => {
+    body += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff" stroke="#111" stroke-width="5"/>`;
+    body += `<text x="${r.x+r.w/2}" y="${r.y+r.h/2+6}" text-anchor="middle" font-size="20" font-family="Georgia, serif" fill="#111">${i+1}</text>`;
+    if (i>0) {
+      const p = rooms[i-1]; const x1=p.x+p.w/2, y1=p.y+p.h/2, x2=r.x+r.w/2, y2=r.y+r.h/2;
+      body += `<path d="M${x1},${y1} L${x2},${y1} L${x2},${y2}" fill="none" stroke="#111" stroke-width="18" stroke-linecap="square"/><path d="M${x1},${y1} L${x2},${y1} L${x2},${y2}" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="square"/>`;
+    }
+  });
+  for (let i=0;i<16;i++) body += `<path d="M${phase91Num(rand,35,865)},${phase91Num(rand,90,580)} l${phase91Num(rand,-20,20)},${phase91Num(rand,-20,20)}" stroke="#111" stroke-width="2" opacity="0.45"/>`;
+  return phase91BaseSvg(entry, body, { label: 'Dungeon Map' });
+}
+function phase91BattlemapSvg(entry) {
+  const rand = phase91Rng(entry.mapSeed);
+  let body = `<rect width="900" height="620" fill="#d9d4c4"/>${phase91Grid(900,620,40,0.32)}`;
+  const props = ['table','altar','rubble','crate','pillar','pool','wagon','statue'];
+  for (let i=0;i<phase91Num(rand,12,24);i++) {
+    const x=phase91Num(rand,55,820), y=phase91Num(rand,105,545), w=phase91Num(rand,25,95), h=phase91Num(rand,22,90);
+    const prop=phase91PickRand(rand,props);
+    if (prop==='pool') body += `<ellipse cx="${x}" cy="${y}" rx="${w/2}" ry="${h/2}" fill="#6aa0b8" stroke="#2b241e" opacity="0.7"/>`;
+    else if (prop==='pillar') body += `<circle cx="${x}" cy="${y}" r="${Math.min(w,h)/2}" fill="#777" stroke="#222"/>`;
+    else body += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${phase91PickRand(rand,['#8b6d4c','#6f5e67','#9a7a37','#77655a'])}" stroke="#222" transform="rotate(${phase91Num(rand,-25,25)} ${x+w/2} ${y+h/2})"/>`;
+  }
+  body += `<path d="M0,${phase91Num(rand,260,380)} C160,${phase91Num(rand,220,420)} 360,${phase91Num(rand,250,390)} 540,${phase91Num(rand,170,330)} C680,${phase91Num(rand,130,310)} 770,${phase91Num(rand,200,390)} 920,${phase91Num(rand,190,360)}" fill="none" stroke="#a99470" stroke-width="60" opacity="0.38"/>`;
+  return phase91BaseSvg(entry, body, { label: 'Battlemap' });
+}
+function phase91PoiSvg(entry) {
+  const rand = phase91Rng(entry.mapSeed);
+  let body = `<rect width="900" height="620" fill="#b9c98c"/>`;
+  for (let i=0;i<80;i++) body += phase91Tree(rand, phase91Num(rand,30,870), phase91Num(rand,95,585), phase91Num(rand,6,17));
+  body += `<path d="M-20,${phase91Num(rand,300,430)} C180,${phase91Num(rand,230,400)} 360,${phase91Num(rand,380,520)} 530,${phase91Num(rand,300,440)} C690,${phase91Num(rand,210,360)} 790,${phase91Num(rand,285,455)} 920,${phase91Num(rand,230,390)}" fill="none" stroke="#e8dcc1" stroke-width="38" stroke-linecap="round"/>`;
+  body += `<polygon points="450,180 530,330 370,330" fill="#8c8c8c" stroke="#222" stroke-width="5"/><rect x="390" y="330" width="120" height="92" fill="#777" stroke="#222" stroke-width="5"/><circle cx="450" cy="368" r="25" fill="#324A5F" opacity="0.55"/>`;
+  return phase91BaseSvg(entry, body, { label: 'Point of Interest Map' });
+}
+function phase91RegionSvg(entry) {
+  const rand = phase91Rng(entry.mapSeed);
+  let body = `<rect width="900" height="620" fill="#c8d5a0"/>`;
+  const coast = phase91Num(rand,0,2);
+  if (coast === 1) body += `<path d="M0,0 C105,110 60,245 98,350 C125,465 58,545 0,620 Z" fill="#6aa0b8" opacity="0.65"/>`;
+  if (coast === 2) body += `<path d="M900,0 C775,110 845,230 798,350 C765,465 840,545 900,620 Z" fill="#6aa0b8" opacity="0.65"/>`;
+  body += `<path d="M60,${phase91Num(rand,360,500)} C210,${phase91Num(rand,250,360)} 390,${phase91Num(rand,400,520)} 550,${phase91Num(rand,280,430)} C700,${phase91Num(rand,180,330)} 780,${phase91Num(rand,250,410)} 910,${phase91Num(rand,220,410)}" fill="none" stroke="#6aa0b8" stroke-width="22" opacity="0.6"/>`;
+  body += `<path d="M80,${phase91Num(rand,220,340)} C220,${phase91Num(rand,180,320)} 360,${phase91Num(rand,240,390)} 520,${phase91Num(rand,180,330)} C660,${phase91Num(rand,125,280)} 760,${phase91Num(rand,190,345)} 850,${phase91Num(rand,150,330)}" fill="none" stroke="#704214" stroke-width="8" stroke-dasharray="14 12" opacity="0.7"/>`;
+  for (let i=0;i<36;i++) body += phase91Tree(rand, phase91Num(rand,45,855), phase91Num(rand,95,585), phase91Num(rand,8,22));
+  for (let i=0;i<7;i++) body += `<polygon points="${phase91Num(rand,70,780)},${phase91Num(rand,100,500)} ${phase91Num(rand,95,805)},${phase91Num(rand,60,460)} ${phase91Num(rand,120,830)},${phase91Num(rand,105,505)}" fill="#7b8691" stroke="#2b241e" opacity="0.65"/>`;
+  for (let i=0;i<6;i++) body += `<g><circle cx="${phase91Num(rand,100,820)}" cy="${phase91Num(rand,130,540)}" r="10" fill="#8C2318" stroke="#2b241e" stroke-width="2"/><text x="${phase91Num(rand,100,820)+14}" y="${phase91Num(rand,130,540)+5}" font-size="14" fill="#1A1612">${i+1}</text></g>`;
+  return phase91BaseSvg(entry, body, { label: entry.type || 'Region Map' });
+}
+function phase91MapSvg(entry) {
+  const e = entry || {};
+  if (!e.mapSeed) e.mapSeed = phase91FreshSeed(e.name || e.type || 'map');
+  const kind = phase91MapKind(e);
+  if (kind === 'city' || kind === 'town' || kind === 'village' || kind === 'settlement') return phase91SettlementSvg(e, kind);
+  if (kind === 'dungeon') return phase91DungeonSvg(e);
+  if (kind === 'battlemap') return phase91BattlemapSvg(e);
+  if (kind === 'poi') return phase91PoiSvg(e);
+  return phase91RegionSvg(e);
+}
+phase70MapSvg = function phase91MapSvgOverride(entry) { return phase91MapSvg(entry || {}); };
+phase81MapSvg = function phase91Phase81MapSvgOverride(entry) { return phase91MapSvg(entry || {}); };
+
+// Ensure SVG files are regenerated with the currently assigned seed and type.
+phase81WriteSvgFile = async function phase91WriteSvgFile(plugin, entry) {
+  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const root = phase78CampaignRoot(plugin, campaign);
+  const folder = `${root}/02 Geography & Maps/Maps`;
+  if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
+  const svg = phase91MapSvg(entry);
+  const base = phase78Slug(entry.name || entry.title || 'generated-map');
+  const path = normalizePath(`${folder}/${base}-map.svg`);
+  await writeFile(plugin, path, svg);
+  entry.mapImagePath = path;
+  entry.imagePath = path;
+  entry.visualMapPath = path;
+  delete entry.visualMapSvg;
+  return path;
+};
+
+// Preview should render live SVG if available, otherwise show saved SVG file.
+phase70RenderMapPreview = function phase91RenderMapPreview(parent, entry) {
+  if (!entry) return;
+  const wrap = ce(parent, 'div', 'ttrpg-map-preview');
+  if (entry.visualMapSvg) { wrap.innerHTML = entry.visualMapSvg; return; }
+  const path = entry.mapImagePath || entry.visualMapPath || entry.imagePath;
+  const plugin = window?.app?.plugins?.plugins?.['ttrpg-table'];
+  const src = plugin ? phase81ResourcePath(plugin, path) : '';
+  if (src) wrap.createEl('img', { cls: 'ttrpg-map-image', attr: { src, alt: entry.name || 'Generated map' } });
+  else if (path) ce(wrap, 'p', 'ttrpg-muted', `Map file: ${path}`);
+  else ce(wrap, 'p', 'ttrpg-muted', 'No map rendered yet. Use Generate / Regenerate SVG Map.');
+};
+
+phase70MakeMapEntryFromLocation = function phase91MakeMapEntryFromLocation(entry) {
+  if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || 'map');
+  return {
+    id: uid('map'),
+    name: `${entry.name || 'Generated Location'} Map`,
+    type: `${entry.type || 'Settlement'} Map`,
+    summary: `Visual map rendered from ${entry.name || 'generated location'} details.`,
+    sourceLocationId: entry.id,
+    terrain: entry.terrain || entry.terrainType || '',
+    mapSeed: entry.mapSeed,
+    tags: ['generated', 'map', 'svg-map'],
+    visibility: entry.visibility || 'dm-only'
+  };
+};
+
+// Make Fantasy Map generation random immediately rather than name-deterministic.
+const phase91BaseMapEntry = phase69MapEntry;
+phase69MapEntry = function phase91MapEntry() {
+  const generated = phase91BaseMapEntry();
+  generated.entry.mapSeed = phase91FreshSeed(generated.entry.name || generated.entry.type || 'map');
+  generated.entry.visualMapSvg = phase91MapSvg(generated.entry);
+  return generated;
+};
+
+GeneratorModal = class Phase91GeneratorModal extends Modal {
+  constructor(app, plugin, type){ super(app); this.plugin=plugin; this.type=type||'Full NPC'; this.generated=null; }
+  onOpen(){ this.render(); }
+  isMapType(){ return this.type === 'Location / Settlement / Town / City' || this.type === 'Fantasy Map'; }
+  ensureGenerated(randomiseMap) {
+    if (!this.generated) this.generated = phase64FullGenerator(this.type, this.plugin.state);
+    if (this.generated?.entry && this.isMapType()) {
+      if (randomiseMap || !this.generated.entry.mapSeed) this.generated.entry.mapSeed = phase91FreshSeed(`${this.generated.entry.name || this.type}-${this.generated.entry.type || ''}`);
+      this.generated.entry.visualMapSvg = phase91MapSvg(this.generated.entry);
+    }
+    return this.generated;
+  }
+  render(){
+    const {contentEl}=this;
+    clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2',{text:'Generator Suite'});
+    ce(contentEl, 'p', 'ttrpg-muted', 'Pick one generator, create a complete entry, preview it, then save it. Map generators create real .svg files in the campaign Maps folder. Every render uses a fresh random seed.');
+    const out=contentEl.createDiv('ttrpg-generated ttrpg-generated-preview');
+    addSelect(contentEl,'Generator',this.type,PHASE69_GENERATOR_TYPES,v=>{ this.type=v; this.generated=null; this.render(); });
+    const actions = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(actions,'Generate Complete Entry','ttrpg-btn ttrpg-primary',()=>{ this.generated=phase64FullGenerator(this.type,this.plugin.state); this.ensureGenerated(true); phase66GeneratedPreview(out, this.generated); });
+    if (this.isMapType()) {
+      btn(actions,'Render Fresh Random Map', 'ttrpg-btn',()=>{ this.ensureGenerated(true); phase66GeneratedPreview(out, this.generated); });
+      btn(actions,'Save Location + SVG Map', 'ttrpg-btn', async()=>{
+        this.ensureGenerated(false);
+        const entry = this.generated.entry;
+        upsert(this.plugin.state,this.generated.kind,entry);
+        const mapEntry = this.generated.kind === 'maps' ? entry : phase70MakeMapEntryFromLocation(entry);
+        await phase81WriteSvgFile(this.plugin, mapEntry);
+        upsert(this.plugin.state,'maps',mapEntry);
+        this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:Object.assign({}, entry, { visualMapSvg: undefined }), target:this.generated.kind, entryId:entry.id, createdAt:Date.now() });
+        await this.plugin.saveState(); new Notice(`Generated entry and SVG map saved: ${mapEntry.mapImagePath}`); this.close();
+      });
+    }
+    btn(actions,'Save Generated Entry', 'ttrpg-btn', async()=>{
+      if(!this.generated) this.generated=phase64FullGenerator(this.type,this.plugin.state);
+      if (this.generated.kind === 'maps' || this.type === 'Fantasy Map') { this.ensureGenerated(false); await phase81WriteSvgFile(this.plugin, this.generated.entry); }
+      if (this.generated.entry) delete this.generated.entry.visualMapSvg;
+      upsert(this.plugin.state,this.generated.kind,this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.type, result:generate(this.type,this.plugin.state), entry:this.generated.entry, target:this.generated.kind, entryId:this.generated.entry.id, createdAt:Date.now() });
+      await this.plugin.saveState(); new Notice(`Generated ${ENTITY_LABELS[this.generated.kind] || 'entry'} saved.`); this.close();
+    });
+    btn(actions,'Save & Start Combat', 'ttrpg-btn ttrpg-primary', async()=>{
+      if(!this.generated || this.generated.kind !== 'encounters') this.generated=phase64FullGenerator('Full Encounter',this.plugin.state);
+      upsert(this.plugin.state,'encounters',this.generated.entry);
+      this.plugin.state.generatorHistory.unshift({ id:uid('gen'), type:this.generated.type || 'Full Encounter', result:generate('Full Encounter',this.plugin.state), entry:this.generated.entry, target:'encounters', entryId:this.generated.entry.id, createdAt:Date.now() });
+      await startCombatFromEncounter(this.plugin, this.generated.entry); this.close();
+    });
+    phase66GeneratedPreview(out, this.generated);
+  }
+};
+
+MapModal = class Phase91MapModal extends Modal {
+  constructor(app, plugin, item) { super(app); this.plugin = plugin; this.values = Object.assign({ id: uid('map'), name:'', type:'Settlement Map', imagePath:'', pins:'', layers:'DM, Player, Fog', fogOfWar:'Unrevealed', distanceScale:'1 square = 5 ft.', terrain:'', tokenFolder:'', playerVisible:false }, item || {}); }
+  onOpen() { this.render(); }
+  render() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Interactive Map Manager' });
+    const preview = ce(contentEl, 'div', 'ttrpg-generated-preview');
+    addText(contentEl, 'Name', this.values.name || '', v => this.values.name = v);
+    addSelect(contentEl, 'Map Type', this.values.type || 'Settlement Map', ['Settlement Map','Town Map','Village Map','City Map','Point of Interest Map','Dungeon Map','Battlemap','Region Map','World Map'], v => this.values.type = v);
+    addText(contentEl, 'Terrain / Theme', this.values.terrain || '', v => this.values.terrain = v);
+    addText(contentEl, 'Distance Scale', this.values.distanceScale || '', v => this.values.distanceScale = v);
+    addText(contentEl, 'Fog / Reveal State', this.values.fogOfWar || '', v => this.values.fogOfWar = v);
+    addText(contentEl, 'Token Asset Folder (optional)', this.values.tokenFolder || '', v => this.values.tokenFolder = v);
+    ce(contentEl, 'p', 'ttrpg-muted', 'Future token packs can use this folder for roofs, trees, rocks, furniture, and props. Current generator uses procedural SVG shapes.');
+    addTextArea(contentEl, 'Pins / Rooms / Landmarks', this.values.pins || '', v => this.values.pins = v);
+    addTextArea(contentEl, 'Layers', this.values.layers || '', v => this.values.layers = v);
+    addSelect(contentEl, 'Player Visible', String(!!this.values.playerVisible), ['false','true'], v => this.values.playerVisible = v === 'true');
+    phase70RenderMapPreview(preview, this.values);
+    const row = ce(contentEl, 'div', 'ttrpg-modal-actions');
+    btn(row, 'Generate / Regenerate SVG Map', 'ttrpg-btn ttrpg-primary', async () => {
+      this.values.mapSeed = phase91FreshSeed(`${this.values.name || this.values.type || 'map'}-${this.values.type}`);
+      this.values.visualMapSvg = phase91MapSvg(this.values);
+      await phase81WriteSvgFile(this.plugin, this.values);
+      new Notice('Fresh random SVG map generated.'); this.render();
+    });
+    btn(row, 'Save Map', 'ttrpg-btn', async () => { upsert(this.plugin.state, 'maps', this.values); await this.plugin.saveState(); new Notice('Map saved.'); this.close(); });
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 92 — Markdown Import Cleanup
+ * Removes noisy import labels from UI/data and improves Markdown-to-card parsing
+ * for Dataview/Meta Bind/template-heavy existing campaign vaults.
+ * -------------------------------------------------------------------------- */
+const PHASE92_NOISY_TAGS = new Set(['imported', 'import', 'campaign-builder', 'created-from-campaign-builder-wizard']);
+const PHASE92_HIDDEN_KEYS = new Set([
+  'importedAt','filePath','notePath','rootFolder','folderPath','campaignId','campaign_id','syncStatus','syncSource',
+  'ttrpg_type','ttrpgType','createdFrom','createdBy','sourceNote','sourcePath'
+]);
+function phase92CleanTag(tag) {
+  return String(tag || '').trim().replace(/^#/, '').replace(/\s+/g, '-').toLowerCase();
+}
+function phase92PublicTags(tags) {
+  return safeArray(tags).map(String).filter(t => {
+    const clean = phase92CleanTag(t);
+    return clean && !PHASE92_NOISY_TAGS.has(clean) && !/^imported[-_ ]?from/i.test(clean);
+  });
+}
+function phase92CleanImportPhrase(text) {
+  return String(text == null ? '' : text)
+    .replace(/Imported from existing Markdown folder:?\s*[^.\n]*\.?/gi, '')
+    .replace(/Imported from existing markdown folder:?\s*[^.\n]*\.?/gi, '')
+    .replace(/Imported from Markdown folder:?\s*[^.\n]*\.?/gi, '')
+    .replace(/Imported Markdown Campaign:?\s*/gi, '')
+    .replace(/\bstatus:\s*imported\b/gi, '')
+    .replace(/\bimported\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+function phase92CleanWikiText(text) {
+  return String(text || '')
+    .replace(/!\[\[([^|\]]+)(?:\|[^\]]+)?\]\]/g, '')
+    .replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/\{[^}\n]{1,80}\}/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/`INPUT\[[^\n`]*\]`?/gi, '')
+    .replace(/`VIEW\[[^\n`]*\]`?/gi, '')
+    .replace(/VIEW\[[^\n\]]+\]/gi, '')
+    .replace(/\*\*=this\.file\.name\*\*/gi, '')
+    .replace(/\bthis\.file\.name\b/gi, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
+function phase92StripDataviewAndTemplateNoise(markdown) {
+  let text = String(markdown || '').replace(/^\uFEFF/, '');
+  text = text.replace(/^---[\s\S]*?---\s*/m, '');
+  text = text.replace(/```dataview[\s\S]*?```/gi, '');
+  text = text.replace(/```dataviewjs[\s\S]*?```/gi, '');
+  text = text.replace(/```query[\s\S]*?```/gi, '');
+  text = text.replace(/^\s*TABLE\b.*$/gmi, '');
+  text = text.replace(/^\s*(FROM|WHERE|SORT|GROUP BY|FLATTEN|JOIN)\b.*$/gmi, '');
+  text = text.replace(/^\s*`?INPUT\[[^\n]*$/gmi, '');
+  text = text.replace(/^\s*`?VIEW\[[^\n]*$/gmi, '');
+  text = text.replace(/^\s*>\s*\[!metadata[^\n]*\]\s*.*$/gmi, '');
+  text = text.replace(/^\s*>\s*\[![^\n]*\]\s*$/gmi, '');
+  text = text.replace(/^\s*#?\s*metadata\b.*$/gmi, '');
+  text = text.replace(/^\s*(aliases|organisation|ownedlocation|deitypower|pronounced|tags|cssclasses|type|status)::?.*$/gmi, '');
+  text = phase92CleanWikiText(text);
+  return text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+function phase92ReadableParagraph(markdown) {
+  const body = phase92StripDataviewAndTemplateNoise(markdown)
+    .replace(/^#\s+.+$/m, '')
+    .split(/\n\s*\n/g)
+    .map(x => x.replace(/^>\s?/gm, '').trim())
+    .filter(Boolean)
+    .filter(x => !/^(TABLE|FROM|WHERE|SORT|INPUT|VIEW)\b/i.test(x))
+    .filter(x => !/^[-*]\s*$/.test(x));
+  const paragraph = body.find(x => /[a-zA-Z]{20,}/.test(x)) || body[0] || '';
+  return phase92CleanImportPhrase(paragraph).slice(0, 900);
+}
+function phase92CleanImportedItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  const clone = Object.assign({}, item);
+  clone.tags = phase92PublicTags(clone.tags);
+  if (String(clone.status || '').toLowerCase() === 'imported') delete clone.status;
+  ['summary','description','notes','title','name','source'].forEach(k => {
+    if (clone[k]) clone[k] = phase92CleanImportPhrase(phase92CleanWikiText(clone[k]));
+  });
+  return clone;
+}
+
+const phase92BaseDisplayableKey = phase67IsDisplayableKey;
+phase67IsDisplayableKey = function phase92DisplayableKey(key) {
+  return !PHASE92_HIDDEN_KEYS.has(String(key)) && phase92BaseDisplayableKey(key);
+};
+const phase92BaseCleanInline = phase67CleanInline;
+phase67CleanInline = function phase92CleanInline(text) {
+  return phase92CleanImportPhrase(phase92CleanWikiText(phase92BaseCleanInline(text)));
+};
+const phase92BaseObjectToFields = phase67ObjectToFields;
+phase67ObjectToFields = function phase92ObjectToFields(obj) {
+  const cleanObj = phase92CleanImportedItem(obj);
+  const fields = phase92BaseObjectToFields(cleanObj).filter(f => {
+    const label = String(f.label || '').toLowerCase();
+    const value = String(f.value || '').trim().toLowerCase();
+    if (value === 'imported') return false;
+    if (label === 'tags' && !phase92PublicTags(String(f.value || '').split(/,|•/)).length) return false;
+    return true;
+  });
+  return fields;
+};
+const phase92BaseTextToFields = phase67TextToFields;
+phase67TextToFields = function phase92TextToFields(text) {
+  return phase92BaseTextToFields(phase92StripDataviewAndTemplateNoise(text)).filter(f => String(f.value || f.label || '').trim());
+};
+const phase92BaseItemCards = itemCards;
+itemCards = function phase92ItemCards(parent, plugin, key, opts) {
+  // Local copy so we can strip noisy import labels before rendering without mutating saved data on every paint.
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) return phase92BaseItemCards(parent, plugin, key, opts);
+  const g = grid(parent);
+  items.forEach(raw => {
+    const item = phase92CleanImportedItem(raw);
+    const title = item.name || item.title || ENTITY_LABELS[key] || 'Untitled';
+    const c = card(g, title, item, opts && opts.icon || '📜');
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    phase92PublicTags(item.tags).slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(t)));
+    if (item.visibility) ce(meta, 'span', 'ttrpg-tag', phase67CleanInline(item.visibility));
+    if (raw.notePath || raw.filePath) ce(meta, 'span', 'ttrpg-tag', 'note-linked');
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, raw).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, raw));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, raw.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key]} deleted.`); });
+  });
+};
+
+// Improve future imports: keep note linkage, but do not advertise that a file was imported.
+phase89FirstParagraph = function phase92FirstParagraph(body) {
+  return phase92ReadableParagraph(body);
+};
+const phase92BaseEntityFromAnyMarkdown = phase89EntityFromAnyMarkdown;
+phase89EntityFromAnyMarkdown = function phase92EntityFromAnyMarkdown(file, markdown, campaign) {
+  const parsed = phase92BaseEntityFromAnyMarkdown(file, markdown, campaign);
+  if (!parsed || !parsed.item) return parsed;
+  parsed.item = phase92CleanImportedItem(parsed.item);
+  parsed.item.tags = Array.from(new Set([...(safeArray(parsed.item.tags)), String(parsed.key || '').replace(/([A-Z])/g, '-$1').toLowerCase()])).filter(Boolean);
+  delete parsed.item.status;
+  if (!parsed.item.summary || /TABLE\b|INPUT\[|VIEW\[|metadata/i.test(parsed.item.summary)) parsed.item.summary = phase92ReadableParagraph(markdown);
+  if (parsed.item.description) parsed.item.description = phase92StripDataviewAndTemplateNoise(parsed.item.description);
+  return parsed;
+};
+phase89FrontmatterForImport = function phase92FrontmatterForImport(key, item, campaign) {
+  return [
+    '---',
+    `ttrpg_type: ${phase78Yaml(key)}`,
+    `id: ${phase78Yaml(item.id)}`,
+    `campaign: ${phase78Yaml(campaign.name)}`,
+    `campaign_id: ${phase78Yaml(campaign.id)}`,
+    `visibility: ${phase78Yaml(item.visibility || 'dm-only')}`,
+    `tags: ${phase78Tags(phase92PublicTags(item.tags || [key]))}`,
+    '---',
+    ''
+  ].join('\n');
+};
+const phase92BaseImportFolder = phase89ImportFolder;
+phase89ImportFolder = async function phase92ImportFolder(plugin, options) {
+  const result = await phase92BaseImportFolder(plugin, options);
+  const campaign = result && result.campaign;
+  if (campaign) {
+    campaign.summary = phase92CleanImportPhrase(campaign.summary) || 'Imported campaign folder linked to plugin data.';
+    campaign.tags = phase92PublicTags(campaign.tags).filter(t => t !== 'campaign' ? true : true);
+  }
+  phase92CleanAllState(plugin.state);
+  await plugin.saveState();
+  return result;
+};
+
+function phase92CleanAllState(state) {
+  if (!state || !state.entities) return;
+  Object.keys(state.entities).forEach(key => {
+    state.entities[key] = safeArray(state.entities[key]).map(item => phase92CleanImportedItem(item));
+  });
+}
+const phase92BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase92Onload() {
+  await phase92BaseOnload.call(this);
+  phase92CleanAllState(this.state);
+  if (this.saveData) await this.saveData(this.state);
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 93 — Compendium Category Consolidation
+ * - Consolidates duplicate category chips such as Spell/spell, Weapon/weapon.
+ * - Chips are generated from canonical compendium categories, not noisy tags/source text.
+ * - Displays categories in Title Case everywhere in the Library & Compendium view.
+ * -------------------------------------------------------------------------- */
+function phase93TitleCase(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  const acronyms = new Set(['AC','HP','XP','PP','GP','EP','SP','CP','PB','DC','CR','NPC','PC','POI','SRD','JSON','DM','GM','ASI']);
+  if (acronyms.has(upper)) return upper;
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map(part => {
+      const p = String(part || '').trim();
+      if (!p) return '';
+      const up = p.toUpperCase();
+      if (acronyms.has(up)) return up;
+      return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+    })
+    .join(' ')
+    .trim();
+}
+function phase93CanonicalCategory(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  const s = raw.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  if (/built.?in|srd compatible|json seed|local data|homebrew forge|generated|imported|note linked/.test(s)) return '';
+  if (/^\d+$/.test(s)) return '';
+  const map = {
+    spell: 'Spell', spells: 'Spell', cantrip: 'Spell', evocation: 'Spell', abjuration: 'Spell', conjuration: 'Spell', divination: 'Spell', enchantment: 'Spell', illusion: 'Spell', necromancy: 'Spell', transmutation: 'Spell',
+    feat: 'Feat', feats: 'Feat',
+    weapon: 'Weapon', weapons: 'Weapon',
+    armor: 'Armor', armour: 'Armor', armors: 'Armor', armours: 'Armor', shield: 'Armor', shields: 'Armor',
+    gear: 'Gear', item: 'Item', items: 'Item', equipment: 'Item', treasure: 'Treasure',
+    tool: 'Tool', tools: 'Tool', kit: 'Kit', kits: 'Kit', focus: 'Spellcasting Focus', container: 'Container', vehicle: 'Vehicle', vehicles: 'Vehicle', object: 'Object', objects: 'Object', reward: 'Reward', rewards: 'Reward',
+    creature: 'Creature', creatures: 'Creature', monster: 'Creature', monsters: 'Creature', npc: 'NPC', npcs: 'NPC', enemy: 'Creature',
+    race: 'Ancestry', races: 'Ancestry', ancestry: 'Ancestry', ancestries: 'Ancestry', lineage: 'Ancestry',
+    background: 'Background', backgrounds: 'Background', class: 'Class', classes: 'Class', subclass: 'Subclass', subclasses: 'Subclass',
+    language: 'Language', languages: 'Language', deity: 'Deity', deities: 'Deity', god: 'Deity', gods: 'Deity', pantheon: 'Pantheon',
+    condition: 'Condition', conditions: 'Condition', damage: 'Damage Type', 'damage type': 'Damage Type',
+    rule: 'Rule', rules: 'Rule', action: 'Action', actions: 'Action', trap: 'Trap', traps: 'Trap', hazard: 'Hazard', hazards: 'Hazard', effect: 'Effect', effects: 'Effect',
+    encounter: 'Encounter', encounters: 'Encounter', settlement: 'Settlement', settlements: 'Settlement', location: 'Location', locations: 'Location', map: 'Map', maps: 'Map',
+    homebrew: 'Homebrew', forge: 'Homebrew'
+  };
+  if (map[s]) return map[s];
+  if (/\bspell\b/.test(s)) return 'Spell';
+  if (/\bfeat\b/.test(s)) return 'Feat';
+  if (/weapon|sword|bow|axe|mace|spear|dagger|crossbow/.test(s)) return 'Weapon';
+  if (/armor|armour|shield|mail|plate/.test(s)) return 'Armor';
+  if (/creature|monster|beast|humanoid|undead|fiend|dragon|construct/.test(s)) return 'Creature';
+  if (/condition/.test(s)) return 'Condition';
+  if (/trap/.test(s)) return 'Trap';
+  return phase93TitleCase(s);
+}
+function phase93ItemPrimaryCategory(item) {
+  if (!item) return 'Compendium Entry';
+  const direct = phase93CanonicalCategory(item.type) || phase93CanonicalCategory(item.category);
+  if (direct) return direct;
+  const tags = safeArray(item.tags).map(phase93CanonicalCategory).filter(Boolean);
+  if (tags.length) return tags[0];
+  const id = String(item.id || item.name || '').toLowerCase();
+  if (id.startsWith('spell-')) return 'Spell';
+  if (id.startsWith('feat-')) return 'Feat';
+  if (id.startsWith('race-')) return 'Ancestry';
+  if (id.startsWith('background-')) return 'Background';
+  if (id.startsWith('condition-')) return 'Condition';
+  if (id.startsWith('item-')) return phase93CanonicalCategory(item.type) || 'Item';
+  return 'Compendium Entry';
+}
+function phase93ItemCategories(item) {
+  const cats = [phase93ItemPrimaryCategory(item)];
+  if (item && item.type) cats.push(phase93CanonicalCategory(item.type));
+  if (item && item.category) cats.push(phase93CanonicalCategory(item.category));
+  safeArray(item && item.tags).forEach(t => cats.push(phase93CanonicalCategory(t)));
+  return uniqueList(cats.filter(Boolean)).map(phase93TitleCase);
+}
+function phase93NormalizeCompendiumItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  const out = Object.assign({}, item);
+  out.category = phase93ItemPrimaryCategory(item);
+  if (out.type) out.type = phase93CanonicalCategory(out.type) || phase93TitleCase(out.type);
+  out.tags = phase93ItemCategories(item).filter(t => t !== 'Compendium Entry');
+  return out;
+}
+function phase93NormalizeCompendiumState(state) {
+  if (!state || !state.entities || !Array.isArray(state.entities.compendium)) return;
+  state.entities.compendium = state.entities.compendium.map(phase93NormalizeCompendiumItem);
+}
+renderLibrary = function phase93RenderLibrary(main, plugin) {
+  phase93NormalizeCompendiumState(plugin.state);
+  header(main, 'Library & Compendium', 'Search, filter, import, and manage compendium entries and local legal data.', [
+    { label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() }
+  ]);
+  const controls = ce(main, 'section', 'ttrpg-card ttrpg-library-controls');
+  ce(controls, 'h3', '', 'Compendium Search');
+  const input = ce(controls, 'input', 'ttrpg-input');
+  input.type = 'search';
+  input.placeholder = 'Search compendium entries...';
+  input.value = plugin.state.librarySearch || '';
+  input.addEventListener('input', () => {
+    plugin.state.librarySearch = input.value;
+    if (plugin._phase93LibraryTimer) window.clearTimeout(plugin._phase93LibraryTimer);
+    plugin._phase93LibraryTimer = window.setTimeout(() => plugin.refreshViews(), 120);
+  });
+  const comp = getStore(plugin.state, 'compendium').map(phase93NormalizeCompendiumItem);
+  const categories = uniqueList(comp.flatMap(phase93ItemCategories))
+    .filter(Boolean)
+    .filter(c => c !== 'Compendium Entry')
+    .sort((a, b) => a.localeCompare(b));
+  const chips = ce(controls, 'div', 'ttrpg-tags ttrpg-library-chip-row');
+  const all = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${!plugin.state.libraryCategory ? 'is-active' : ''}`, 'All');
+  all.type = 'button';
+  all.addEventListener('click', async () => { plugin.state.libraryCategory = ''; await plugin.saveState(); });
+  categories.forEach(cat => {
+    const b = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${plugin.state.libraryCategory === cat ? 'is-active' : ''}`, cat);
+    b.type = 'button';
+    b.addEventListener('click', async () => { plugin.state.libraryCategory = cat; await plugin.saveState(); });
+  });
+  const q = String(plugin.state.librarySearch || plugin.state.search || '').toLowerCase();
+  const cat = plugin.state.libraryCategory ? phase93TitleCase(plugin.state.libraryCategory) : '';
+  const items = comp.filter(x => (!q || JSON.stringify(x).toLowerCase().includes(q)) && (!cat || phase93ItemCategories(x).includes(cat)));
+  ce(main, 'h2', 'ttrpg-section-title', `Compendium Entries (${items.length})`);
+  if (!items.length) {
+    empty(main, 'No matching compendium entries.', 'Change the search, pick another category chip, or import/add compendium data.');
+  } else {
+    const g = grid(main);
+    items.slice(0, 80).forEach(item => {
+      const c = card(g, item.name || item.title || 'Compendium Entry', item.summary || item.description || item.mechanics || item.category || '', '📚');
+      const tags = ce(c, 'div', 'ttrpg-tags');
+      phase93ItemCategories(item).filter(t => t !== 'Compendium Entry').slice(0, 5).forEach(t => ce(tags, 'span', 'ttrpg-tag', t));
+      const row = ce(c, 'div', 'ttrpg-card-actions');
+      btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'compendium', item).open());
+      btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, 'compendium', item));
+    });
+    if (items.length > 80) ce(main, 'p', 'ttrpg-muted', `Showing first 80 results. Narrow with search or category chips.`);
+  }
+};
+const phase93BaseOnload = TTRPGTablePlugin.prototype.onload;
+TTRPGTablePlugin.prototype.onload = async function phase93Onload() {
+  await phase93BaseOnload.call(this);
+  phase93NormalizeCompendiumState(this.state);
+  if (this.saveData) await this.saveData(this.state);
+};
+
+
+/* Phase 103 — Missing acronym helper recovery
+ * Phase 94 referenced phase76AcronymLabel, but the helper was not present in this
+ * build. Defining it here fixes Note creation and Campaign Wizard generation paths
+ * that render object labels while building Markdown.
+ */
+function phase76AcronymLabel(label) {
+  const acronyms = new Map([
+    ['Hp','HP'], ['Ac','AC'], ['Xp','XP'], ['Gp','GP'], ['Ep','EP'], ['Sp','SP'], ['Cp','CP'], ['Pp','PP'],
+    ['Pb','PB'], ['Dc','DC'], ['Cr','CR'], ['Asi','ASI'], ['Poi','POI'], ['Pcs','PCs'], ['Pc','PC'],
+    ['Npcs','NPCs'], ['Npc','NPC'], ['Dm','DM'], ['Md','MD'], ['Svg','SVG'], ['Json','JSON'], ['Yaml','YAML'],
+    ['Ui','UI'], ['Ux','UX'], ['Url','URL'], ['Id','ID']
+  ]);
+  return String(label || '').replace(/\b([A-Z]?[a-z]+s?|[A-Z]{2,})\b/g, (word) => acronyms.get(word) || word);
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 94 — Object Rendering Fix
+ * Fixes cards showing literal "[object Object]" when a later clean-text wrapper
+ * coerced structured entry objects into strings before rich rendering could read them.
+ * -------------------------------------------------------------------------- */
+function phase94IsPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function phase94CleanDisplayString(value) {
+  if (value === null || value === undefined) return '';
+  return phase90CleanText(phase67CleanInline(String(value)));
+}
+function phase94CleanDisplayValue(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(phase94CleanDisplayValue).filter(v => v !== '' && v !== null && v !== undefined);
+  if (phase94IsPlainObject(value)) {
+    const out = {};
+    Object.entries(value).forEach(([k, v]) => {
+      const cleaned = phase94CleanDisplayValue(v);
+      if (cleaned !== '' && cleaned !== null && cleaned !== undefined && !(Array.isArray(cleaned) && !cleaned.length)) out[k] = cleaned;
+    });
+    return out;
+  }
+  return phase94CleanDisplayString(value);
+}
+function phase94HumaniseObjectLabel(key) {
+  return (typeof phase76AcronymLabel === 'function') ? phase76AcronymLabel(phase67HumanKey(key)) : phase67HumanKey(key);
+}
+function phase94IsNoisyDisplayKey(key) {
+  return [
+    'id', 'campaignId', 'campaign_id', 'createdAt', 'updatedAt', 'notePath', 'filePath', 'path',
+    'sync', 'syncId', 'metadata', 'sort', 'order', 'visualMapSvg', 'rawMarkdown', 'body', 'sourcePath'
+  ].includes(String(key));
+}
+function phase94StringifyCardValue(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(phase94StringifyCardValue).filter(Boolean).join(', ');
+  if (phase94IsPlainObject(value)) {
+    const parts = Object.entries(value)
+      .filter(([k]) => !phase94IsNoisyDisplayKey(k))
+      .map(([k, v]) => {
+        const text = phase94StringifyCardValue(v);
+        return text ? `${phase94HumaniseObjectLabel(k)}: ${text}` : '';
+      })
+      .filter(Boolean);
+    return parts.join(' • ');
+  }
+  return phase94CleanDisplayString(value);
+}
+const phase94BaseObjectToFields = phase67ObjectToFields;
+phase67ObjectToFields = function phase94ObjectToFields(obj) {
+  const cleaned = phase94CleanDisplayValue(phase92CleanImportedItem ? phase92CleanImportedItem(obj) : obj);
+  const fields = phase94BaseObjectToFields(cleaned).filter(f => {
+    const label = String(f.label || '').trim();
+    const value = String(f.value || '').trim();
+    if (!label && !value) return false;
+    if (value === '[object Object]') return false;
+    if (/^\[object Object\]$/i.test(value)) return false;
+    if (phase94IsNoisyDisplayKey(label)) return false;
+    return true;
+  });
+  return fields.map(f => ({ label: phase94HumaniseObjectLabel(f.label), value: phase94StringifyCardValue(f.value) || f.value }));
+};
+
+const phase94PreviousCard = card;
+card = function phase94Card(parent, title, text, icon, actions) {
+  const cleanTitle = phase94CleanDisplayString(title) || 'Untitled';
+  const safeText = phase94IsPlainObject(text) || Array.isArray(text) ? phase94CleanDisplayValue(text) : phase94CleanDisplayString(text);
+  const c = ce(parent, 'section', 'ttrpg-card');
+  const head = ce(c, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', icon || '📜');
+  ce(head, 'h3', '', cleanTitle);
+  phase67RenderBody(c, safeText);
+  if (actions && actions.length) {
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    actions.forEach(a => btn(row, a.label, a.primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', a.onClick));
+  }
+  return c;
+};
+
+itemCards = function phase94ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${ENTITY_LABELS[key] || key} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(raw => {
+    const item = phase94CleanDisplayValue(phase92CleanImportedItem ? phase92CleanImportedItem(raw) : raw);
+    const title = item.name || item.title || ENTITY_LABELS[key] || 'Untitled';
+    const c = card(g, title, item, opts && opts.icon || (key === 'encounters' ? '⚔️' : '📜'));
+    if (typeof phase64CardClick === 'function') phase64CardClick(c, () => key === 'encounters' ? startCombatFromEncounter(plugin, raw) : new EntityModal(plugin.app, plugin, key, raw).open());
+    const portrait = raw.portraitPath || raw.imagePath;
+    if (portrait && typeof phase74PortraitSrc === 'function') {
+      const src = phase74PortraitSrc(plugin, portrait);
+      if (src) {
+        const img = c.createEl('img', { cls: 'ttrpg-card-portrait' });
+        img.src = src;
+        img.alt = `${title} portrait`;
+        img.onerror = () => img.remove();
+      }
+    }
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    const tags = phase92PublicTags ? phase92PublicTags(raw.tags || item.tags) : safeArray(raw.tags || item.tags);
+    tags.slice(0, 5).forEach(t => ce(meta, 'span', 'ttrpg-tag', phase94CleanDisplayString(t)));
+    if (raw.visibility || item.visibility) ce(meta, 'span', 'ttrpg-tag', phase94CleanDisplayString(raw.visibility || item.visibility));
+    if (raw.notePath || raw.filePath) ce(meta, 'span', 'ttrpg-tag', 'note-linked');
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    if (key === 'encounters') btn(row, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, raw));
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, raw).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, raw));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, raw.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`); });
+  });
+};
+
+const phase94BaseRenderLibrary = renderLibrary;
+renderLibrary = function phase94RenderLibrary(main, plugin) {
+  phase93NormalizeCompendiumState(plugin.state);
+  header(main, 'Library & Compendium', 'Search, filter, import, and manage compendium entries and local legal data.', [
+    { label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() }
+  ]);
+  const controls = ce(main, 'section', 'ttrpg-card ttrpg-library-controls');
+  ce(controls, 'h3', '', 'Compendium Search');
+  const input = ce(controls, 'input', 'ttrpg-input');
+  input.type = 'search';
+  input.placeholder = 'Search compendium entries...';
+  input.value = plugin.state.librarySearch || '';
+  input.addEventListener('input', () => {
+    plugin.state.librarySearch = input.value;
+    if (plugin._phase93LibraryTimer) window.clearTimeout(plugin._phase93LibraryTimer);
+    plugin._phase93LibraryTimer = window.setTimeout(() => plugin.refreshViews(), 120);
+  });
+  const comp = getStore(plugin.state, 'compendium').map(phase93NormalizeCompendiumItem).map(phase94CleanDisplayValue);
+  const categories = uniqueList(comp.flatMap(phase93ItemCategories)).filter(Boolean).filter(c => c !== 'Compendium Entry').sort((a, b) => a.localeCompare(b));
+  const chips = ce(controls, 'div', 'ttrpg-tags ttrpg-library-chip-row');
+  const all = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${!plugin.state.libraryCategory ? 'is-active' : ''}`, 'All');
+  all.type = 'button';
+  all.addEventListener('click', async () => { plugin.state.libraryCategory = ''; await plugin.saveState(); });
+  categories.forEach(cat => {
+    const b = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${plugin.state.libraryCategory === cat ? 'is-active' : ''}`, cat);
+    b.type = 'button';
+    b.addEventListener('click', async () => { plugin.state.libraryCategory = cat; await plugin.saveState(); });
+  });
+  const q = String(plugin.state.librarySearch || plugin.state.search || '').toLowerCase();
+  const cat = plugin.state.libraryCategory ? phase93TitleCase(plugin.state.libraryCategory) : '';
+  const items = comp.filter(x => (!q || JSON.stringify(x).toLowerCase().includes(q)) && (!cat || phase93ItemCategories(x).includes(cat)));
+  ce(main, 'h2', 'ttrpg-section-title', `Compendium Entries (${items.length})`);
+  if (!items.length) empty(main, 'No matching compendium entries.', 'Change the search, pick another category chip, or import/add compendium data.');
+  else {
+    const g = grid(main);
+    items.slice(0, 80).forEach(item => {
+      const c = card(g, item.name || item.title || 'Compendium Entry', item, '📚');
+      const tags = ce(c, 'div', 'ttrpg-tags');
+      phase93ItemCategories(item).filter(t => t !== 'Compendium Entry').slice(0, 5).forEach(t => ce(tags, 'span', 'ttrpg-tag', t));
+      const row = ce(c, 'div', 'ttrpg-card-actions');
+      btn(row, 'Open', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'compendium', item).open());
+      btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, 'compendium', item));
+    });
+    if (items.length > 80) ce(main, 'p', 'ttrpg-muted', `Showing first 80 results. Narrow with search or category chips.`);
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 95 — Card Interactivity Recovery
+ * Phase 94 was too aggressive about cleaning structured objects before rendering.
+ * In some sections that left only a title visible and made entries feel dead.
+ * This restores a conservative, reliable card renderer for saved entries:
+ * - never mutates the stored object while displaying it
+ * - always renders a useful summary when possible
+ * - always adds Open / Edit, Note, Delete actions
+ * - removes any remaining [object Object] display safely
+ * -------------------------------------------------------------------------- */
+function phase95IsObj(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function phase95Text(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return phase94CleanDisplayString ? phase94CleanDisplayString(value) : String(value).trim();
+  }
+  if (Array.isArray(value)) return value.map(phase95Text).filter(Boolean).join(', ');
+  if (phase95IsObj(value)) {
+    return Object.entries(value)
+      .filter(([k, v]) => !phase94IsNoisyDisplayKey(k) && v !== null && v !== undefined && v !== '')
+      .map(([k, v]) => `${phase94HumaniseObjectLabel ? phase94HumaniseObjectLabel(k) : nice(k)}: ${phase95Text(v)}`)
+      .filter(Boolean)
+      .join(' • ');
+  }
+  return String(value || '').trim();
+}
+function phase95Summary(item, key) {
+  const source = item || {};
+  const preferred = [
+    'summary','description','overview','type','category','role','status','government','population','terrain','climate',
+    'domains','symbol','worshippers','dogma','goals','resources','objectives','rewards','tactics','loot','notes'
+  ];
+  const fields = [];
+  preferred.forEach(k => {
+    if (!Object.prototype.hasOwnProperty.call(source, k)) return;
+    const value = phase95Text(source[k]);
+    if (!value || value === '[object Object]') return;
+    fields.push({ label: phase94HumaniseObjectLabel ? phase94HumaniseObjectLabel(k) : nice(k), value });
+  });
+  if (!fields.length) {
+    const fallback = Object.entries(source)
+      .filter(([k]) => !['id','name','title','tags','visibility','notePath','filePath','createdAt','updatedAt'].includes(k) && !phase94IsNoisyDisplayKey(k))
+      .slice(0, 6)
+      .map(([k, v]) => ({ label: phase94HumaniseObjectLabel ? phase94HumaniseObjectLabel(k) : nice(k), value: phase95Text(v) }))
+      .filter(f => f.value && f.value !== '[object Object]');
+    fields.push(...fallback);
+  }
+  return fields;
+}
+function phase95RenderFields(parent, fields, emptyText) {
+  const usable = safeArray(fields).filter(f => f && (f.label || f.value));
+  if (!usable.length) {
+    ce(parent, 'p', 'ttrpg-muted', emptyText || 'No details yet. Open / Edit to add more.');
+    return;
+  }
+  const wrap = ce(parent, 'div', 'ttrpg-card-rich-body');
+  usable.slice(0, 10).forEach(f => {
+    const row = ce(wrap, 'div', f.label ? 'ttrpg-field-row' : 'ttrpg-card-paragraph');
+    if (f.label) ce(row, 'div', 'ttrpg-field-label', f.label);
+    ce(row, 'div', 'ttrpg-field-value', f.value || '—');
+  });
+}
+function phase95DisplayTags(item) {
+  const tags = phase92PublicTags ? phase92PublicTags(item.tags) : safeArray(item.tags);
+  const out = [];
+  tags.forEach(t => {
+    const clean = phase94CleanDisplayString ? phase94CleanDisplayString(t) : String(t || '').trim();
+    if (clean && !['Imported','Generated From Campaign Builder Wizard','Campaign Builder Wizard'].includes(clean)) out.push(clean);
+  });
+  if (item.visibility) out.push(phase94CleanDisplayString ? phase94CleanDisplayString(item.visibility) : String(item.visibility));
+  if (item.notePath || item.filePath) out.push('note-linked');
+  return uniqueList(out).slice(0, 7);
+}
+function phase95EntityIcon(key, opts) {
+  if (opts && opts.icon) return opts.icon;
+  const map = { worlds:'🌌', factions:'⚜️', deities:'☀️', languages:'🗣️', cultures:'🧬', myths:'📜', regions:'🗺️', settlements:'🗺️', pois:'📍', maps:'🗺️', npcs:'👤', creatures:'🐉', quests:'📝', adventures:'📚', encounters:'⚔️', rules:'⚖️', sessions:'📅', secrets:'🔒', compendium:'📚' };
+  return map[key] || '📜';
+}
+itemCards = function phase95ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${ENTITY_LABELS[key] || key} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(raw => {
+    const title = phase95Text(raw.name || raw.title || ENTITY_LABELS[key] || 'Untitled Entry') || 'Untitled Entry';
+    const c = ce(g, 'section', 'ttrpg-card');
+    const head = ce(c, 'div', 'ttrpg-card-head');
+    ce(head, 'div', 'ttrpg-card-icon', phase95EntityIcon(key, opts));
+    ce(head, 'h3', '', title);
+    phase95RenderFields(c, phase95Summary(raw, key), 'No details yet. Open / Edit to add more.');
+    const portrait = raw.portraitPath || raw.imagePath;
+    if (portrait && typeof phase74PortraitSrc === 'function') {
+      const src = phase74PortraitSrc(plugin, portrait);
+      if (src) {
+        const img = c.createEl('img', { cls: 'ttrpg-card-portrait' });
+        img.src = src;
+        img.alt = `${title} portrait`;
+        img.onerror = () => img.remove();
+      }
+    }
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    phase95DisplayTags(raw).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    if (key === 'encounters') btn(row, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, raw));
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, key, raw).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, raw));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => {
+      remove(state, key, raw.id);
+      await plugin.saveState();
+      new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`);
+    });
+  });
+};
+
+// Make generic cards safer too, but keep action buttons intact.
+card = function phase95Card(parent, title, text, icon, actions) {
+  const c = ce(parent, 'section', 'ttrpg-card');
+  const head = ce(c, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', icon || '📜');
+  ce(head, 'h3', '', phase95Text(title) || 'Untitled');
+  if (phase95IsObj(text)) phase95RenderFields(c, phase95Summary(text), 'No details yet.');
+  else phase67RenderBody(c, phase95Text(text));
+  if (actions && actions.length) {
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    actions.forEach(a => btn(row, a.label, a.primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', a.onClick));
+  }
+  return c;
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 96 — Compendium-Linked Builders, Settlement Types, Existing Map Render,
+ * and Fuller Note Output
+ * -------------------------------------------------------------------------- */
+const PHASE96_SETTLEMENT_TYPES = ['Settlement','Hamlet','Village','Town','City','Metropolis','Capital','Outpost','Fortress','Keep','Citadel','Port','Harbour','Trading Post','Camp','Nomad Camp','Tribal Village','Ruins','Monastery','Temple Complex','Arcane Enclave','Underground Settlement','Other'];
+const PHASE96_WORLD_KEYS = ['worlds','factions','deities','languages','cultures','myths','regions','settlements','pois'];
+
+function phase96CleanText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof phase95Text === 'function') return phase95Text(value);
+  if (Array.isArray(value)) return value.map(phase96CleanText).filter(Boolean).join(', ');
+  if (typeof value === 'object') return Object.entries(value).map(([k,v]) => `${nice(k)}: ${phase96CleanText(v)}`).join(' • ');
+  return String(value || '').trim();
+}
+function phase96CompendiumCategory(item) {
+  return phase93TitleCase ? phase93TitleCase(item?.type || item?.category || safeArray(item?.tags)[0] || 'Compendium Entry') : String(item?.type || item?.category || 'Compendium Entry');
+}
+function phase96CompendiumItems(plugin, wanted) {
+  const terms = safeArray(wanted).map(x => String(x).toLowerCase());
+  return safeArray(plugin.state?.entities?.compendium).filter(item => {
+    const hay = [item?.name, item?.title, item?.type, item?.category, ...(safeArray(item?.tags))].join(' ').toLowerCase();
+    return !terms.length || terms.some(t => hay.includes(t));
+  }).sort((a,b)=>String(a.name||a.title||'').localeCompare(String(b.name||b.title||'')));
+}
+function phase96MergeCompendiumIntoValues(values, comp, key) {
+  const out = Object.assign({}, values);
+  out.name = comp.name || comp.title || out.name;
+  out.title = comp.title || comp.name || out.title;
+  out.summary = comp.summary || comp.description || comp.entries || out.summary || '';
+  out.description = comp.description || comp.summary || out.description || '';
+  out.notes = comp.notes || out.notes || '';
+  out.type = comp.type || comp.category || out.type || '';
+  out.category = comp.category || comp.type || out.category || '';
+  out.source = comp.source || out.source || 'Compendium';
+  out.compendiumSourceId = comp.id || out.compendiumSourceId;
+  if (key === 'npcs') {
+    out.race = comp.race || comp.species || comp.ancestry || out.race;
+    out.role = comp.role || comp.occupation || comp.type || out.role;
+    out.traits = comp.traits || comp.features || out.traits;
+    out.attacks = comp.attacks || comp.actions || out.attacks;
+    out.spells = comp.spells || out.spells;
+    out.equipment = comp.equipment || comp.items || out.equipment;
+    out.ac = comp.ac || comp.AC || out.ac;
+    out.hp = comp.hp || comp.HP || out.hp;
+    out.speed = comp.speed || out.speed;
+  }
+  if (key === 'creatures') {
+    out.creatureType = comp.creatureType || comp.type || out.creatureType;
+    out.size = comp.size || out.size;
+    out.cr = comp.cr || comp.CR || comp.challenge || out.cr;
+    out.ac = comp.ac || comp.AC || out.ac;
+    out.hp = comp.hp || comp.HP || out.hp;
+    out.traits = comp.traits || comp.features || out.traits;
+    out.actions = comp.actions || comp.attacks || out.actions;
+    out.reactions = comp.reactions || out.reactions;
+    out.tactics = comp.tactics || out.tactics;
+  }
+  return out;
+}
+function phase96EntityToCompendium(item, kind) {
+  const name = item?.name || item?.title || 'Custom Entry';
+  return {
+    id: item?.compendiumId || uid('compendium'),
+    name,
+    title: name,
+    type: kind || ENTITY_LABELS[item?.templateKind] || item?.type || 'Custom Entry',
+    category: kind || item?.category || item?.type || 'Custom Entry',
+    summary: item?.summary || item?.description || item?.notes || `${name} saved for future reuse.`,
+    description: item?.description || item?.notes || '',
+    source: 'Saved from plugin',
+    linkedEntityId: item?.id || '',
+    tags: uniqueList([...(safeArray(item?.tags)), String(kind || 'custom').toLowerCase(), 'saved-to-compendium']),
+    raw: Object.assign({}, item, { visualMapSvg: undefined })
+  };
+}
+async function phase96SaveCurrentToCompendium(plugin, item, kind) {
+  const comp = phase96EntityToCompendium(item, kind);
+  upsert(plugin.state, 'compendium', comp);
+  await plugin.saveState();
+  new Notice(`${comp.name} saved to Compendium.`);
+  return comp;
+}
+function phase96AppendCompendiumPicker(parent, plugin, values, key, wanted, onUse) {
+  const options = phase96CompendiumItems(plugin, wanted);
+  if (!options.length) return false;
+  const section = parent.createDiv('ttrpg-builder-section');
+  section.createEl('h3', { text: 'Load from Compendium' });
+  let chosen = options[0];
+  new Setting(section)
+    .setName('Compendium Entry')
+    .setDesc('Pull a saved/custom/built-in compendium entry into this builder.')
+    .addDropdown(d => {
+      options.slice(0, 1500).forEach((item, idx) => d.addOption(String(idx), `${item.name || item.title || 'Untitled'} — ${phase96CompendiumCategory(item)}`));
+      d.onChange(v => { chosen = options[Number(v)] || options[0]; });
+    })
+    .addButton(b => b.setButtonText('Use').onClick(() => { if (chosen) onUse(chosen); }));
+  return true;
+}
+function phase96SaveButtons(parent, modal, saveKey, saveLabel, compendiumKind) {
+  const row = parent.createDiv('ttrpg-modal-buttons');
+  btn(row, 'Cancel', 'ttrpg-btn', () => modal.close());
+  btn(row, saveLabel || 'Save', 'ttrpg-btn ttrpg-primary', async () => { upsert(modal.plugin.state, saveKey, modal.values); await modal.plugin.saveState(); new Notice(`${ENTITY_LABELS[saveKey] || 'Entry'} saved.`); modal.close(); });
+  btn(row, 'Save + Add to Compendium', 'ttrpg-btn', async () => { upsert(modal.plugin.state, saveKey, modal.values); await phase96SaveCurrentToCompendium(modal.plugin, modal.values, compendiumKind || ENTITY_LABELS[saveKey]); modal.close(); });
+}
+
+NPCModal.prototype.onOpen = function phase96NpcOpenCompendiumLinked() {
+  const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Full NPC Builder' });
+  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (_) {}
+  phase96AppendCompendiumPicker(contentEl, this.plugin, this.values, 'npcs', ['npc','humanoid','creature','monster','person','villager','guard','archer','fighter'], comp => { this.values = phase96MergeCompendiumIntoValues(this.values, comp, 'npcs'); this.onOpen(); });
+  const basics = contentEl.createDiv('ttrpg-builder-section'); basics.createEl('h3', { text: 'Identity & Rules Data' });
+  addText(basics, 'Name', this.values.name || '', v => this.values.name = v);
+  addSelect(basics, 'Race / Ancestry', this.values.race || 'Human', ancestryOptions(), v => { phase84ApplyAncestryToNpc(this.values, v); this.onOpen(); });
+  addText(basics, 'Role / Job / Rank', this.values.role || '', v => this.values.role = v);
+  addSelect(basics, 'Status', this.values.status || 'Alive', ['Alive','Dead','Missing','Captured','Retired'], v => this.values.status = v);
+  addSelect(basics, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+  const stats = contentEl.createDiv('ttrpg-builder-section'); stats.createEl('h3', { text: 'Stats' });
+  addNumber(stats, 'AC', this.values.ac, v => this.values.ac = v); addNumber(stats, 'HP', this.values.hp, v => this.values.hp = v); addText(stats, 'Speed', this.values.speed || '30 ft', v => this.values.speed = v);
+  ['str','dex','con','int','wis','cha'].forEach(a => addNumber(stats, `${a.toUpperCase()} (${modifier(this.values[a]) >= 0 ? '+' : ''}${modifier(this.values[a])})`, this.values[a] || 10, v => this.values[a] = v));
+  btn(stats, 'Roll NPC Stats', 'ttrpg-btn', () => { const rolled = phase76RollAbilityArray(); PC_RULES.abilities.forEach(a => { this.values[a] = rolled.scores[a]; }); this.values.rolledStatsDetail = Object.entries(rolled.detail).map(([a,v]) => `${a.toUpperCase()}: ${this.values[a]} (${v})`).join('\n'); this.onOpen(); });
+  if (this.values.rolledStatsDetail) ce(stats, 'pre', 'ttrpg-roll-detail', this.values.rolledStatsDetail);
+  const adders = contentEl.createDiv('ttrpg-builder-section'); adders.createEl('h3', { text: 'Data-Driven Adders' });
+  try { phase70AddAppendSelect(adders, 'Add Built-In Item / Equipment', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.onOpen(); }); } catch (_) {}
+  phase84AppendDataPicker(adders, 'Use Built-In Language', PHASE84_DATA.languages, lang => { this.values.languages = phase70MergeCsv(this.values.languages, lang.name); this.onOpen(); });
+  phase84AppendDataPicker(adders, 'Use Built-In Deity / Power', PHASE84_DATA.deities, d => { this.values.deity = d.name; this.values.summary = this.values.summary || `${d.name}${d.pantheon ? ` of the ${d.pantheon} pantheon` : ''}.`; this.onOpen(); });
+  const details = contentEl.createDiv('ttrpg-builder-section'); details.createEl('h3', { text: 'Details' });
+  ['attacks','spells','equipment','traits','languages','deity','ideals','bonds','flaws','quirks','voice','appearance','motives','secrets','relationships','dialogue','schedule','summary','notes'].forEach(f => addTextArea(details, nice(f), this.values[f] || '', v => this.values[f] = v));
+  addSelect(details, 'Starting / Current Attitude', this.values.attitude || 'Indifferent', ['Friendly','Indifferent','Hostile'], v => this.values.attitude = v);
+  addText(details, 'Tags', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+  phase96SaveButtons(contentEl, this, 'npcs', 'Save NPC', 'NPC');
+};
+
+CreatureModal.prototype.onOpen = function phase96CreatureOpenCompendiumLinked() {
+  const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Creature / Monster Builder' });
+  phase96AppendCompendiumPicker(contentEl, this.plugin, this.values, 'creatures', ['creature','monster','beast','undead','fiend','dragon','construct','npc'], comp => { this.values = phase96MergeCompendiumIntoValues(this.values, comp, 'creatures'); this.onOpen(); });
+  addText(contentEl, 'Name', this.values.name || '', v => this.values.name = v);
+  addSelect(contentEl, 'Size', this.values.size || 'Medium', ['Tiny','Small','Medium','Large','Huge','Gargantuan'], v => this.values.size = v);
+  addText(contentEl, 'Creature Type', this.values.creatureType || this.values.type || 'Humanoid', v => this.values.creatureType = v);
+  addText(contentEl, 'CR', this.values.cr || '', v => this.values.cr = v);
+  addNumber(contentEl, 'AC', this.values.ac || 10, v => this.values.ac = v);
+  addNumber(contentEl, 'HP', this.values.hp || 1, v => this.values.hp = v);
+  addText(contentEl, 'Speed', this.values.speed || '30 ft', v => this.values.speed = v);
+  addSelect(contentEl, 'Template / Variant', this.values.template || 'None', ['None','Undead','Fiendish','Elite','Minion','Legendary'], v => this.values.template = v);
+  ['traits','actions','reactions','lairActions','regionalEffects','ecology','tactics','summary','description','notes'].forEach(f => addTextArea(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+  addText(contentEl, 'Tags', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+  phase96SaveButtons(contentEl, this, 'creatures', 'Save Creature', 'Creature');
+};
+
+class Phase96SettlementModal extends EntityModal {
+  constructor(app, plugin, item) { super(app, plugin, 'settlements', item); this.values = Object.assign({ type:'Settlement', population:'', government:'', defenses:'', economy:'', districts:'', shops:'', temples:'', inns:'', hazards:'', secrets:'', mapImagePath:'', mapSeed:'' }, this.values); }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Settlement / Location` });
+    phase96AppendCompendiumPicker(contentEl, this.plugin, this.values, 'settlements', ['settlement','location','city','town','village','region','poi'], comp => { this.values = phase96MergeCompendiumIntoValues(this.values, comp, 'settlements'); if (!PHASE96_SETTLEMENT_TYPES.includes(this.values.type)) this.values.type = 'Settlement'; this.onOpen(); });
+    addText(contentEl, 'Name / Title', this.values.name || this.values.title || '', v => { this.values.name = v; this.values.title = v; });
+    addSelect(contentEl, 'Settlement Type', this.values.type || 'Settlement', PHASE96_SETTLEMENT_TYPES, v => { this.values.type = v; this.values.category = v; });
+    addSelect(contentEl, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+    ['population','government','defenses','economy','districts','shops','temples','inns','hazards','secrets'].forEach(f => addTextArea(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+    addTextArea(contentEl, 'Summary', this.values.summary || '', v => this.values.summary = v);
+    addTextArea(contentEl, 'Description / Notes', this.values.description || this.values.notes || '', v => { this.values.description = v; this.values.notes = v; });
+    addText(contentEl, 'Tags (comma separated)', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+    const row = contentEl.createDiv('ttrpg-modal-buttons');
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+    btn(row, 'Save Settlement', 'ttrpg-btn ttrpg-primary', async () => { upsert(this.plugin.state, 'settlements', this.values); await this.plugin.saveState(); new Notice('Settlement saved.'); this.close(); });
+    btn(row, 'Save + Generate Map', 'ttrpg-btn', async () => { upsert(this.plugin.state, 'settlements', this.values); await phase96GenerateMapForEntity(this.plugin, this.values, 'settlements', true); await this.plugin.saveState(); new Notice('Settlement and map saved.'); this.close(); });
+    btn(row, 'Save + Add to Compendium', 'ttrpg-btn', async () => { upsert(this.plugin.state, 'settlements', this.values); await phase96SaveCurrentToCompendium(this.plugin, this.values, this.values.type || 'Settlement'); this.close(); });
+  }
+}
+
+function phase96ModalForKey(plugin, key, item) {
+  const special = { npcs: NPCModal, creatures: CreatureModal, quests: QuestModal, encounters: EncounterModal, projects: ProjectModal, sessions: SessionModal, secrets: SecretModal, maps: MapModal, deities: DeityPantheonModal, settlements: Phase96SettlementModal };
+  const ModalClass = special[key] || EntityModal;
+  if (special[key]) return new ModalClass(plugin.app, plugin, item);
+  return new ModalClass(plugin.app, plugin, key, item);
+}
+async function phase96GenerateMapForEntity(plugin, item, key, randomise) {
+  if (!item) return null;
+  if (randomise || !item.mapSeed) item.mapSeed = phase91FreshSeed(`${item.name || item.title || key}-${item.type || ''}`);
+  let mapEntry;
+  if (key === 'maps') {
+    mapEntry = item;
+  } else {
+    mapEntry = phase70MakeMapEntryFromLocation(item);
+    mapEntry.name = `${item.name || item.title || ENTITY_LABELS[key] || 'Location'} Map`;
+    mapEntry.type = `${item.type || ENTITY_LABELS[key] || 'Location'} Map`;
+    mapEntry.sourceLocationId = item.id;
+    mapEntry.mapSeed = item.mapSeed;
+  }
+  await phase81WriteSvgFile(plugin, mapEntry);
+  if (key !== 'maps') {
+    item.mapId = mapEntry.id;
+    item.mapImagePath = mapEntry.mapImagePath;
+    item.visualMapPath = mapEntry.visualMapPath;
+    upsert(plugin.state, key, item);
+    upsert(plugin.state, 'maps', mapEntry);
+  } else {
+    upsert(plugin.state, 'maps', mapEntry);
+  }
+  return mapEntry;
+}
+
+const phase96OldEntityOpen = EntityModal.prototype.onOpen;
+EntityModal.prototype.onOpen = function phase96EntityOpenWithCompendium() {
+  phase96OldEntityOpen.call(this);
+  if (!PHASE96_WORLD_KEYS.includes(this.key)) return;
+  const buttons = this.contentEl.querySelector('.ttrpg-modal-buttons');
+  const holder = this.contentEl.createDiv('ttrpg-builder-section');
+  const wanted = this.key === 'deities' ? ['deity','god','pantheon','power'] : this.key === 'factions' ? ['faction','guild','order','clan'] : this.key === 'languages' ? ['language'] : this.key === 'cultures' ? ['race','ancestry','culture','species'] : this.key === 'myths' ? ['myth','legend','rumour','lore'] : this.key === 'regions' ? ['region','location','terrain'] : this.key === 'pois' ? ['poi','point of interest','location','ruin'] : ['world','lore','location'];
+  const added = phase96AppendCompendiumPicker(holder, this.plugin, this.values, this.key, wanted, comp => { this.values = phase96MergeCompendiumIntoValues(this.values, comp, this.key); this.onOpen(); });
+  if (!added) holder.remove();
+  else if (buttons) this.contentEl.insertBefore(holder, buttons);
+};
+
+// Hybrid ancestries can now be saved into the Compendium and are registered as PC ancestry options.
+const phase96HybridRenderBase = HybridAncestryModal.prototype.render;
+HybridAncestryModal.prototype.render = function phase96HybridRenderWithCompendiumSave() {
+  phase96HybridRenderBase.call(this);
+  const row = this.contentEl.querySelector('.ttrpg-modal-buttons');
+  if (!row) return;
+  btn(row, 'Save to Compendium', 'ttrpg-btn', async () => {
+    const h = phase83BuildHybrid(this.values);
+    upsert(this.plugin.state, 'hybridAncestries', h);
+    phase83RegisterHybridAsAncestry(h);
+    await phase96SaveCurrentToCompendium(this.plugin, Object.assign({}, h, { category: 'Race / Ancestry', type: 'Hybrid Ancestry', tags: ['race','ancestry','hybrid'] }), 'Race / Ancestry');
+    this.close();
+  });
+};
+const phase96OldPhase84Refresh = phase84RefreshRuleOptionsFromData;
+phase84RefreshRuleOptionsFromData = function phase96RefreshRuleOptionsWithCompendiumHybrids() {
+  phase96OldPhase84Refresh();
+  try { phase83RegisterSavedHybrids(window?.app?.plugins?.plugins?.['ttrpg-table']?.state || {}); } catch (_) {}
+};
+
+function phase96CanMap(key) { return ['regions','settlements','pois','maps'].includes(key); }
+itemCards = function phase96ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state;
+  const allItems = getStore(state, key);
+  const items = allItems.filter(x => matchesSearch(x, state.search));
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${ENTITY_LABELS[key] || key} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(raw => {
+    const title = phase95Text(raw.name || raw.title || ENTITY_LABELS[key] || 'Untitled Entry') || 'Untitled Entry';
+    const c = ce(g, 'section', 'ttrpg-card');
+    const head = ce(c, 'div', 'ttrpg-card-head');
+    ce(head, 'div', 'ttrpg-card-icon', phase95EntityIcon(key, opts));
+    ce(head, 'h3', '', title);
+    phase95RenderFields(c, phase95Summary(raw, key), 'No details yet. Open / Edit to add more.');
+    const portrait = raw.portraitPath || raw.imagePath;
+    if (portrait && typeof phase74PortraitSrc === 'function') {
+      const src = phase74PortraitSrc(plugin, portrait);
+      if (src) { const img = c.createEl('img', { cls: 'ttrpg-card-portrait' }); img.src = src; img.alt = `${title} portrait`; img.onerror = () => img.remove(); }
+    }
+    const meta = ce(c, 'div', 'ttrpg-tags');
+    phase95DisplayTags(raw).forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    if (key === 'encounters') btn(row, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, raw));
+    if (phase96CanMap(key)) btn(row, raw.mapImagePath || raw.visualMapPath ? 'Regenerate Map' : 'Generate Map', 'ttrpg-btn', async () => { await phase96GenerateMapForEntity(plugin, raw, key, true); await plugin.saveState(); new Notice('SVG map generated.'); });
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => phase96ModalForKey(plugin, key, raw).open());
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, raw));
+    if (['npcs','creatures','settlements','factions','deities','languages','cultures','myths','regions','pois'].includes(key)) btn(row, 'Add to Compendium', 'ttrpg-btn', () => phase96SaveCurrentToCompendium(plugin, raw, key === 'npcs' ? 'NPC' : key === 'creatures' ? 'Creature' : (raw.type || ENTITY_LABELS[key])));
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(state, key, raw.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`); });
+  });
+};
+
+function phase96Yaml(value) { return phase78Yaml(value); }
+function phase96YamlTags(tags) { return phase78Tags(tags); }
+function phase96Frontmatter(kind, item, campaign) {
+  const tags = uniqueList([...(safeArray(item?.tags)), 'ttrpg', String(kind || 'entry').replace(/s$/, '')].filter(Boolean));
+  const explicitType = item?.type || item?.category || ENTITY_LABELS[kind] || kind;
+  return `---\nttrpg_type: ${phase96Yaml(kind)}\nid: ${phase96Yaml(item?.id || uid(kind || 'entry'))}\ncampaign: ${phase96Yaml(campaign?.name || item?.campaign || '')}\ncampaign_id: ${phase96Yaml(campaign?.id || item?.campaignId || '')}\nstatus: ${phase96Yaml(item?.status || 'draft')}\nvisibility: ${phase96Yaml(item?.visibility || 'dm-only')}\ntype: ${phase96Yaml(explicitType)}\ncategory: ${phase96Yaml(item?.category || explicitType)}\ntags: ${phase96YamlTags(tags)}\n---`;
+}
+function phase96DetailRows(item) {
+  const skip = new Set(['id','title','name','visualMapSvg','raw','tags','notePath','filePath','createdAt','updatedAt','lastSyncedFromNote','mapSeed']);
+  return Object.entries(item || {}).filter(([k,v]) => !skip.has(k) && v !== undefined && v !== null && phase96CleanText(v)).map(([k,v]) => `- **${phase94HumaniseObjectLabel ? phase94HumaniseObjectLabel(k) : nice(k)}:** ${phase96CleanText(v)}`);
+}
+function phase96Paragraph(item, fallback) {
+  const text = phase96CleanText(item?.summary || item?.description || item?.notes || item?.content || fallback || '');
+  return text || 'This entry has been created in the plugin and is ready for further table notes, secrets, player-facing information, and linked campaign context.';
+}
+function phase96Section(title, body) { const clean = String(body || '').trim(); return clean ? `\n\n## ${title}\n\n${clean}` : ''; }
+function phase96TemplateFor(kind, item, campaign, extra) {
+  const name = phase78Title(item?.name || item?.title || extra?.title || ENTITY_LABELS[kind] || 'Entry');
+  const portrait = item?.portrait || item?.portraitPath || item?.imagePath || '';
+  const campaignLine = phase78CampaignLink(campaign);
+  const yaml = phase96Frontmatter(kind, item || {}, campaign || {});
+  let md = `${yaml}\n\n# ${name}\n\n${portrait ? `![[${portrait}]]\n\n` : ''}${campaignLine ? `> [!info] Campaign\n> ${campaignLine}\n\n` : ''}`;
+  md += `## Overview\n\n${phase96Paragraph(item, `${name} is a ${item?.type || ENTITY_LABELS[kind] || 'campaign entry'}.`)}`;
+  const details = phase96DetailRows(item);
+  if (details.length) md += `\n\n## Known Details\n\n${details.join('\n')}`;
+  if (kind === 'settlements') {
+    const type = item?.type || 'Settlement';
+    md += phase96Section('Settlement Profile', [`- **Settlement Type:** ${type}`, item?.population ? `- **Population:** ${item.population}` : '', item?.government ? `- **Government:** ${item.government}` : '', item?.economy ? `- **Economy:** ${item.economy}` : '', item?.defenses ? `- **Defenses:** ${item.defenses}` : '', item?.mapImagePath ? `- **Map:** [[${item.mapImagePath}]]` : ''].filter(Boolean).join('\n'));
+    md += phase96Section('Districts, Services & Problems', [`${item?.districts ? `**Districts:** ${item.districts}` : ''}`, `${item?.shops ? `**Shops:** ${item.shops}` : ''}`, `${item?.temples ? `**Temples:** ${item.temples}` : ''}`, `${item?.inns ? `**Inns:** ${item.inns}` : ''}`, `${item?.hazards ? `**Hazards:** ${item.hazards}` : ''}`].filter(x => x.replace(/\*|:/g,'').trim()).join('\n\n'));
+  } else if (kind === 'npcs' || kind === 'creatures' || kind === 'playerCharacters') {
+    md += phase96Section('Stat Snapshot', [`- **AC:** ${item?.ac || ''}`, `- **HP:** ${item?.hpMax || item?.hp || ''}`, `- **Speed:** ${item?.speed || ''}`, `- **XP / CR:** ${item?.xp || item?.cr || ''}`].filter(x => !x.endsWith(': ')).join('\n'));
+    md += phase96Section('Traits, Actions & Tactics', [item?.traits && `**Traits:**\n${item.traits}`, (item?.actions || item?.attacks) && `**Actions / Attacks:**\n${item.actions || item.attacks}`, item?.spells && `**Spells:**\n${item.spells}`, item?.tactics && `**Tactics:**\n${item.tactics}`].filter(Boolean).join('\n\n'));
+  } else if (kind === 'maps' || kind === 'pois' || kind === 'regions') {
+    md += phase96Section('Map & Location Links', [item?.mapImagePath ? `- **SVG Map:** [[${item.mapImagePath}]]` : '', item?.visualMapPath ? `- **Visual Map Path:** [[${item.visualMapPath}]]` : '', item?.terrain ? `- **Terrain:** ${item.terrain}` : '', item?.climate ? `- **Climate:** ${item.climate}` : ''].filter(Boolean).join('\n'));
+  } else if (kind === 'compendium') {
+    const raw = item?.raw && typeof item.raw === 'object' ? phase96DetailRows(item.raw).join('\n') : '';
+    md += phase96Section('Compendium Data', raw || phase96CleanText(item?.description || item?.entries || item?.rules));
+  }
+  const playerText = item?.playerFacing || item?.playerNotes || item?.knownToPlayers || '';
+  if (playerText || item?.visibility === 'player-visible') md += `\n\n> [!readaloud] Player-Facing Notes\n> ${phase96CleanText(playerText || item?.summary || 'This entry is marked player-visible.')}`;
+  const dmText = item?.dmNotes || item?.secrets || item?.secret || item?.notes || '';
+  if (dmText || item?.visibility !== 'player-visible') md += `\n\n> [!gm-direction] DM Notes\n> ${phase96CleanText(dmText || 'Add rulings, secrets, consequences, and prep notes here as they emerge during play.')}`;
+  return md.trim() + '\n';
+}
+phase78TemplateFor = function phase96TemplateOverride(kind, item, campaign, extra) { return phase96TemplateFor(kind, item, campaign, extra); };
+
+const phase96OldMakeWizardEntry = phase78MakeWizardEntry;
+phase78MakeWizardEntry = function phase96MakeWizardEntry(key, name, campaign, values, visibility) {
+  const item = phase96OldMakeWizardEntry(key, name, campaign, values, visibility);
+  const label = phase78Title(name);
+  const campaignName = campaign?.name || values?.name || 'the campaign';
+  const defaults = {
+    worlds: `${label} is a world element for ${campaignName}, connected to the campaign premise, cosmology, history, and table-facing lore.`,
+    factions: `${label} is a faction active in ${campaignName}. Define its public goals, hidden agenda, resources, leadership, enemies, allies, and current pressure points.`,
+    deities: `${label} is a deity, pantheon figure, or power in ${campaignName}. Track domains, symbols, rites, taboos, worshippers, holy sites, and relationships with other powers.`,
+    languages: `${label} is a language or dialect in ${campaignName}. Track speakers, script, cultural context, sample phrases, and where the party may encounter it.`,
+    cultures: `${label} is a culture, ancestry group, people, or civilisation in ${campaignName}. Track customs, homelands, values, conflicts, names, and player-safe lore.`,
+    myths: `${label} is a legend, myth, rumour, or historical story in ${campaignName}. Track known versions, hidden truth, clues, locations, and NPCs who believe it.`,
+    regions: `${label} is a region in ${campaignName}. Track terrain, climate, borders, resources, hazards, routes, factions, settlements, and current conflicts.`,
+    settlements: `${label} is a settlement in ${campaignName}. Track type, population, government, economy, defenses, districts, services, NPCs, secrets, and local problems.`,
+    pois: `${label} is a point of interest in ${campaignName}. Track access routes, landmarks, hazards, secrets, treasure, encounters, and what the players know.`,
+    npcs: `${label} is an NPC in ${campaignName}. Track role, ancestry, appearance, voice, motives, secrets, relationships, routine, stat snapshot, and dialogue hooks.`,
+    quests: `${label} is a quest thread in ${campaignName}. Track hook, objectives, complications, branches, deadlines, rewards, known clues, and hidden consequences.`,
+    encounters: `${label} is an encounter in ${campaignName}. Track setup, creatures, tactics, terrain, hazards, traps, objectives, treasure, and fail-forward outcomes.`,
+    traps: `${label} is a trap or hazard in ${campaignName}. Track trigger, detection DC, disarm method, effect, counterplay, reset behaviour, and clues.`,
+    loot: `${label} is a reward or loot entry in ${campaignName}. Track value, owner, complications, linked quest, magic properties, and distribution notes.`,
+    rules: `${label} is a table rule in ${campaignName}. Track when it applies, who tracks it, player-facing wording, edge cases, and examples.`,
+    homeRules: `${label} is a home rule for ${campaignName}. Track player-facing wording, DM rationale, examples, edge cases, and whether it belongs in the player packet.`
+  };
+  item.summary = defaults[key] || item.summary || `${label} belongs to ${campaignName}.`;
+  item.description = item.description || item.summary;
+  item.notes = item.notes || `Created for ${campaignName}. Expand with table-specific details during prep or play.`;
+  if (key === 'settlements' && !item.type) item.type = 'Settlement';
+  return item;
+};
+
+// Ensure linked Markdown edits can read explicit frontmatter type/category changes.
+const phase96OldEntityFromMarkdown = phase80EntityFromMarkdown;
+phase80EntityFromMarkdown = function phase96EntityFromMarkdown(path, markdown) {
+  const parsed = phase80ParseFrontmatter(markdown);
+  const result = phase96OldEntityFromMarkdown(path, markdown);
+  if (result && result.item && parsed?.data) {
+    if (parsed.data.type) result.item.type = parsed.data.type;
+    if (parsed.data.category) result.item.category = parsed.data.category;
+  }
+  return result;
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 97 — Hard Restore Saved Entry Cards
+ * Phase 96 still allowed the saved-entry renderer to fail partway through a
+ * card when a malformed/imported field hit the display helpers. This renderer
+ * deliberately avoids the fragile display pipeline and renders actions first so
+ * cards never become title-only husks again.
+ * -------------------------------------------------------------------------- */
+function phase97DisplayText(value, depth = 0) {
+  try {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') {
+      return value
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`INPUT\[[^\n]*$/gim, '')
+        .replace(/`VIEW\[[^\n]*$/gim, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+        .replace(/\[\[([^\]]+)\]\]/g, '$1')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+        .replace(/^>\s*/gm, '')
+        .replace(/\s+\n/g, '\n')
+        .trim();
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(v => phase97DisplayText(v, depth + 1)).filter(Boolean).join(', ');
+    if (typeof value === 'object') {
+      if (depth > 2) return '';
+      return Object.entries(value)
+        .filter(([k, v]) => !phase97SkipField(k) && v !== null && v !== undefined && v !== '')
+        .slice(0, 8)
+        .map(([k, v]) => `${phase97NiceLabel(k)}: ${phase97DisplayText(v, depth + 1)}`)
+        .filter(Boolean)
+        .join(' • ');
+    }
+    return String(value || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+function phase97NiceLabel(key) {
+  try {
+    if (typeof phase94HumaniseObjectLabel === 'function') return phase94HumaniseObjectLabel(key);
+  } catch (_) {}
+  return String(key || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+function phase97SkipField(key) {
+  const k = String(key || '');
+  if (!k) return true;
+  if (['id','name','title','tags','visibility','notePath','filePath','portraitPath','imagePath','createdAt','updatedAt','lastSyncedFromNote','raw','visualMapSvg','mapSeed'].includes(k)) return true;
+  if (/^(dataview|metadata|embed|plugin|sync|source)$/i.test(k)) return true;
+  return false;
+}
+function phase97SummaryFields(item, key) {
+  const src = item || {};
+  const byKey = {
+    npcs: ['role','race','ancestry','className','status','location','faction','attitude','motive','secret','summary','description','notes'],
+    creatures: ['type','cr','ac','hp','speed','senses','traits','actions','tactics','summary','description','notes'],
+    worlds: ['theme','genre','tone','cosmology','planes','summary','description','notes'],
+    factions: ['type','leader','goals','resources','territory','reputation','summary','description','notes'],
+    deities: ['type','domains','symbol','alignment','worshippers','dogma','summary','description','notes'],
+    languages: ['family','script','speakers','regions','summary','description','notes'],
+    cultures: ['ancestry','region','values','customs','traits','summary','description','notes'],
+    myths: ['type','origin','truth','hook','summary','description','notes'],
+    regions: ['type','terrain','climate','settlements','hazards','factions','summary','description','notes'],
+    settlements: ['type','population','government','defenses','economy','districts','shops','temples','inns','hazards','summary','description','notes'],
+    pois: ['type','location','purpose','inhabitants','hazards','treasure','summary','description','notes'],
+    maps: ['type','sourceLocationId','mapImagePath','visualMapPath','summary','description','notes'],
+    adventures: ['status','levelRange','acts','hooks','summary','description','notes'],
+    quests: ['status','objectives','rewards','giver','location','summary','description','notes'],
+    encounters: ['difficulty','environment','creatures','objectives','terrain','hazards','loot','summary','description','notes'],
+    rules: ['type','scope','rule','summary','description','notes'],
+    conditions: ['effect','duration','summary','description','notes'],
+    sessions: ['date','summary','events','loot','xp','notes'],
+    secrets: ['status','trigger','reveal','summary','description','notes'],
+    compendium: ['category','type','level','school','rarity','source','summary','description','content','notes']
+  };
+  const order = byKey[key] || ['type','category','status','summary','description','notes'];
+  const out = [];
+  order.forEach(field => {
+    if (!Object.prototype.hasOwnProperty.call(src, field)) return;
+    const text = phase97DisplayText(src[field]);
+    if (!text || /^\[object Object\]$/i.test(text)) return;
+    out.push({ label: phase97NiceLabel(field), value: text });
+  });
+  if (!out.length) {
+    Object.entries(src)
+      .filter(([k, v]) => !phase97SkipField(k) && v !== null && v !== undefined && v !== '')
+      .slice(0, 8)
+      .forEach(([k, v]) => {
+        const text = phase97DisplayText(v);
+        if (text && !/^\[object Object\]$/i.test(text)) out.push({ label: phase97NiceLabel(k), value: text });
+      });
+  }
+  return out.slice(0, 10);
+}
+function phase97RenderFields(parent, fields) {
+  const usable = safeArray(fields).filter(f => f && (f.label || f.value));
+  if (!usable.length) {
+    ce(parent, 'p', 'ttrpg-muted', 'No details yet. Open / Edit to add more.');
+    return;
+  }
+  const wrap = ce(parent, 'div', 'ttrpg-card-rich-body');
+  usable.forEach(f => {
+    const row = ce(wrap, 'div', 'ttrpg-field-row');
+    ce(row, 'div', 'ttrpg-field-label', f.label || 'Detail');
+    ce(row, 'div', 'ttrpg-field-value', f.value || '—');
+  });
+}
+function phase97CardTags(item) {
+  const tags = [];
+  safeArray(item && item.tags).forEach(t => {
+    const clean = phase97DisplayText(t);
+    if (clean && !/imported|campaign builder wizard/i.test(clean)) tags.push(clean);
+  });
+  if (item && item.visibility) tags.push(phase97DisplayText(item.visibility));
+  if (item && (item.notePath || item.filePath)) tags.push('note-linked');
+  return uniqueList(tags).slice(0, 8);
+}
+function phase97IconFor(key, opts) {
+  if (opts && opts.icon) return opts.icon;
+  const icons = { worlds:'🌍', factions:'⚜️', deities:'☀️', languages:'🗣️', cultures:'🧬', myths:'📜', regions:'🗺️', settlements:'🗺️', pois:'📍', maps:'🗺️', npcs:'👤', creatures:'🐉', adventures:'📚', quests:'📝', encounters:'⚔️', rules:'⚙️', conditions:'🧷', sessions:'📅', secrets:'🔒', compendium:'📚' };
+  return icons[key] || '📜';
+}
+function phase97OpenModal(plugin, key, raw) {
+  try {
+    if (typeof phase96ModalForKey === 'function') return phase96ModalForKey(plugin, key, raw).open();
+  } catch (err) { console.error('TTRPG Table Phase 97 modal fallback', err); }
+  return new EntityModal(plugin.app, plugin, key, raw).open();
+}
+function phase97CompendiumKind(key, raw) {
+  if (key === 'npcs') return 'NPC';
+  if (key === 'creatures') return 'Creature';
+  if (raw && raw.type) return raw.type;
+  return (ENTITY_LABELS && ENTITY_LABELS[key]) || key || 'Entry';
+}
+itemCards = function phase97ItemCards(parent, plugin, key, opts) {
+  const state = plugin.state || {};
+  const allItems = safeArray(getStore(state, key));
+  const items = allItems.filter(x => {
+    try { return matchesSearch(x, state.search); } catch (_) { return true; }
+  });
+  if (!items.length) {
+    if (allItems.length && state.search) empty(parent, `No ${((ENTITY_LABELS && ENTITY_LABELS[key]) || key)} match “${state.search}”.`, 'Clear or change the search box to show saved entries.');
+    else empty(parent, `No ${((ENTITY_LABELS && ENTITY_LABELS[key]) || key)} entries yet.`, opts && opts.empty || 'Use the action buttons above to create one.');
+    return;
+  }
+  const g = grid(parent);
+  items.forEach(raw => {
+    const title = phase97DisplayText((raw && (raw.name || raw.title)) || ((ENTITY_LABELS && ENTITY_LABELS[key]) || 'Untitled Entry')) || 'Untitled Entry';
+    const c = ce(g, 'section', 'ttrpg-card');
+    const head = ce(c, 'div', 'ttrpg-card-head');
+    ce(head, 'div', 'ttrpg-card-icon', phase97IconFor(key, opts));
+    ce(head, 'h3', '', title);
+
+    const actions = ce(c, 'div', 'ttrpg-card-actions');
+    if (key === 'encounters') btn(actions, 'Start Combat', 'ttrpg-btn ttrpg-primary', () => startCombatFromEncounter(plugin, raw));
+    if (typeof phase96CanMap === 'function' && phase96CanMap(key)) {
+      btn(actions, raw && (raw.mapImagePath || raw.visualMapPath) ? 'Regenerate Map' : 'Generate Map', 'ttrpg-btn', async () => {
+        try {
+          await phase96GenerateMapForEntity(plugin, raw, key, true);
+          await plugin.saveState();
+          new Notice('SVG map generated.');
+        } catch (err) {
+          console.error('TTRPG Table map generation failed', err);
+          new Notice('Map generation failed. Check the console for details.');
+        }
+      });
+    }
+    btn(actions, 'Open / Edit', 'ttrpg-btn', () => phase97OpenModal(plugin, key, raw));
+    btn(actions, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, raw));
+    if (['npcs','creatures','settlements','factions','deities','languages','cultures','myths','regions','pois','worlds'].includes(key)) {
+      btn(actions, 'Add to Compendium', 'ttrpg-btn', async () => {
+        try { await phase96SaveCurrentToCompendium(plugin, raw, phase97CompendiumKind(key, raw)); }
+        catch (err) { console.error('TTRPG Table add to compendium failed', err); new Notice('Could not add to compendium. Check the console for details.'); }
+      });
+    }
+    btn(actions, 'Delete', 'ttrpg-btn ttrpg-danger', async () => {
+      remove(state, key, raw && raw.id);
+      await plugin.saveState();
+      new Notice(`${((ENTITY_LABELS && ENTITY_LABELS[key]) || 'Entry')} deleted.`);
+    });
+
+    phase97RenderFields(c, phase97SummaryFields(raw, key));
+    const tags = phase97CardTags(raw);
+    if (tags.length) {
+      const meta = ce(c, 'div', 'ttrpg-tags');
+      tags.forEach(t => ce(meta, 'span', 'ttrpg-tag', t));
+    }
+    const portrait = raw && (raw.portraitPath || raw.imagePath);
+    if (portrait && typeof phase74PortraitSrc === 'function') {
+      try {
+        const src = phase74PortraitSrc(plugin, portrait);
+        if (src) { const img = c.createEl('img', { cls: 'ttrpg-card-portrait' }); img.src = src; img.alt = `${title} portrait`; img.onerror = () => img.remove(); }
+      } catch (_) {}
+    }
+  });
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 98 — Markdown Formatting Cleanup for Saved Cards
+ * Imported Obsidian notes often store values like "- **Leader:**" or
+ * "## Goals". Phase 97 made those visible again, but too literally. This pass
+ * strips markdown/template markers and skips empty heading/label placeholders so
+ * cards keep the useful detail without showing raw formatting syntax.
+ * -------------------------------------------------------------------------- */
+function phase98MarkdownToDisplayText(value) {
+  if (value === null || value === undefined) return '';
+  let text = String(value || '');
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/^>\s?/gm, '')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\*\*\s*([^*\n:]{1,80})\s*:\s*\*\*/g, '$1:')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1$2')
+    .replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1$2')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+function phase98IsEmptyMarkdownPlaceholder(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  const cleaned = phase98MarkdownToDisplayText(raw).trim();
+  if (!cleaned) return true;
+  // Empty labels/headings accidentally parsed as values, e.g. "- **Leader:**" or "## Goals".
+  if (/^[-*+]?\s*\*\*[^*\n:]{1,80}:\*\*\s*$/u.test(raw)) return true;
+  if (/^[-*+]?\s*[^:\n]{1,80}:\s*$/u.test(cleaned)) return true;
+  if (/^#{1,6}\s+[^\n]{1,80}\s*$/u.test(raw)) return true;
+  return false;
+}
+const phase98BaseDisplayText = phase97DisplayText;
+phase97DisplayText = function phase98DisplayText(value, depth = 0) {
+  try {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return phase98MarkdownToDisplayText(phase98BaseDisplayText(value, depth));
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(v => phase97DisplayText(v, depth + 1)).filter(Boolean).join(', ');
+    if (typeof value === 'object') {
+      if (depth > 2) return '';
+      return Object.entries(value)
+        .filter(([k, v]) => !phase97SkipField(k) && v !== null && v !== undefined && v !== '')
+        .slice(0, 8)
+        .map(([k, v]) => {
+          const rendered = phase97DisplayText(v, depth + 1);
+          return rendered && !phase98IsEmptyMarkdownPlaceholder(rendered) ? `${phase97NiceLabel(k)}: ${rendered}` : '';
+        })
+        .filter(Boolean)
+        .join(' • ');
+    }
+    return phase98MarkdownToDisplayText(value);
+  } catch (_) {
+    return '';
+  }
+};
+const phase98BaseSummaryFields = phase97SummaryFields;
+phase97SummaryFields = function phase98SummaryFields(item, key) {
+  const fields = safeArray(phase98BaseSummaryFields(item, key))
+    .map(f => ({ label: phase98MarkdownToDisplayText(f.label || ''), value: phase98MarkdownToDisplayText(f.value || '') }))
+    .filter(f => f.label || f.value)
+    .filter(f => !phase98IsEmptyMarkdownPlaceholder(f.value))
+    .filter(f => !/^\[object Object\]$/i.test(String(f.value || '').trim()));
+  return fields.slice(0, 10);
+};
+const phase98BaseRenderFields = phase97RenderFields;
+phase97RenderFields = function phase98RenderFields(parent, fields) {
+  const cleaned = safeArray(fields)
+    .map(f => ({ label: phase98MarkdownToDisplayText(f.label || ''), value: phase98MarkdownToDisplayText(f.value || '') }))
+    .filter(f => (f.label || f.value) && !phase98IsEmptyMarkdownPlaceholder(f.value));
+  return phase98BaseRenderFields(parent, cleaned);
+};
+const phase98BaseCleanInline = phase67CleanInline;
+phase67CleanInline = function phase98CleanInline(text) {
+  return phase98MarkdownToDisplayText(phase98BaseCleanInline(text));
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 100 — Quiet, Dirty-Only Note Sync
+ * Prevents routine UI navigation/tab switching from rewriting every linked note
+ * and spamming "note sync failed" notices. Entity changes still mark notes dirty.
+ * -------------------------------------------------------------------------- */
+let phase100NoteSyncDirty = false;
+const phase100BaseUpsert = upsert;
+upsert = function phase100Upsert(state, key, item) {
+  phase100BaseUpsert(state, key, item);
+  if (!phase80SyncingFromVault && !phase80SyncingToVault && key && item && item.id) phase100NoteSyncDirty = true;
+};
+const phase100BaseRemove = remove;
+remove = function phase100Remove(state, key, id) {
+  phase100BaseRemove(state, key, id);
+  if (!phase80SyncingFromVault && !phase80SyncingToVault && key && id) phase100NoteSyncDirty = true;
+};
+
+const phase100BaseSyncLinkedNotes = phase80SyncLinkedNotes;
+phase80SyncLinkedNotes = async function phase100SyncLinkedNotes(plugin) {
+  try {
+    await phase100BaseSyncLinkedNotes(plugin);
+  } catch (error) {
+    console.error('TTRPG Table quiet note sync failed:', error);
+  }
+};
+
+TTRPGTablePlugin.prototype.saveState = async function phase100SaveState() {
+  this.state.version = PHASE80_VERSION;
+  const shouldSync = this.state.settings?.noteSync !== false && phase100NoteSyncDirty === true;
+  if (shouldSync) {
+    try {
+      await phase100BaseSyncLinkedNotes(this);
+    } catch (error) {
+      console.error('TTRPG Table note sync failed:', error);
+      // Do not show a Notice here. Sync errors should not interrupt normal navigation.
+    } finally {
+      phase100NoteSyncDirty = false;
+    }
+  }
+  await this.saveData(this.state);
+  this.refreshViews();
+};
+
+
+/* --------------------------------------------------------------------------
+ * Phase 101 — Silent Per-Note Sync Guard
+ * The Phase 100 dirty-only gate stopped navigation sync, but sync failures from
+ * legitimate entity changes (for example generating a map) could still bubble up
+ * through the older Phase 80 sync function and show a red Notice. This override
+ * keeps sync useful, but makes it fault-tolerant and quiet: one bad linked note
+ * path no longer interrupts the UI or spams the user.
+ * -------------------------------------------------------------------------- */
+const PHASE101_VERSION = '1.101.0';
+
+phase80SyncLinkedNotes = async function phase101SyncLinkedNotes(plugin) {
+  if (phase80SyncingFromVault || phase80SyncingToVault) return;
+  phase80SyncingToVault = true;
+  const failures = [];
+  try {
+    const state = plugin.state || {};
+    for (const key of PHASE80_SYNC_KEYS) {
+      for (const item of safeArray(state.entities?.[key])) {
+        if (!item || !item.id || !(item.notePath || item.filePath)) continue;
+        try {
+          await phase78WriteTemplateNote(
+            plugin,
+            activeCampaign(state) || { name: item.campaign || 'Loose Notes', id: item.campaignId || '' },
+            key,
+            item
+          );
+        } catch (error) {
+          failures.push({ key, id: item.id, name: item.name || item.title || '', path: item.notePath || item.filePath || '', error });
+        }
+      }
+    }
+  } finally {
+    phase80SyncingToVault = false;
+  }
+  if (failures.length) {
+    console.warn('TTRPG Table note sync skipped some linked notes:', failures);
+  }
+};
+
+TTRPGTablePlugin.prototype.saveState = async function phase101SaveState() {
+  this.state.version = PHASE101_VERSION;
+  const shouldSync = this.state.settings?.noteSync !== false && phase100NoteSyncDirty === true;
+  if (shouldSync) {
+    try {
+      await phase80SyncLinkedNotes(this);
+    } catch (error) {
+      console.warn('TTRPG Table note sync skipped:', error);
+    } finally {
+      phase100NoteSyncDirty = false;
+    }
+  }
+  await this.saveData(this.state);
+  this.refreshViews();
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 102 — Hard Note Button Recovery
+ * The previous silent sync guard hid noisy sync notices, but it also made Note
+ * button failures effectively invisible. This patch makes manual Note actions
+ * independent, visible, and robust: they generate a valid Markdown path when a
+ * linked path is missing/bad, write the file, store the note path, and open it.
+ * -------------------------------------------------------------------------- */
+const PHASE102_VERSION = '1.102.0';
+
+function phase102IsUsableMarkdownPath(path) {
+  const p = normalizePath(String(path || '').trim());
+  if (!p || !/\.md$/i.test(p)) return false;
+  if (/[<>:"|?*]/.test(p.replace(/^[A-Za-z]:/, ''))) return false;
+  return true;
+}
+function phase102FallbackNotePath(plugin, campaign, key, item) {
+  const root = phase78CampaignRoot(plugin, campaign || activeCampaign(plugin.state) || { name: 'Loose Notes' });
+  const folder = phase78FolderForKey(key, item);
+  const filename = `${phase78Slug(item?.name || item?.title || ENTITY_LABELS[key] || key || 'Entry')}.md`;
+  return normalizePath(`${root}/${folder}/${filename}`);
+}
+function phase102PreferredNotePath(plugin, campaign, key, item) {
+  const linked = item && (item.notePath || item.filePath);
+  if (phase102IsUsableMarkdownPath(linked)) return normalizePath(linked);
+  return phase102FallbackNotePath(plugin, campaign, key, item);
+}
+async function phase102OpenNote(plugin, path) {
+  try {
+    const file = plugin.app.vault.getAbstractFileByPath(path);
+    if (file && file.extension === 'md') {
+      await plugin.app.workspace.getLeaf(false).openFile(file);
+      return true;
+    }
+  } catch (error) {
+    console.warn('TTRPG Table could not open note after writing:', path, error);
+  }
+  return false;
+}
+
+phase78WriteTemplateNote = async function phase102WriteTemplateNote(plugin, campaign, key, item) {
+  const active = campaign || activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const path = phase102PreferredNotePath(plugin, active, key, item);
+  const md = phase78TemplateFor(key, item, active);
+  await phase80WriteFile(plugin, path, md);
+  if (item) {
+    item.notePath = path;
+    item.filePath = path;
+    item.lastSyncedToNote = Date.now();
+    item.syncStatus = 'linked';
+  }
+  return path;
+};
+
+writeEntityNote = async function phase102WriteEntityNote(plugin, key, item) {
+  try {
+    const campaign = activeCampaign(plugin.state) || { name: item?.campaign || 'Loose Notes', id: item?.campaignId || '' };
+    const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
+    const storeKey = key || phase80KeyFromMarkdown(path, phase78TemplateFor(key, item, campaign));
+    if (storeKey && item?.id) upsert(plugin.state, storeKey, item);
+    phase100NoteSyncDirty = false; // this manual write already synced the chosen note
+    await plugin.saveData(plugin.state);
+    await phase102OpenNote(plugin, path);
+    plugin.refreshViews?.();
+    new Notice(`Note ready: ${path}`);
+    return path;
+  } catch (error) {
+    console.error('TTRPG Table Note action failed:', { key, item, error });
+    new Notice(`TTRPG Note failed: ${error?.message || error || 'unknown error'}`);
+    throw error;
+  }
+};
+
+const phase102BaseBtn = btn;
+btn = function phase102Btn(parent, text, cls, onClick) {
+  const wrapped = function(event) {
+    try {
+      const result = onClick && onClick(event);
+      if (result && typeof result.catch === 'function') {
+        result.catch(error => {
+          console.error(`TTRPG Table button failed: ${text}`, error);
+          new Notice(`${text} failed: ${error?.message || error || 'unknown error'}`);
+        });
+      }
+      return result;
+    } catch (error) {
+      console.error(`TTRPG Table button failed: ${text}`, error);
+      new Notice(`${text} failed: ${error?.message || error || 'unknown error'}`);
+    }
+  };
+  return phase102BaseBtn(parent, text, cls, wrapped);
+};
+
+TTRPGTablePlugin.prototype.saveState = async function phase102SaveState() {
+  this.state.version = PHASE102_VERSION;
+  const shouldSync = this.state.settings?.noteSync !== false && phase100NoteSyncDirty === true;
+  if (shouldSync) {
+    try {
+      await phase80SyncLinkedNotes(this);
+    } catch (error) {
+      console.warn('TTRPG Table note sync skipped:', error);
+    } finally {
+      phase100NoteSyncDirty = false;
+    }
+  }
+  await this.saveData(this.state);
+  this.refreshViews();
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 104 — Asset-backed map generation + faction category selector
+ * --------------------------------------------------------------------------
+ * Adds curated bundled map tokens as optional raster overlays inside generated
+ * SVG maps. The procedural SVG generator remains the fallback; if assets cannot
+ * be loaded, maps still generate normally.
+ */
+
+const PHASE104_VERSION = '1.34.0';
+const PHASE104_ASSET_INDEX = 'assets/map-tokens/asset-index.json';
+const PHASE104_MAX_ASSET_KB = 850;
+const PHASE104_FACTION_TYPES = [
+  'Faction','Organisation','Guild','Cult','Religious Order','Church','Temple Order','Political Bloc','Government','Noble House','Dynasty','Clan','Tribe','Merchant Consortium','Trading Company','Criminal Syndicate','Thieves’ Guild','Mercenary Company','Military Order','Knightly Order','Rebel Cell','Resistance Movement','Secret Society','Arcane Circle','Druid Circle','Monastic Order','Academic Society','Artisan Guild','Monster Faction','Planar Power','Other'
+];
+
+function phase104PluginBase(plugin) {
+  return normalizePath(plugin?.manifest?.dir || '.obsidian/plugins/ttrpg-table');
+}
+function phase104AssetRoot(plugin) {
+  return normalizePath(`${phase104PluginBase(plugin)}/assets/map-tokens`);
+}
+async function phase104ReadJson(plugin, rel) {
+  const path = normalizePath(`${phase104PluginBase(plugin)}/${rel}`);
+  const text = await plugin.app.vault.adapter.read(path);
+  return JSON.parse(text);
+}
+async function phase104LoadAssetIndex(plugin) {
+  if (plugin._phase104AssetIndex) return plugin._phase104AssetIndex;
+  try {
+    const data = await phase104ReadJson(plugin, PHASE104_ASSET_INDEX);
+    plugin._phase104AssetIndex = safeArray(data.assets).filter(a => a && a.path && a.kb <= PHASE104_MAX_ASSET_KB);
+  } catch (error) {
+    console.warn('TTRPG Table map asset index unavailable; using procedural SVG fallback.', error);
+    plugin._phase104AssetIndex = [];
+  }
+  return plugin._phase104AssetIndex;
+}
+function phase104AssetsByCategory(index, category) {
+  return safeArray(index).filter(a => safeArray(a.categories).includes(category));
+}
+function phase104PickAsset(rand, pool, fallbackPool) {
+  const src = safeArray(pool).length ? safeArray(pool) : safeArray(fallbackPool);
+  if (!src.length) return null;
+  return src[Math.floor(rand() * src.length)] || src[0];
+}
+function phase104Mime(ext) {
+  const e = String(ext || '').toLowerCase();
+  if (e === 'jpg' || e === 'jpeg') return 'image/jpeg';
+  if (e === 'webp') return 'image/webp';
+  if (e === 'svg') return 'image/svg+xml';
+  return 'image/png';
+}
+function phase104ArrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+async function phase104AssetDataUri(plugin, asset) {
+  if (!asset?.path) return '';
+  if (!plugin._phase104AssetDataCache) plugin._phase104AssetDataCache = new Map();
+  const key = asset.path;
+  if (plugin._phase104AssetDataCache.has(key)) return plugin._phase104AssetDataCache.get(key);
+  const full = normalizePath(`${phase104AssetRoot(plugin)}/${asset.path}`);
+  const buffer = await plugin.app.vault.adapter.readBinary(full);
+  const uri = `data:${phase104Mime(asset.ext)};base64,${phase104ArrayBufferToBase64(buffer)}`;
+  // Keep cache from growing into a tiny dragon hoard.
+  if (plugin._phase104AssetDataCache.size > 80) plugin._phase104AssetDataCache.clear();
+  plugin._phase104AssetDataCache.set(key, uri);
+  return uri;
+}
+function phase104ImageSize(asset, category, kind, rand) {
+  const grid = Array.isArray(asset?.grid) ? asset.grid : null;
+  if (category === 'buildings') {
+    const base = kind === 'city' ? phase91Num(rand, 48, 92) : phase91Num(rand, 62, 130);
+    return grid ? { w: Math.max(48, grid[0] * base / 2), h: Math.max(42, grid[1] * base / 2) } : { w: base * phase91Num(rand, 1, 2), h: base };
+  }
+  if (category === 'roads') return { w: phase91Num(rand, 105, 210), h: phase91Num(rand, 55, 130) };
+  if (category === 'water') return { w: phase91Num(rand, 140, 260), h: phase91Num(rand, 80, 170) };
+  if (category === 'dungeon') return { w: phase91Num(rand, 54, 130), h: phase91Num(rand, 45, 120) };
+  if (category === 'nature') return { w: phase91Num(rand, 34, 86), h: phase91Num(rand, 34, 86) };
+  if (category === 'props' || category === 'library') return { w: phase91Num(rand, 32, 78), h: phase91Num(rand, 30, 72) };
+  if (category === 'ruins') return { w: phase91Num(rand, 55, 135), h: phase91Num(rand, 45, 115) };
+  if (category === 'camp') return { w: phase91Num(rand, 60, 130), h: phase91Num(rand, 55, 120) };
+  if (category === 'settlements') return { w: phase91Num(rand, 32, 68), h: phase91Num(rand, 32, 68) };
+  if (category === 'creatures') return { w: phase91Num(rand, 32, 76), h: phase91Num(rand, 32, 76) };
+  return { w: phase91Num(rand, 40, 90), h: phase91Num(rand, 40, 90) };
+}
+function phase104PlacementCount(kind) {
+  if (kind === 'city') return { buildings: 26, nature: 16, roads: 8, water: 2, props: 6, ruins: 3, settlements: 0 };
+  if (kind === 'town') return { buildings: 18, nature: 24, roads: 7, water: 2, props: 5, camp: 1, ruins: 2 };
+  if (kind === 'village' || kind === 'settlement') return { buildings: 12, nature: 32, roads: 5, water: 2, props: 4, camp: 3, ruins: 1 };
+  if (kind === 'dungeon') return { dungeon: 18, props: 8, library: 3, ruins: 8, water: 1, creatures: 3 };
+  if (kind === 'battlemap') return { dungeon: 8, nature: 12, props: 12, ruins: 6, water: 2, creatures: 3, camp: 2 };
+  if (kind === 'poi') return { buildings: 2, nature: 34, ruins: 8, water: 2, camp: 2, dungeon: 2, props: 3 };
+  return { settlements: 18, nature: 20, water: 6, roads: 5, ruins: 4, buildings: 4 };
+}
+function phase104PlacementBounds(category, kind, rand, size) {
+  const margin = category === 'buildings' ? 85 : 30;
+  let x = phase91Num(rand, margin, Math.max(margin + 1, 875 - size.w));
+  let y = phase91Num(rand, 95, Math.max(96, 590 - size.h));
+  if (kind === 'dungeon' || kind === 'battlemap') { x = phase91Num(rand, 55, Math.max(56, 825 - size.w)); y = phase91Num(rand, 105, Math.max(106, 545 - size.h)); }
+  if (kind === 'city' && category === 'buildings') { x = phase91Num(rand, 95, Math.max(96, 770 - size.w)); y = phase91Num(rand, 130, Math.max(131, 505 - size.h)); }
+  return { x, y };
+}
+async function phase104AssetOverlaySvg(plugin, entry) {
+  const index = await phase104LoadAssetIndex(plugin);
+  if (!index.length) return '';
+  const kind = phase91MapKind(entry || {});
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 104);
+  const all = index.filter(a => a.kb <= PHASE104_MAX_ASSET_KB);
+  const counts = phase104PlacementCount(kind);
+  const pools = {};
+  Object.keys(counts).forEach(cat => pools[cat] = phase104AssetsByCategory(index, cat));
+  const pieces = ['<g id="ttrpg-asset-layer" opacity="0.96">'];
+  for (const [category, count] of Object.entries(counts)) {
+    const pool = pools[category] || [];
+    if (!pool.length) continue;
+    for (let i = 0; i < count; i++) {
+      const asset = phase104PickAsset(rand, pool, all);
+      if (!asset) continue;
+      try {
+        const uri = await phase104AssetDataUri(plugin, asset);
+        if (!uri) continue;
+        const size = phase104ImageSize(asset, category, kind, rand);
+        const pos = phase104PlacementBounds(category, kind, rand, size);
+        const rotate = category === 'nature' || category === 'props' || category === 'ruins' || category === 'creatures' ? phase91Num(rand, -35, 35) : phase91Num(rand, -8, 8);
+        const opacity = category === 'water' ? '0.72' : category === 'roads' ? '0.82' : '1';
+        pieces.push(`<image href="${uri}" x="${pos.x}" y="${pos.y}" width="${size.w}" height="${size.h}" opacity="${opacity}" preserveAspectRatio="xMidYMid meet" transform="rotate(${rotate} ${pos.x + size.w/2} ${pos.y + size.h/2})"><title>${phase91SvgText(asset.name || asset.path)}</title></image>`);
+      } catch (error) {
+        console.warn('TTRPG Table skipped map asset:', asset.path, error);
+      }
+    }
+  }
+  pieces.push('</g>');
+  return pieces.join('\n');
+}
+async function phase104MapSvgWithAssets(plugin, entry) {
+  const base = phase91MapSvg(entry || {});
+  const overlay = await phase104AssetOverlaySvg(plugin, entry || {});
+  if (!overlay) return base;
+  if (base.includes('<rect x="24" y="24"')) return base.replace('<rect x="24" y="24"', `${overlay}\n  <rect x="24" y="24"`);
+  return base.replace('</svg>', `${overlay}\n</svg>`);
+}
+
+const phase104BaseWriteSvgFile = phase81WriteSvgFile;
+phase81WriteSvgFile = async function phase104WriteAssetBackedSvgFile(plugin, entry) {
+  try {
+    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const root = phase78CampaignRoot(plugin, campaign);
+    const folder = `${root}/02 Geography & Maps/Maps`;
+    if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
+    const svg = await phase104MapSvgWithAssets(plugin, entry);
+    const base = phase78Slug(entry.name || entry.title || 'generated-map');
+    const path = normalizePath(`${folder}/${base}-map.svg`);
+    await writeFile(plugin, path, svg);
+    entry.mapImagePath = path;
+    entry.imagePath = path;
+    entry.visualMapPath = path;
+    entry.assetBacked = true;
+    entry.assetPack = 'Curated Map Assets';
+    delete entry.visualMapSvg;
+    return path;
+  } catch (error) {
+    console.warn('TTRPG Table asset-backed map failed; falling back to procedural SVG.', error);
+    return phase104BaseWriteSvgFile(plugin, entry);
+  }
+};
+
+const phase104BaseMapModalOpen = MapModal.prototype.onOpen;
+MapModal.prototype.onOpen = function phase104MapModalOpenWithAssetHint() {
+  phase104BaseMapModalOpen.call(this);
+  const buttons = this.contentEl.querySelector('.ttrpg-modal-buttons');
+  if (buttons) {
+    const note = this.contentEl.createDiv('ttrpg-builder-section');
+    note.createEl('h3', { text: 'Map Assets' });
+    note.createEl('p', { cls: 'ttrpg-muted', text: 'Generated SVG files now use the bundled curated map asset pack when assets are available, with the procedural map as a fallback.' });
+    this.contentEl.insertBefore(note, buttons);
+  }
+};
+
+const phase104BaseEntityOpen = EntityModal.prototype.onOpen;
+EntityModal.prototype.onOpen = function phase104FactionModalWithTypeSelector() {
+  if (this.key !== 'factions') return phase104BaseEntityOpen.call(this);
+  const { contentEl } = this;
+  clear(contentEl);
+  contentEl.addClass('ttrpg-modal');
+  contentEl.createEl('h2', { text: `${this.item?.id ? 'Edit' : 'New'} Faction` });
+  try {
+    phase96AppendCompendiumPicker(contentEl, this.plugin, this.values, 'factions', ['faction','guild','order','clan','cult','organisation','organization','society','company'], comp => {
+      this.values = phase96MergeCompendiumIntoValues(this.values, comp, 'factions');
+      if (!PHASE104_FACTION_TYPES.includes(this.values.type)) this.values.type = this.values.category || 'Faction';
+      this.onOpen();
+    });
+  } catch (_) {}
+  addText(contentEl, 'Name / Title', this.values.name || this.values.title || '', v => { this.values.name = v; this.values.title = v; });
+  addSelect(contentEl, 'Faction Type', this.values.type || this.values.category || 'Faction', PHASE104_FACTION_TYPES, v => { this.values.type = v; this.values.category = v; });
+  addSelect(contentEl, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+  ['leader','headquarters','territory','goals','methods','resources','allies','enemies','reputation','membership','symbol','secrets'].forEach(f => addTextArea(contentEl, nice(f), this.values[f] || '', v => this.values[f] = v));
+  addTextArea(contentEl, 'Summary', this.values.summary || '', v => this.values.summary = v);
+  addTextArea(contentEl, 'Description / Notes', this.values.description || this.values.notes || '', v => { this.values.description = v; this.values.notes = v; });
+  addText(contentEl, 'Tags (comma separated)', (this.values.tags || []).join(', '), v => this.values.tags = tagsFromText(v));
+  const row = contentEl.createDiv('ttrpg-modal-buttons');
+  btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+  btn(row, 'Save Faction', 'ttrpg-btn ttrpg-primary', async () => { upsert(this.plugin.state, 'factions', this.values); phase100NoteSyncDirty = true; await this.plugin.saveState(); new Notice('Faction saved.'); this.close(); });
+  btn(row, 'Save + Add to Compendium', 'ttrpg-btn', async () => { upsert(this.plugin.state, 'factions', this.values); await phase96SaveCurrentToCompendium(this.plugin, this.values, this.values.type || 'Faction'); this.close(); });
+};
+
+const phase104BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+TTRPGTablePlugin.prototype.saveState = async function phase104SaveState() {
+  this.state.version = PHASE104_VERSION;
+  return phase104BaseSaveState.call(this);
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 105 — Disciplined asset-backed map placement
+ * --------------------------------------------------------------------------
+ * Phase 104 proved the asset pack loads, but the placement was too chaotic:
+ * too many tokens, loose categories, water/creatures on settlement maps, and
+ * asset buildings stacked over procedural buildings. This pass makes asset maps
+ * cleaner: settlement maps use a lighter base, category filters are stricter,
+ * counts are lower, and placed assets avoid obvious collisions.
+ */
+
+const PHASE105_VERSION = '1.35.0';
+
+function phase105Name(asset) {
+  return `${asset?.name || ''} ${asset?.path || ''} ${asset?.folder || ''}`.toLowerCase();
+}
+function phase105Has(asset, re) { return re.test(phase105Name(asset)); }
+function phase105IsSettlementKind(kind) { return ['settlement','village','town','city'].includes(kind); }
+function phase105AssetAllowed(asset, category, kind) {
+  const n = phase105Name(asset);
+  if (!asset || !asset.path) return false;
+  if (/casualty|creature|fish|shark|turtle|whale|corpse|body/.test(n) && category !== 'creatures') return false;
+  if (category === 'buildings') {
+    if (/hole roof|glow|damage|rubble|debris|casualty|fish|creature/.test(n)) return false;
+    if (phase105IsSettlementKind(kind)) return /roof|building|house|hut|cabin|mill|wharf|tent|camp|surface|gable|eave|valley/.test(n);
+    return /roof|building|house|hut|cabin|mill|wharf|tent|camp/.test(n);
+  }
+  if (category === 'nature') {
+    if (/pillar|wall|floor|dungeon|roof|building|casualty|creature/.test(n)) return false;
+    if (phase105IsSettlementKind(kind)) return /tree|stump|log|bush|plant|root|rock|boulder|hill|flower|grass/.test(n) && !/fungi|mushroom/.test(n);
+    return /tree|stump|log|bush|plant|root|rock|boulder|hill|mountain|fungi|mushroom|flower|grass/.test(n);
+  }
+  if (category === 'water') {
+    if (/wall|floor|dungeon|creature|casualty/.test(n)) return false;
+    return /river|stream|pond|water|canal|coast|shore|bank|ripple|rapids|bridge/.test(n);
+  }
+  if (category === 'roads') {
+    if (/dungeon_wall|wall|floor|creature|casualty/.test(n)) return false;
+    return /road|path|trail|bridge|stair|canal|walkway/.test(n);
+  }
+  if (category === 'dungeon') {
+    if (/roof|tree|fish|shark|turtle|casualty/.test(n)) return false;
+    return /wall|floor|door|stair|pillar|tile|platform|trap|rubble|debris|cave|rock/.test(n);
+  }
+  if (category === 'props') {
+    if (/roof|tree|wall|floor|creature|casualty/.test(n)) return false;
+    return /crate|barrel|box|chest|table|chair|shelf|book|bench|cart|wagon|sign|decor|banner|flag/.test(n);
+  }
+  if (category === 'ruins') return /hole|rubble|debris|damage|broken|ruin|crack|rock/.test(n) && !/roof glow/.test(n);
+  if (category === 'camp') return /tent|camp|ladder|chimney|trap door/.test(n);
+  if (category === 'settlements') return /settlement|icon|village|town|city|camp|tower|castle|fort/.test(n);
+  if (category === 'creatures') return /creature|monster|shark|fish|turtle|casualty/.test(n);
+  return true;
+}
+function phase105AssetsByCategory(index, category, kind) {
+  return safeArray(index)
+    .filter(a => safeArray(a.categories).includes(category))
+    .filter(a => phase105AssetAllowed(a, category, kind));
+}
+function phase105PlacementCount(kind) {
+  if (kind === 'city') return { buildings: 22, nature: 10 };
+  if (kind === 'town') return { buildings: 15, nature: 14, camp: 1 };
+  if (kind === 'village') return { buildings: 10, nature: 20, camp: 2 };
+  if (kind === 'settlement') return { buildings: 12, nature: 18, camp: 1 };
+  if (kind === 'dungeon') return { dungeon: 16, ruins: 5, props: 5 };
+  if (kind === 'battlemap') return { nature: 8, dungeon: 5, props: 8, ruins: 4, camp: 1 };
+  if (kind === 'poi') return { nature: 18, ruins: 5, buildings: 2, dungeon: 2, camp: 1 };
+  return { settlements: 12, nature: 12, water: 4, roads: 2, ruins: 2 };
+}
+function phase105ImageSize(asset, category, kind, rand) {
+  const grid = Array.isArray(asset?.grid) ? asset.grid : null;
+  const ratio = grid ? Math.max(0.5, Math.min(2.8, grid[0] / Math.max(1, grid[1]))) : 1.25;
+  if (category === 'buildings') {
+    const area = kind === 'city' ? phase91Num(rand, 46, 76) : kind === 'town' ? phase91Num(rand, 58, 94) : phase91Num(rand, 66, 112);
+    return { w: Math.round(area * ratio), h: Math.round(area / Math.max(0.75, Math.min(1.7, ratio))) };
+  }
+  if (category === 'nature') return { w: phase91Num(rand, 24, 54), h: phase91Num(rand, 24, 54) };
+  if (category === 'camp') return { w: phase91Num(rand, 54, 92), h: phase91Num(rand, 46, 82) };
+  if (category === 'dungeon') return { w: phase91Num(rand, 54, 112), h: phase91Num(rand, 44, 96) };
+  if (category === 'props') return { w: phase91Num(rand, 32, 62), h: phase91Num(rand, 30, 58) };
+  if (category === 'ruins') return { w: phase91Num(rand, 42, 86), h: phase91Num(rand, 34, 76) };
+  if (category === 'water') return { w: phase91Num(rand, 110, 205), h: phase91Num(rand, 60, 130) };
+  if (category === 'roads') return { w: phase91Num(rand, 90, 170), h: phase91Num(rand, 36, 82) };
+  if (category === 'settlements') return { w: phase91Num(rand, 28, 48), h: phase91Num(rand, 28, 48) };
+  return phase104ImageSize(asset, category, kind, rand);
+}
+function phase105RectOverlap(a, b, pad) {
+  const p = pad || 0;
+  return !(a.x + a.w + p < b.x || b.x + b.w + p < a.x || a.y + a.h + p < b.y || b.y + b.h + p < a.y);
+}
+function phase105PickSettlementSlot(rand, kind, size, placed) {
+  const city = kind === 'city';
+  const slots = city ? [
+    [120,125],[220,126],[330,126],[470,126],[590,126],[705,126],
+    [115,230],[245,230],[375,230],[520,230],[650,230],[765,230],
+    [115,350],[250,350],[390,350],[530,350],[665,350],[770,350],
+    [150,465],[300,465],[455,465],[610,465],[735,465]
+  ] : [
+    [95,150],[230,135],[355,150],[520,145],[680,160],
+    [135,275],[305,265],[455,280],[610,270],[740,285],
+    [95,430],[245,445],[405,420],[585,440],[730,430]
+  ];
+  for (let attempt=0; attempt<24; attempt++) {
+    const s = phase91PickRand(rand, slots);
+    const x = Math.max(38, Math.min(840 - size.w, s[0] + phase91Num(rand, -28, 28)));
+    const y = Math.max(100, Math.min(550 - size.h, s[1] + phase91Num(rand, -24, 24)));
+    const r = { x, y, w: size.w, h: size.h };
+    if (!placed.some(p => phase105RectOverlap(r, p, 14))) return { x, y };
+  }
+  return { x: phase91Num(rand, 65, Math.max(66, 820 - size.w)), y: phase91Num(rand, 115, Math.max(116, 545 - size.h)) };
+}
+function phase105PickGeneralPos(rand, category, kind, size, placed) {
+  const edgeNature = category === 'nature' && phase105IsSettlementKind(kind);
+  for (let attempt=0; attempt<30; attempt++) {
+    let x, y;
+    if (edgeNature) {
+      const side = phase91Num(rand, 0, 3);
+      if (side === 0) { x = phase91Num(rand, 30, 840); y = phase91Num(rand, 95, 170); }
+      else if (side === 1) { x = phase91Num(rand, 30, 840); y = phase91Num(rand, 470, 565); }
+      else if (side === 2) { x = phase91Num(rand, 30, 145); y = phase91Num(rand, 120, 540); }
+      else { x = phase91Num(rand, 740, 850); y = phase91Num(rand, 120, 540); }
+    } else {
+      x = phase91Num(rand, 50, Math.max(51, 840 - size.w));
+      y = phase91Num(rand, 105, Math.max(106, 555 - size.h));
+    }
+    const r = { x, y, w: size.w, h: size.h };
+    const pad = category === 'nature' ? 3 : 10;
+    if (!placed.some(p => phase105RectOverlap(r, p, pad))) return { x, y };
+  }
+  return { x: phase91Num(rand, 50, Math.max(51, 840 - size.w)), y: phase91Num(rand, 105, Math.max(106, 555 - size.h)) };
+}
+function phase105CleanSettlementSvg(entry, kind) {
+  const rand = phase91Rng(entry.mapSeed);
+  let body = `<rect width="900" height="620" fill="#b9c98c" opacity="0.9"/>${phase91Grid(900,620,40,0.08)}`;
+  body += `<path d="M-10,${phase91Num(rand,250,370)} C180,${phase91Num(rand,210,330)} 300,${phase91Num(rand,390,500)} 490,${phase91Num(rand,300,420)} C650,${phase91Num(rand,220,350)} 760,${phase91Num(rand,270,440)} 920,${phase91Num(rand,190,340)}" fill="none" stroke="#e8dcc1" stroke-width="42" stroke-linecap="round" opacity="0.96"/>`;
+  body += `<path d="M-10,${phase91Num(rand,110,210)} C180,${phase91Num(rand,130,230)} 260,${phase91Num(rand,80,150)} 430,${phase91Num(rand,155,255)} C590,${phase91Num(rand,240,335)} 710,${phase91Num(rand,190,280)} 920,${phase91Num(rand,250,370)}" fill="none" stroke="#e8dcc1" stroke-width="28" stroke-linecap="round" opacity="0.92"/>`;
+  if (kind === 'city') body += `<path d="M70,115 H805 V532 H82 Z" fill="none" stroke="#2b241e" stroke-width="8" opacity="0.55"/><path d="M70,318 H805 M442,115 V532" stroke="#2b241e" stroke-width="4" opacity="0.20"/>`;
+  if (kind === 'village' || kind === 'settlement') body += `<circle cx="${phase91Num(rand,365,535)}" cy="${phase91Num(rand,275,390)}" r="${phase91Num(rand,22,36)}" fill="#6aa0b8" stroke="#2b241e" stroke-width="3" opacity="0.62"/>`;
+  return phase91BaseSvg(entry, body, { label: kind });
+}
+async function phase105AssetOverlaySvg(plugin, entry) {
+  const index = await phase104LoadAssetIndex(plugin);
+  if (!index.length) return '';
+  const kind = phase91MapKind(entry || {});
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 105);
+  const counts = phase105PlacementCount(kind);
+  const placed = [];
+  const categories = Object.keys(counts);
+  const pieces = ['<g id="ttrpg-asset-layer" opacity="0.98">'];
+  for (const category of categories) {
+    const count = counts[category] || 0;
+    const pool = phase105AssetsByCategory(index, category, kind);
+    if (!pool.length) continue;
+    for (let i = 0; i < count; i++) {
+      const asset = phase104PickAsset(rand, pool, pool);
+      if (!asset) continue;
+      try {
+        const uri = await phase104AssetDataUri(plugin, asset);
+        if (!uri) continue;
+        const size = phase105ImageSize(asset, category, kind, rand);
+        const pos = (category === 'buildings' && phase105IsSettlementKind(kind))
+          ? phase105PickSettlementSlot(rand, kind, size, placed)
+          : phase105PickGeneralPos(rand, category, kind, size, placed);
+        const rect = { x: pos.x, y: pos.y, w: size.w, h: size.h };
+        if (['buildings','dungeon','props','camp','ruins'].includes(category)) placed.push(rect);
+        const rotate = category === 'buildings' ? phase91Num(rand, -3, 3) : category === 'nature' ? phase91Num(rand, -18, 18) : phase91Num(rand, -8, 8);
+        const opacity = category === 'water' ? '0.66' : category === 'roads' ? '0.76' : '1';
+        pieces.push(`<image href="${uri}" x="${pos.x}" y="${pos.y}" width="${size.w}" height="${size.h}" opacity="${opacity}" preserveAspectRatio="xMidYMid meet" transform="rotate(${rotate} ${pos.x + size.w/2} ${pos.y + size.h/2})"><title>${phase91SvgText(asset.name || asset.path)}</title></image>`);
+      } catch (error) {
+        console.warn('TTRPG Table skipped map asset:', asset.path, error);
+      }
+    }
+  }
+  pieces.push('</g>');
+  return pieces.join('\n');
+}
+async function phase105MapSvgWithAssets(plugin, entry) {
+  const e = entry || {};
+  if (!e.mapSeed) e.mapSeed = phase91FreshSeed(e.name || e.type || 'map');
+  const kind = phase91MapKind(e);
+  const base = phase105IsSettlementKind(kind) ? phase105CleanSettlementSvg(e, kind) : phase91MapSvg(e);
+  const overlay = await phase105AssetOverlaySvg(plugin, e);
+  if (!overlay) return base;
+  return base.replace('<rect x="24" y="24"', `${overlay}\n  <rect x="24" y="24"`);
+}
+
+phase81WriteSvgFile = async function phase105WriteDisciplinedAssetMap(plugin, entry) {
+  try {
+    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const root = phase78CampaignRoot(plugin, campaign);
+    const folder = `${root}/02 Geography & Maps/Maps`;
+    if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
+    const svg = await phase105MapSvgWithAssets(plugin, entry);
+    const base = phase78Slug(entry.name || entry.title || 'generated-map');
+    const path = normalizePath(`${folder}/${base}-map.svg`);
+    await writeFile(plugin, path, svg);
+    entry.mapImagePath = path;
+    entry.imagePath = path;
+    entry.visualMapPath = path;
+    entry.assetBacked = true;
+    entry.assetPack = 'Curated Map Assets';
+    entry.assetPlacement = 'disciplined';
+    delete entry.visualMapSvg;
+    return path;
+  } catch (error) {
+    console.warn('TTRPG Table disciplined asset-backed map failed; falling back to procedural SVG.', error);
+    return phase104BaseWriteSvgFile(plugin, entry);
+  }
+};
+
+// Show the same disciplined asset renderer inside generator previews when possible.
+const phase105BaseGeneratedPreview = phase66GeneratedPreview;
+phase66GeneratedPreview = function phase105GeneratedPreview(parent, generated) {
+  phase105BaseGeneratedPreview(parent, generated);
+  const plugin = window?.app?.plugins?.plugins?.['ttrpg-table'];
+  const entry = generated?.entry;
+  if (!plugin || !entry || !/map|settlement|town|village|city|location/i.test(`${generated?.type || ''} ${entry?.type || ''}`)) return;
+  const preview = parent?.querySelector?.('.ttrpg-map-preview');
+  if (!preview) return;
+  phase105MapSvgWithAssets(plugin, entry).then(svg => { preview.innerHTML = svg; }).catch(() => {});
+};
+
+/*
+ * Phase 106 — Kassoon-inspired structured map layout pass
+ *
+ * The uploaded Kassoon pages were useful as layout references: they separate
+ * terrain, roads, buildings, farms/water/docks, and clickable house regions.
+ * This implementation does not copy their code. It rebuilds the ideas as our
+ * own SVG generator: roads first, buildings along roads, edge nature, lower
+ * asset counts, and map metadata saved with the generated note entry.
+ */
+
+const PHASE106_VERSION = '1.36.0';
+
+function phase106Kind(entry) { return phase91MapKind(entry || {}); }
+function phase106IsSettlement(kind) { return ['settlement','village','town','city'].includes(kind); }
+function phase106Clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function phase106AssetText(asset) { return phase105Name(asset); }
+function phase106Allowed(asset, category, kind) {
+  const n = phase106AssetText(asset);
+  if (!asset || !asset.path) return false;
+  if (/creature|casualty|corpse|body|fish|shark|turtle|whale|squid|octopus/.test(n)) return false;
+  if (category === 'buildings') {
+    if (/hole|glow|damage|rubble|debris|wall|rail|floor|tile|palisade gate/.test(n)) return false;
+    if (/roof|gable|surface|eave|valley|building|house|hut|cabin|mill|tavern|wharf|tent/.test(n)) return true;
+    return false;
+  }
+  if (category === 'nature') {
+    if (/floor|wall|roof|dungeon|rail|settlement icon|creature|fish/.test(n)) return false;
+    if (phase106IsSettlement(kind)) return /tree|stump|log|bush|plant|root|rock|boulder|flower|grass|hill/.test(n) && !/fungi|mushroom|pillar/.test(n);
+    return /tree|stump|log|bush|plant|root|rock|boulder|mountain|hill|flower|grass|fungi|mushroom/.test(n);
+  }
+  if (category === 'water') {
+    if (/creature|fish|shark|turtle|wall|floor|dungeon/.test(n)) return false;
+    return /river|stream|pond|water|canal|coast|shore|bank|ripple|rapids/.test(n);
+  }
+  if (category === 'roads') {
+    if (/wall|crossroad|dungeon|rail|floor|creature/.test(n) && !/bridge|canal|step/.test(n)) return false;
+    return /road|path|trail|bridge|stair|step|walkway|dock/.test(n);
+  }
+  if (category === 'props') {
+    if (/roof|wall|floor|creature|fish/.test(n)) return false;
+    return /crate|barrel|box|chest|cart|wagon|sign|banner|flag|book|shelf/.test(n);
+  }
+  if (category === 'dungeon') {
+    if (/roof|tree|fish|creature/.test(n)) return false;
+    return /wall|floor|door|stair|pillar|tile|platform|trap|rubble|debris|rock|torch|cave/.test(n);
+  }
+  if (category === 'ruins') return /hole|rubble|debris|broken|damage|ruin|crack|rock/.test(n) && !/roof glow/.test(n);
+  if (category === 'camp') return /tent|camp/.test(n);
+  return phase105AssetAllowed(asset, category, kind);
+}
+function phase106Assets(index, category, kind) {
+  return safeArray(index).filter(a => safeArray(a.categories).includes(category)).filter(a => phase106Allowed(a, category, kind));
+}
+function phase106SelectByRegex(pool, rand, re, fallbackRe) {
+  let list = safeArray(pool).filter(a => re.test(phase106AssetText(a)));
+  if (!list.length && fallbackRe) list = safeArray(pool).filter(a => fallbackRe.test(phase106AssetText(a)));
+  if (!list.length) list = safeArray(pool);
+  return phase104PickAsset(rand, list, list);
+}
+function phase106AssetSize(asset, category, kind, rand) {
+  const grid = Array.isArray(asset?.grid) ? asset.grid : null;
+  let ratio = grid ? phase106Clamp(grid[0] / Math.max(1, grid[1]), 0.55, 2.8) : 1.15;
+  const n = phase106AssetText(asset);
+  if (category === 'buildings') {
+    let base = kind === 'city' ? phase91Num(rand, 48, 70) : kind === 'town' ? phase91Num(rand, 58, 86) : phase91Num(rand, 64, 96);
+    if (/8x5|6x4|5x5|large|mill|wharf/.test(n)) base *= 1.15;
+    if (/eave|surface/.test(n) && !/gable|building|mill/.test(n)) base *= 0.85;
+    return { w: Math.round(base * ratio), h: Math.round(base / Math.max(0.65, Math.min(1.8, ratio))) };
+  }
+  if (category === 'nature') return { w: phase91Num(rand, 22, 46), h: phase91Num(rand, 22, 46) };
+  if (category === 'water') return { w: phase91Num(rand, 80, 145), h: phase91Num(rand, 42, 86) };
+  if (category === 'roads') return { w: phase91Num(rand, 70, 130), h: phase91Num(rand, 28, 58) };
+  if (category === 'props') return { w: phase91Num(rand, 24, 44), h: phase91Num(rand, 22, 42) };
+  if (category === 'camp') return { w: phase91Num(rand, 46, 78), h: phase91Num(rand, 40, 70) };
+  if (category === 'dungeon') return { w: phase91Num(rand, 52, 100), h: phase91Num(rand, 44, 92) };
+  if (category === 'ruins') return { w: phase91Num(rand, 38, 70), h: phase91Num(rand, 32, 64) };
+  return phase105ImageSize(asset, category, kind, rand);
+}
+function phase106RectOK(rect, placed, pad) { return !safeArray(placed).some(p => phase105RectOverlap(rect, p, pad || 10)); }
+function phase106RoadSlots(kind, rand) {
+  const city = kind === 'city';
+  const town = kind === 'town';
+  const village = kind === 'village' || kind === 'settlement';
+  const slots = [];
+  if (city) {
+    const xs = [135, 245, 355, 465, 575, 685, 790];
+    const ys = [135, 235, 335, 435, 515];
+    ys.forEach((y, yi) => xs.forEach((x, xi) => { if ((xi + yi) % 2 || rand() > 0.12) slots.push([x + phase91Num(rand,-12,12), y + phase91Num(rand,-10,10)]); }));
+  } else if (town) {
+    [[110,170],[215,135],[330,165],[455,130],[600,165],[735,150],[140,310],[285,275],[430,310],[585,280],[730,315],[175,455],[345,430],[520,465],[700,440]].forEach(s => slots.push([s[0] + phase91Num(rand,-18,18), s[1] + phase91Num(rand,-18,18)]));
+  } else if (village) {
+    [[130,210],[260,160],[390,220],[540,175],[690,220],[185,360],[340,330],[500,370],[660,340],[260,470],[470,455],[620,465]].forEach(s => slots.push([s[0] + phase91Num(rand,-24,24), s[1] + phase91Num(rand,-22,22)]));
+  } else {
+    [[145,170],[300,155],[470,170],[650,180],[210,330],[395,310],[590,335],[760,340],[300,480],[540,470]].forEach(s => slots.push([s[0], s[1]]));
+  }
+  return slots;
+}
+function phase106BaseSettlementSvg(entry, kind) {
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 1060);
+  const water = kind !== 'city' && rand() > 0.52;
+  let body = `<rect width="900" height="620" fill="#b8c98b" opacity="0.95"/>${phase91Grid(900,620,40,0.075)}`;
+  body += `<g id="terrain-softness" opacity="0.18">`;
+  for (let i=0; i<9; i++) {
+    const x = phase91Num(rand, -40, 860), y = phase91Num(rand, 85, 560), w = phase91Num(rand, 120, 260), h = phase91Num(rand, 70, 160);
+    body += `<ellipse cx="${x}" cy="${y}" rx="${w/2}" ry="${h/2}" fill="${phase91PickRand(rand, ['#8aa766','#d7c08a','#6f9f7a','#a9b977'])}"/>`;
+  }
+  body += `</g>`;
+  if (water) {
+    const y = phase91Num(rand, 420, 520);
+    body += `<path d="M-40,${y} C120,${y-75} 260,${y+40} 425,${y-30} C585,${y-95} 710,${y+45} 950,${y-22}" fill="none" stroke="#6fa7b8" stroke-width="64" stroke-linecap="round" opacity="0.58"/>`;
+    body += `<path d="M-40,${y} C120,${y-75} 260,${y+40} 425,${y-30} C585,${y-95} 710,${y+45} 950,${y-22}" fill="none" stroke="#e8dcc1" stroke-width="12" stroke-linecap="round" opacity="0.36"/>`;
+  }
+  if (kind === 'city') {
+    body += `<g id="planned-city-roads" fill="none" stroke-linecap="round">`;
+    [170, 310, 450].forEach(y => body += `<path d="M80,${y} H820" stroke="#e9ddc5" stroke-width="34" opacity="0.95"/><path d="M80,${y} H820" stroke="#c8b28d" stroke-width="5" opacity="0.34"/>`);
+    [210, 450, 690].forEach(x => body += `<path d="M${x},100 V550" stroke="#e9ddc5" stroke-width="30" opacity="0.92"/><path d="M${x},100 V550" stroke="#c8b28d" stroke-width="4" opacity="0.32"/>`);
+    body += `<rect x="62" y="85" width="780" height="485" rx="16" fill="none" stroke="#2b241e" stroke-width="7" opacity="0.30"/>`;
+    body += `</g>`;
+  } else {
+    const y1 = phase91Num(rand, 250, 340);
+    const y2 = phase91Num(rand, 145, 235);
+    body += `<g id="organic-roads" fill="none" stroke-linecap="round">`;
+    body += `<path d="M-25,${y1} C150,${y1-55} 285,${y1+55} 455,${y1-5} C635,${y1-70} 770,${y1+50} 930,${y1-20}" stroke="#e9ddc5" stroke-width="40" opacity="0.96"/>`;
+    body += `<path d="M-25,${y1} C150,${y1-55} 285,${y1+55} 455,${y1-5} C635,${y1-70} 770,${y1+50} 930,${y1-20}" stroke="#c8b28d" stroke-width="5" opacity="0.35"/>`;
+    body += `<path d="M${phase91Num(rand,120,210)},78 C${phase91Num(rand,220,330)},${y2} ${phase91Num(rand,410,520)},${y1-30} ${phase91Num(rand,620,760)},560" stroke="#e9ddc5" stroke-width="27" opacity="0.90"/>`;
+    body += `<path d="M${phase91Num(rand,120,210)},78 C${phase91Num(rand,220,330)},${y2} ${phase91Num(rand,410,520)},${y1-30} ${phase91Num(rand,620,760)},560" stroke="#c8b28d" stroke-width="4" opacity="0.30"/>`;
+    body += `</g>`;
+    if (kind === 'village' || kind === 'settlement') {
+      body += `<circle cx="${phase91Num(rand,410,510)}" cy="${phase91Num(rand,285,365)}" r="${phase91Num(rand,20,33)}" fill="#6fa7b8" stroke="#2b241e" stroke-width="3" opacity="0.58"/>`;
+    }
+  }
+  body += `<g id="map-key-spaces" opacity="0.55">`;
+  if (kind !== 'city') {
+    body += `<rect x="55" y="445" width="128" height="78" rx="8" fill="#b99d6b" stroke="#6f5a3a" opacity="0.42"/>`;
+    body += `<path d="M70,464 H165 M70,486 H165 M70,508 H165" stroke="#6f5a3a" stroke-width="2" opacity="0.55"/>`;
+  }
+  body += `</g>`;
+  return phase91BaseSvg(entry, body, { label: kind });
+}
+function phase106DungeonBaseSvg(entry, kind) {
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 1061);
+  let body = `<rect width="900" height="620" fill="#6f6a60" opacity="0.92"/>${phase91Grid(900,620,40,0.13)}`;
+  const rooms = [];
+  const count = kind === 'battlemap' ? 5 : 7;
+  for (let i=0; i<count; i++) {
+    const w = phase91Num(rand, 95, 180), h = phase91Num(rand, 75, 150);
+    const x = phase91Num(rand, 70, 790 - w), y = phase91Num(rand, 105, 540 - h);
+    const r = { x,y,w,h };
+    if (rooms.every(room => !phase105RectOverlap(r, room, 24))) rooms.push(r);
+  }
+  body += `<g id="dungeon-layout">`;
+  rooms.forEach((r, i) => {
+    if (i > 0) {
+      const p = rooms[i-1];
+      const x1 = p.x + p.w/2, y1 = p.y + p.h/2, x2 = r.x + r.w/2, y2 = r.y + r.h/2;
+      body += `<path d="M${x1},${y1} L${x2},${y1} L${x2},${y2}" fill="none" stroke="#8b8172" stroke-width="34" stroke-linecap="square"/>`;
+      body += `<path d="M${x1},${y1} L${x2},${y1} L${x2},${y2}" fill="none" stroke="#2b241e" stroke-width="3" opacity="0.35"/>`;
+    }
+  });
+  rooms.forEach((r, i) => {
+    body += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="#948a78" stroke="#2b241e" stroke-width="7"/>`;
+    body += `<text x="${r.x + 12}" y="${r.y + 24}" font-family="Georgia, serif" font-size="18" fill="#1A1612" opacity="0.72">${i+1}</text>`;
+  });
+  body += `</g>`;
+  return phase91BaseSvg(entry, body, { label: kind });
+}
+function phase106PickBuildingPosition(slot, size, kind, rand, placed) {
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const side = phase91PickRand(rand, ['n','s','e','w']);
+    let x = slot[0] - size.w/2 + phase91Num(rand, -16, 16);
+    let y = slot[1] - size.h/2 + phase91Num(rand, -16, 16);
+    const offset = phase91Num(rand, 32, 48);
+    if (side === 'n') y -= offset;
+    if (side === 's') y += offset;
+    if (side === 'e') x += offset;
+    if (side === 'w') x -= offset;
+    x = phase106Clamp(x, 34, 866 - size.w);
+    y = phase106Clamp(y, 94, 582 - size.h);
+    const r = { x, y, w: size.w, h: size.h };
+    if (phase106RectOK(r, placed, kind === 'city' ? 8 : 14)) return { x, y, rect: r };
+  }
+  return null;
+}
+async function phase106ImagePiece(plugin, asset, x, y, size, rotate, opacity) {
+  const uri = await phase104AssetDataUri(plugin, asset);
+  if (!uri) return '';
+  return `<image href="${uri}" x="${x}" y="${y}" width="${size.w}" height="${size.h}" opacity="${opacity || 1}" preserveAspectRatio="xMidYMid meet" transform="rotate(${rotate || 0} ${x + size.w/2} ${y + size.h/2})"><title>${phase91SvgText(asset.name || asset.path)}</title></image>`;
+}
+async function phase106SettlementOverlay(plugin, entry, index, kind) {
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 1062);
+  const buildings = phase106Assets(index, 'buildings', kind);
+  const nature = phase106Assets(index, 'nature', kind);
+  const props = phase106Assets(index, 'props', kind);
+  const water = phase106Assets(index, 'water', kind);
+  const camp = phase106Assets(index, 'camp', kind);
+  const placed = [];
+  const pieces = ['<g id="ttrpg-asset-layer" opacity="0.99">'];
+  const slots = phase106RoadSlots(kind, rand);
+  const buildingCount = kind === 'city' ? 24 : kind === 'town' ? 16 : kind === 'village' ? 11 : 12;
+  for (let i=0; i<Math.min(buildingCount, slots.length); i++) {
+    const asset = phase106SelectByRegex(buildings, rand, /gable|building|mill|wharf|tent|camp|surface|roof/, /roof|surface|eave/);
+    if (!asset) continue;
+    const size = phase106AssetSize(asset, 'buildings', kind, rand);
+    const pos = phase106PickBuildingPosition(slots[i], size, kind, rand, placed);
+    if (!pos) continue;
+    placed.push(pos.rect);
+    pieces.push(await phase106ImagePiece(plugin, asset, pos.x, pos.y, size, phase91Num(rand,-2,2), 1));
+  }
+  const natureCount = kind === 'city' ? 14 : kind === 'town' ? 20 : 26;
+  for (let i=0; i<natureCount; i++) {
+    const asset = phase106SelectByRegex(nature, rand, /tree|bush|stump|log|rock|boulder|flower|grass/, /tree|rock/);
+    if (!asset) continue;
+    const size = phase106AssetSize(asset, 'nature', kind, rand);
+    let x, y;
+    const side = phase91Num(rand,0,3);
+    if (side === 0) { x = phase91Num(rand, 28, 850); y = phase91Num(rand, 88, 148); }
+    else if (side === 1) { x = phase91Num(rand, 28, 850); y = phase91Num(rand, 500, 572); }
+    else if (side === 2) { x = phase91Num(rand, 28, 120); y = phase91Num(rand, 110, 545); }
+    else { x = phase91Num(rand, 780, 855); y = phase91Num(rand, 110, 545); }
+    const r = { x, y, w:size.w, h:size.h };
+    if (!phase106RectOK(r, placed, 3)) continue;
+    pieces.push(await phase106ImagePiece(plugin, asset, x, y, size, phase91Num(rand,-18,18), 0.95));
+  }
+  const propCount = kind === 'city' ? 7 : kind === 'town' ? 5 : 3;
+  for (let i=0; i<propCount; i++) {
+    const asset = phase106SelectByRegex(props, rand, /crate|barrel|box|cart|wagon|sign|banner|flag/, /crate|barrel/);
+    if (!asset || !placed.length) continue;
+    const near = phase91PickRand(rand, placed);
+    const size = phase106AssetSize(asset, 'props', kind, rand);
+    const x = phase106Clamp(near.x + phase91Num(rand, -34, near.w + 20), 34, 866 - size.w);
+    const y = phase106Clamp(near.y + phase91Num(rand, -28, near.h + 22), 94, 582 - size.h);
+    const r = {x,y,w:size.w,h:size.h};
+    if (!phase106RectOK(r, placed, 2)) continue;
+    pieces.push(await phase106ImagePiece(plugin, asset, x, y, size, phase91Num(rand,-10,10), 0.96));
+  }
+  if (kind !== 'city' && rand() > 0.55) {
+    const asset = phase106SelectByRegex(water, rand, /pond|river|stream|ripple|water/, /water|pond/);
+    if (asset) {
+      const size = phase106AssetSize(asset, 'water', kind, rand);
+      pieces.push(await phase106ImagePiece(plugin, asset, phase91Num(rand, 60, 735), phase91Num(rand, 420, 525), size, phase91Num(rand,-8,8), 0.62));
+    }
+  }
+  if ((kind === 'village' || kind === 'settlement') && camp.length && rand() > 0.55) {
+    const asset = phase106SelectByRegex(camp, rand, /tent|camp/, /tent/);
+    if (asset) {
+      const size = phase106AssetSize(asset, 'camp', kind, rand);
+      pieces.push(await phase106ImagePiece(plugin, asset, phase91Num(rand, 70, 760), phase91Num(rand, 450, 530), size, phase91Num(rand,-6,6), 0.95));
+    }
+  }
+  pieces.push('</g>');
+  return pieces.join('\n');
+}
+async function phase106DungeonOverlay(plugin, entry, index, kind) {
+  const rand = phase91Rng(Number(entry?.mapSeed || phase91FreshSeed(entry?.name || 'map')) + 1063);
+  const dungeon = phase106Assets(index, 'dungeon', kind);
+  const ruins = phase106Assets(index, 'ruins', kind);
+  const props = phase106Assets(index, 'props', kind);
+  const placed = [];
+  const pieces = ['<g id="ttrpg-asset-layer" opacity="0.98">'];
+  const pools = [
+    { cat:'dungeon', pool:dungeon, count: kind === 'battlemap' ? 7 : 12, re:/door|stair|pillar|torch|trap|tile|platform|wall/ },
+    { cat:'ruins', pool:ruins, count: kind === 'battlemap' ? 5 : 6, re:/rubble|debris|hole|broken|rock/ },
+    { cat:'props', pool:props, count: kind === 'battlemap' ? 6 : 4, re:/crate|barrel|chest|box|book|shelf/ }
+  ];
+  for (const cfg of pools) {
+    for (let i=0; i<cfg.count; i++) {
+      const asset = phase106SelectByRegex(cfg.pool, rand, cfg.re, null);
+      if (!asset) continue;
+      const size = phase106AssetSize(asset, cfg.cat, kind, rand);
+      for (let attempt=0; attempt<12; attempt++) {
+        const x = phase91Num(rand, 80, 820-size.w), y = phase91Num(rand, 120, 540-size.h);
+        const r = {x,y,w:size.w,h:size.h};
+        if (!phase106RectOK(r, placed, 7)) continue;
+        placed.push(r);
+        pieces.push(await phase106ImagePiece(plugin, asset, x, y, size, phase91Num(rand,-6,6), cfg.cat === 'ruins' ? 0.82 : 0.95));
+        break;
+      }
+    }
+  }
+  pieces.push('</g>');
+  return pieces.join('\n');
+}
+async function phase106MapSvgWithAssets(plugin, entry) {
+  const e = entry || {};
+  if (!e.mapSeed) e.mapSeed = phase91FreshSeed(e.name || e.type || 'map');
+  const kind = phase106Kind(e);
+  const index = await phase104LoadAssetIndex(plugin);
+  let base, overlay = '';
+  if (phase106IsSettlement(kind)) {
+    base = phase106BaseSettlementSvg(e, kind);
+    overlay = index.length ? await phase106SettlementOverlay(plugin, e, index, kind) : '';
+  } else if (kind === 'dungeon' || kind === 'battlemap') {
+    base = phase106DungeonBaseSvg(e, kind);
+    overlay = index.length ? await phase106DungeonOverlay(plugin, e, index, kind) : '';
+  } else if (kind === 'poi') {
+    base = phase91MapSvg(e);
+    overlay = index.length ? await phase106DungeonOverlay(plugin, e, index, kind) : '';
+  } else {
+    base = phase91MapSvg(e);
+    overlay = index.length ? await phase105AssetOverlaySvg(plugin, e) : '';
+  }
+  if (!overlay) return base;
+  return base.replace('<rect x="24" y="24"', `${overlay}\n  <rect x="24" y="24"`);
+}
+
+phase81WriteSvgFile = async function phase106WriteStructuredAssetMap(plugin, entry) {
+  try {
+    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const root = phase78CampaignRoot(plugin, campaign);
+    const folder = `${root}/02 Geography & Maps/Maps`;
+    if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
+    const svg = await phase106MapSvgWithAssets(plugin, entry);
+    const base = phase78Slug(entry.name || entry.title || 'generated-map');
+    const path = normalizePath(`${folder}/${base}-map.svg`);
+    await writeFile(plugin, path, svg);
+    entry.mapImagePath = path;
+    entry.imagePath = path;
+    entry.visualMapPath = path;
+    entry.assetBacked = true;
+    entry.assetPack = 'Curated Map Assets';
+    entry.assetPlacement = 'structured';
+    entry.mapLayoutVersion = PHASE106_VERSION;
+    delete entry.visualMapSvg;
+    return path;
+  } catch (error) {
+    console.warn('TTRPG Table structured asset-backed map failed; falling back to procedural SVG.', error);
+    return phase104BaseWriteSvgFile(plugin, entry);
+  }
+};
+
+const phase106BaseGeneratedPreview = phase66GeneratedPreview;
+phase66GeneratedPreview = function phase106StructuredGeneratedPreview(parent, generated) {
+  phase106BaseGeneratedPreview(parent, generated);
+  const entry = generated && generated.entry;
+  if (!entry || !(generated.kind === 'maps' || generated.kind === 'settlements' || generated.kind === 'pois' || generated.type === 'Fantasy Map')) return;
+  const plugin = window.__ttrpgTablePluginInstance;
+  if (!plugin) return;
+  const preview = parent.createEl('div', { cls: 'ttrpg-map-preview ttrpg-generated-map-preview' });
+  preview.createEl('div', { cls: 'ttrpg-muted', text: 'Structured asset map preview' });
+  phase106MapSvgWithAssets(plugin, Object.assign({}, entry)).then(svg => { preview.innerHTML = svg; }).catch(() => preview.remove());
+};
+
+
+/* --------------------------------------------------------------------------
+ * Phase 107 — Multi-Line Card Field Formatting
+ * Some imported/synced note fields arrive as one long string containing several
+ * labelled values, e.g. "Summary: ... Campaign ID: ... Visibility: ...".
+ * Render those as separate lines so cards remain readable.
+ * -------------------------------------------------------------------------- */
+const PHASE107_INLINE_LABELS = [
+  'Summary', 'Description', 'Campaign ID', 'Campaign', 'Visibility', 'Last Synced To Note',
+  'Last Synced From Note', 'Sync Status', 'Status', 'Type', 'Category', 'Leader', 'Headquarters',
+  'Resources', 'Goals', 'Territory', 'Reputation', 'Domains', 'Domain', 'Symbol',
+  'Alignment / Ethos', 'Alignment', 'Ethos', 'Pantheon', 'Worship & Dogma', 'Dogma',
+  'Title', 'Population', 'Government', 'Defenses', 'Defences', 'Economy', 'Districts',
+  'Shops', 'Temples', 'Inns', 'Hazards', 'Terrain', 'Climate', 'Location', 'Purpose',
+  'Inhabitants', 'Treasure', 'Objective', 'Objectives', 'Rewards', 'Notes'
+];
+function phase107EscapeRegex(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function phase107NormaliseLabelSpacing(text) {
+  let out = String(text || '').replace(/\r\n/g, '\n');
+  const labels = PHASE107_INLINE_LABELS.map(phase107EscapeRegex).join('|');
+  const labelPattern = new RegExp(`\\s+(${labels})\\s*:`, 'gi');
+  out = out.replace(labelPattern, (match, label, offset, full) => {
+    const before = full.slice(Math.max(0, offset - 2), offset);
+    if (before.includes('\n')) return match.replace(/^\s+/, '');
+    return `\n${label}:`;
+  });
+  // Imported notes can preserve markdown list markers as literal separators.
+  out = out
+    .replace(/\s+-\s+(?=([A-Z][A-Za-z /&]{1,40})\s*:)/g, '\n')
+    .replace(/\s+•\s+(?=([A-Z][A-Za-z /&]{1,40})\s*:)/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return out;
+}
+function phase107LooksLikeLabelLine(line) {
+  return /^[A-Z][A-Za-z0-9 /&()'-]{1,50}:\s*\S/.test(String(line || '').trim());
+}
+const phase107BaseMarkdownToDisplayText = phase98MarkdownToDisplayText;
+phase98MarkdownToDisplayText = function phase107MarkdownToDisplayText(value) {
+  const base = phase107BaseMarkdownToDisplayText(value);
+  return phase107NormaliseLabelSpacing(base);
+};
+const phase107BaseDisplayText = phase97DisplayText;
+phase97DisplayText = function phase107DisplayText(value, depth = 0) {
+  const rendered = phase107BaseDisplayText(value, depth);
+  return phase107NormaliseLabelSpacing(rendered);
+};
+const phase107BaseSummaryFields = phase97SummaryFields;
+phase97SummaryFields = function phase107SummaryFields(item, key) {
+  return safeArray(phase107BaseSummaryFields(item, key)).map(f => ({
+    label: phase107NormaliseLabelSpacing(f && f.label || ''),
+    value: phase107NormaliseLabelSpacing(f && f.value || '')
+  }));
+};
+const phase107BaseRenderFields = phase97RenderFields;
+phase97RenderFields = function phase107RenderFields(parent, fields) {
+  const expanded = [];
+  safeArray(fields).forEach(f => {
+    const label = phase107NormaliseLabelSpacing(f && f.label || 'Detail');
+    const value = phase107NormaliseLabelSpacing(f && f.value || '');
+    const lines = value.split('\n').map(x => x.trim()).filter(Boolean);
+    if (lines.length > 1 && lines.every(phase107LooksLikeLabelLine)) {
+      lines.forEach(line => {
+        const idx = line.indexOf(':');
+        const childLabel = line.slice(0, idx).trim();
+        const childValue = line.slice(idx + 1).trim();
+        if (childValue) expanded.push({ label: childLabel, value: childValue });
+      });
+    } else {
+      expanded.push({ label, value });
+    }
+  });
+  return phase107BaseRenderFields(parent, expanded);
+};
+
+/* --------------------------------------------------------------------------
+ * Phase 108 — Robust Label Block Card Formatting
+ * Phase 107 only split labelled values when every wrapped line looked like a
+ * labelled row. Narrow panes and synced notes can jam labels together, e.g.
+ * "...qojosyVisibility:" or "Description: Summary:". This pass parses those
+ * strings into real card rows and deduplicates repeated imported/template data.
+ * -------------------------------------------------------------------------- */
+const PHASE108_VERSION = '1.108.0';
+function phase108LabelRegexSource() {
+  return PHASE107_INLINE_LABELS
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .map(phase107EscapeRegex)
+    .join('|');
+}
+function phase108PrepareLabelText(text) {
+  let out = String(text || '').replace(/\r\n/g, '\n');
+  const labels = phase108LabelRegexSource();
+  // Split "fooVisibility:" and "foo Campaign ID:" into new labelled rows.
+  out = out.replace(new RegExp(`([^\n])\\s*(${labels})\\s*:`, 'gi'), (m, before, label) => {
+    // If the label is already at the beginning of this row, keep it intact.
+    if (!String(before || '').trim()) return `${before}${label}:`;
+    return `${before}\n${label}:`;
+  });
+  out = out
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\s+-\s+(?=([A-Z][A-Za-z /&()'-]{1,50})\s*:)/g, '\n')
+    .replace(/\s+•\s+(?=([A-Z][A-Za-z /&()'-]{1,50})\s*:)/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return out;
+}
+function phase108CanonicalLabel(label) {
+  const raw = String(label || '').trim();
+  const hit = PHASE107_INLINE_LABELS.find(l => l.toLowerCase() === raw.toLowerCase());
+  return hit || phase97NiceLabel(raw);
+}
+function phase108ParseLabelBlocks(text) {
+  const prepared = phase108PrepareLabelText(text);
+  if (!prepared || !/:/.test(prepared)) return [];
+  const labels = phase108LabelRegexSource();
+  const lineRe = new RegExp(`^\\s*(${labels})\\s*:\\s*(.*)$`, 'i');
+  const blocks = [];
+  let current = null;
+  const push = () => {
+    if (!current) return;
+    current.value = phase108PrepareLabelText(current.value || '').trim();
+    if (current.value && !phase98IsEmptyMarkdownPlaceholder(current.value)) blocks.push(current);
+    current = null;
+  };
+  prepared.split(/\n+/).map(l => l.trim()).filter(Boolean).forEach(line => {
+    const m = line.match(lineRe);
+    if (m) {
+      push();
+      current = { label: phase108CanonicalLabel(m[1]), value: m[2] || '' };
+    } else if (current) {
+      current.value += (current.value ? '\n' : '') + line;
+    }
+  });
+  push();
+  return blocks;
+}
+function phase108FieldKey(label, value) {
+  return `${String(label || '').toLowerCase().trim()}::${String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()}`;
+}
+const phase108BaseNormaliseLabelSpacing = phase107NormaliseLabelSpacing;
+phase107NormaliseLabelSpacing = function phase108NormaliseLabelSpacing(text) {
+  return phase108PrepareLabelText(phase108BaseNormaliseLabelSpacing(text));
+};
+const phase108BaseRenderFields = phase97RenderFields;
+phase97RenderFields = function phase108RenderFields(parent, fields) {
+  const expanded = [];
+  safeArray(fields).forEach(f => {
+    const label = phase98MarkdownToDisplayText(f && f.label || 'Detail').trim();
+    const value = phase108PrepareLabelText(phase98MarkdownToDisplayText(f && f.value || '')).trim();
+    if (!value || phase98IsEmptyMarkdownPlaceholder(value)) return;
+    const blocks = phase108ParseLabelBlocks(value);
+    if (blocks.length >= 2 || (blocks.length === 1 && ['Description','Notes','Detail'].includes(label))) {
+      blocks.forEach(block => {
+        if (block.value) expanded.push({ label: block.label, value: block.value });
+      });
+    } else {
+      expanded.push({ label, value });
+    }
+  });
+  const seen = new Set();
+  const clean = [];
+  expanded.forEach(f => {
+    let label = phase108CanonicalLabel(f.label || 'Detail');
+    let value = phase108PrepareLabelText(f.value || '').trim();
+    // Avoid rows like "Description: Description: ..." after multiple sync passes.
+    const selfPrefix = new RegExp(`^${phase107EscapeRegex(label)}\\s*:\\s*`, 'i');
+    value = value.replace(selfPrefix, '').trim();
+    if (!value || phase98IsEmptyMarkdownPlaceholder(value)) return;
+    const key = phase108FieldKey(label, value);
+    if (seen.has(key)) return;
+    seen.add(key);
+    clean.push({ label, value });
+  });
+  return phase108BaseRenderFields(parent, clean);
+};
+const phase108BaseSummaryFields = phase97SummaryFields;
+phase97SummaryFields = function phase108SummaryFields(item, key) {
+  const fields = safeArray(phase108BaseSummaryFields(item, key)).map(f => ({
+    label: phase108CanonicalLabel(phase98MarkdownToDisplayText(f && f.label || '')),
+    value: phase108PrepareLabelText(phase98MarkdownToDisplayText(f && f.value || '')).trim()
+  })).filter(f => f.label && f.value && !phase98IsEmptyMarkdownPlaceholder(f.value));
+  const seen = new Set();
+  const clean = [];
+  fields.forEach(f => {
+    const k = phase108FieldKey(f.label, f.value);
+    if (seen.has(k)) return;
+    seen.add(k);
+    clean.push(f);
+  });
+  return clean;
+};
+try {
+  const phase108BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase108SaveState() {
+    this.state.version = PHASE108_VERSION;
+    return phase108BaseSaveState.call(this);
+  };
+} catch (_) {}

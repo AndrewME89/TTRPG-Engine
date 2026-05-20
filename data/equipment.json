@@ -1,0 +1,2523 @@
+[
+  {
+    "id": "item-alchemists-supplies",
+    "name": "Alchemist's Supplies",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 8,
+    "value": 5000
+  },
+  {
+    "id": "item-alchemists-supplies",
+    "name": "Alchemist's Supplies",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 8,
+    "value": 5000
+  },
+  {
+    "id": "item-antimatter-rifle",
+    "name": "Antimatter Rifle",
+    "source": "DMG",
+    "type": "R",
+    "weight": 10,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD",
+      "2H"
+    ],
+    "dmg1": "6d8",
+    "dmgType": "N"
+  },
+  {
+    "id": "item-antimatter-rifle",
+    "name": "Antimatter Rifle",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 10,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG",
+      "2H|XPHB"
+    ],
+    "dmg1": "6d8",
+    "dmgType": "N"
+  },
+  {
+    "id": "item-arrow",
+    "name": "Arrow",
+    "source": "PHB",
+    "type": "A",
+    "weight": 0.05,
+    "value": 5
+  },
+  {
+    "id": "item-arrow",
+    "name": "Arrow",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 0.05,
+    "value": 5
+  },
+  {
+    "id": "item-arrows-20",
+    "name": "Arrows (20)",
+    "source": "PHB",
+    "type": "A",
+    "weight": 1,
+    "value": 100
+  },
+  {
+    "id": "item-arrows-20",
+    "name": "Arrows (20)",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 1,
+    "value": 100
+  },
+  {
+    "id": "item-automatic-pistol",
+    "name": "Automatic Pistol",
+    "source": "DMG",
+    "type": "R",
+    "weight": 3,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-automatic-rifle",
+    "name": "Automatic Rifle",
+    "source": "DMG",
+    "type": "R",
+    "weight": 8,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "BF|DMG",
+      "RLD",
+      "2H"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-automatic-rifle",
+    "name": "Automatic Rifle",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 8,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "BF|XDMG",
+      "RLD|XDMG",
+      "2H|XPHB"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-bagpipes",
+    "name": "Bagpipes",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 6,
+    "value": 3000
+  },
+  {
+    "id": "item-bagpipes",
+    "name": "Bagpipes",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 6,
+    "value": 3000
+  },
+  {
+    "id": "item-bandore",
+    "name": "Bandore",
+    "source": "FRHoF",
+    "type": "INS|XPHB",
+    "weight": 3,
+    "value": 6500
+  },
+  {
+    "id": "item-battleaxe",
+    "name": "Battleaxe",
+    "source": "PHB",
+    "type": "M",
+    "weight": 4,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-battleaxe",
+    "name": "Battleaxe",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 4,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "V|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-birdpipes",
+    "name": "Birdpipes",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-blowgun",
+    "name": "Blowgun",
+    "source": "PHB",
+    "type": "R",
+    "weight": 1,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "A",
+      "LD"
+    ],
+    "dmg1": "1",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-blowgun",
+    "name": "Blowgun",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 1,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "LD|XPHB"
+    ],
+    "dmg1": "1",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-blowgun-needle",
+    "name": "Blowgun Needle",
+    "source": "PHB",
+    "type": "A",
+    "weight": 0.02,
+    "value": 2
+  },
+  {
+    "id": "item-blowgun-needles-50",
+    "name": "Blowgun Needles (50)",
+    "source": "PHB",
+    "type": "A",
+    "weight": 1,
+    "value": 100
+  },
+  {
+    "id": "item-bolt",
+    "name": "Bolt",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 0.075,
+    "value": 5
+  },
+  {
+    "id": "item-bolts-20",
+    "name": "Bolts (20)",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 1.5,
+    "value": 100
+  },
+  {
+    "id": "item-breastplate",
+    "name": "Breastplate",
+    "source": "PHB",
+    "type": "MA",
+    "weight": 20,
+    "value": 40000,
+    "ac": 14
+  },
+  {
+    "id": "item-breastplate",
+    "name": "Breastplate",
+    "source": "XPHB",
+    "type": "MA|XPHB",
+    "weight": 20,
+    "value": 40000,
+    "ac": 14
+  },
+  {
+    "id": "item-brewers-supplies",
+    "name": "Brewer's Supplies",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 9,
+    "value": 2000
+  },
+  {
+    "id": "item-brewers-supplies",
+    "name": "Brewer's Supplies",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 9,
+    "value": 2000
+  },
+  {
+    "id": "item-calligraphers-supplies",
+    "name": "Calligrapher's Supplies",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 1000
+  },
+  {
+    "id": "item-calligraphers-supplies",
+    "name": "Calligrapher's Supplies",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 1000
+  },
+  {
+    "id": "item-carpenters-tools",
+    "name": "Carpenter's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 6,
+    "value": 800
+  },
+  {
+    "id": "item-carpenters-tools",
+    "name": "Carpenter's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 6,
+    "value": 800
+  },
+  {
+    "id": "item-cartographers-tools",
+    "name": "Cartographer's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 6,
+    "value": 1500
+  },
+  {
+    "id": "item-cartographers-tools",
+    "name": "Cartographer's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 6,
+    "value": 1500
+  },
+  {
+    "id": "item-chain-mail",
+    "name": "Chain Mail",
+    "source": "PHB",
+    "type": "HA",
+    "weight": 55,
+    "value": 7500,
+    "ac": 16
+  },
+  {
+    "id": "item-chain-mail",
+    "name": "Chain Mail",
+    "source": "XPHB",
+    "type": "HA|XPHB",
+    "weight": 55,
+    "value": 7500,
+    "ac": 16
+  },
+  {
+    "id": "item-chain-shirt",
+    "name": "Chain Shirt",
+    "source": "PHB",
+    "type": "MA",
+    "weight": 20,
+    "value": 5000,
+    "ac": 13
+  },
+  {
+    "id": "item-chain-shirt",
+    "name": "Chain Shirt",
+    "source": "XPHB",
+    "type": "MA|XPHB",
+    "weight": 20,
+    "value": 5000,
+    "ac": 13
+  },
+  {
+    "id": "item-cittern",
+    "name": "Cittern",
+    "source": "FRHoF",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 6500
+  },
+  {
+    "id": "item-club",
+    "name": "Club",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 10,
+    "weaponCategory": "simple",
+    "property": [
+      "L"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-club",
+    "name": "Club",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 10,
+    "weaponCategory": "simple",
+    "property": [
+      "L|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-cobblers-tools",
+    "name": "Cobbler's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 500
+  },
+  {
+    "id": "item-cobblers-tools",
+    "name": "Cobbler's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 500
+  },
+  {
+    "id": "item-cooks-utensils",
+    "name": "Cook's Utensils",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 8,
+    "value": 100
+  },
+  {
+    "id": "item-cooks-utensils",
+    "name": "Cook's Utensils",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 8,
+    "value": 100
+  },
+  {
+    "id": "item-crossbow-bolt",
+    "name": "Crossbow Bolt",
+    "source": "PHB",
+    "type": "A",
+    "weight": 0.075,
+    "value": 5
+  },
+  {
+    "id": "item-crossbow-bolts-20",
+    "name": "Crossbow Bolts (20)",
+    "source": "PHB",
+    "type": "A",
+    "weight": 1.5,
+    "value": 100
+  },
+  {
+    "id": "item-crystal",
+    "name": "Crystal",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 1,
+    "value": 1000
+  },
+  {
+    "id": "item-crystal",
+    "name": "Crystal",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 1,
+    "value": 1000
+  },
+  {
+    "id": "item-dagger",
+    "name": "Dagger",
+    "source": "PHB",
+    "type": "Weapon",
+    "weight": 1,
+    "value": "2 gp",
+    "weaponCategory": "simple",
+    "property": [
+      "F",
+      "L",
+      "T"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-dagger",
+    "name": "Dagger",
+    "source": "XPHB",
+    "type": "Weapon",
+    "weight": 1,
+    "value": "2 gp",
+    "weaponCategory": "simple",
+    "property": [
+      "F|XPHB",
+      "L|XPHB",
+      "T|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-dart",
+    "name": "Dart",
+    "source": "PHB",
+    "type": "R",
+    "weight": 0.25,
+    "value": 5,
+    "weaponCategory": "simple",
+    "property": [
+      "F",
+      "T"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-dart",
+    "name": "Dart",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 0.25,
+    "value": 5,
+    "weaponCategory": "simple",
+    "property": [
+      "F|XPHB",
+      "T|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-double-bladed-scimitar",
+    "name": "Double-Bladed Scimitar",
+    "source": "ERLW",
+    "type": "M",
+    "weight": 6,
+    "value": 10000,
+    "weaponCategory": "martial",
+    "property": [
+      "S",
+      "2H"
+    ],
+    "dmg1": "2d4",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-drum",
+    "name": "Drum",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 3,
+    "value": 600
+  },
+  {
+    "id": "item-drum",
+    "name": "Drum",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 3,
+    "value": 600
+  },
+  {
+    "id": "item-dulcimer",
+    "name": "Dulcimer",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 10,
+    "value": 2500
+  },
+  {
+    "id": "item-dulcimer",
+    "name": "Dulcimer",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 10,
+    "value": 2500
+  },
+  {
+    "id": "item-energy-cell",
+    "name": "Energy Cell",
+    "source": "DMG",
+    "type": "AF|DMG",
+    "weight": 0.3125
+  },
+  {
+    "id": "item-energy-cell",
+    "name": "Energy Cell",
+    "source": "XDMG",
+    "type": "AF|XDMG",
+    "weight": 0.5
+  },
+  {
+    "id": "item-firearm-bullet",
+    "name": "Firearm Bullet",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 0.2,
+    "value": 30
+  },
+  {
+    "id": "item-firearm-bullets-10",
+    "name": "Firearm Bullets (10)",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 2,
+    "value": 300
+  },
+  {
+    "id": "item-flail",
+    "name": "Flail",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-flail",
+    "name": "Flail",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-flute",
+    "name": "Flute",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 1,
+    "value": 200
+  },
+  {
+    "id": "item-flute",
+    "name": "Flute",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 1,
+    "value": 200
+  },
+  {
+    "id": "item-glaive",
+    "name": "Glaive",
+    "source": "PHB",
+    "type": "M",
+    "weight": 6,
+    "value": 2000,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "R",
+      "2H"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-glaive",
+    "name": "Glaive",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 6,
+    "value": 2000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "R|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-glassblowers-tools",
+    "name": "Glassblower's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 3000
+  },
+  {
+    "id": "item-glassblowers-tools",
+    "name": "Glassblower's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 3000
+  },
+  {
+    "id": "item-glaur",
+    "name": "Glaur",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-greataxe",
+    "name": "Greataxe",
+    "source": "PHB",
+    "type": "M",
+    "weight": 7,
+    "value": 3000,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "2H"
+    ],
+    "dmg1": "1d12",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-greataxe",
+    "name": "Greataxe",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 7,
+    "value": 3000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d12",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-greatclub",
+    "name": "Greatclub",
+    "source": "PHB",
+    "type": "M",
+    "weight": 10,
+    "value": 20,
+    "weaponCategory": "simple",
+    "property": [
+      "2H"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-greatclub",
+    "name": "Greatclub",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 10,
+    "value": 20,
+    "weaponCategory": "simple",
+    "property": [
+      "2H|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-greatsword",
+    "name": "Greatsword",
+    "source": "PHB",
+    "type": "M",
+    "weight": 6,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "2H"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-greatsword",
+    "name": "Greatsword",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 6,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-halberd",
+    "name": "Halberd",
+    "source": "PHB",
+    "type": "M",
+    "weight": 6,
+    "value": 2000,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "R",
+      "2H"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-halberd",
+    "name": "Halberd",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 6,
+    "value": 2000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "R|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-half-plate-armor",
+    "name": "Half Plate Armor",
+    "source": "PHB",
+    "type": "MA",
+    "weight": 40,
+    "value": 75000,
+    "ac": 15
+  },
+  {
+    "id": "item-half-plate-armor",
+    "name": "Half Plate Armor",
+    "source": "XPHB",
+    "type": "MA|XPHB",
+    "weight": 40,
+    "value": 75000,
+    "ac": 15
+  },
+  {
+    "id": "item-hand-crossbow",
+    "name": "Hand Crossbow",
+    "source": "PHB",
+    "type": "R",
+    "weight": 3,
+    "value": 7500,
+    "weaponCategory": "martial",
+    "property": [
+      "A",
+      "L",
+      "LD"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-hand-crossbow",
+    "name": "Hand Crossbow",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 3,
+    "value": 7500,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "L|XPHB",
+      "LD|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-hand-drum",
+    "name": "Hand Drum",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-handaxe",
+    "name": "Handaxe",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "L",
+      "T"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-handaxe",
+    "name": "Handaxe",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "L|XPHB",
+      "T|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-heavy-crossbow",
+    "name": "Heavy Crossbow",
+    "source": "PHB",
+    "type": "R",
+    "weight": 18,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "A",
+      "H",
+      "LD",
+      "2H"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-heavy-crossbow",
+    "name": "Heavy Crossbow",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 18,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "H|XPHB",
+      "LD|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-hide-armor",
+    "name": "Hide Armor",
+    "source": "PHB",
+    "type": "MA",
+    "weight": 12,
+    "value": 1000,
+    "ac": 12
+  },
+  {
+    "id": "item-hide-armor",
+    "name": "Hide Armor",
+    "source": "XPHB",
+    "type": "MA|XPHB",
+    "weight": 12,
+    "value": 1000,
+    "ac": 12
+  },
+  {
+    "id": "item-hooked-shortspear",
+    "name": "Hooked Shortspear",
+    "source": "OotA",
+    "type": "M",
+    "weight": 2,
+    "weaponCategory": "martial",
+    "property": [
+      "L"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-hoopak",
+    "name": "Hoopak",
+    "source": "DSotDQ",
+    "type": "M",
+    "weight": 2,
+    "value": 10,
+    "weaponCategory": "martial",
+    "property": [
+      "A",
+      "F",
+      "S",
+      "2H"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-horn",
+    "name": "Horn",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 2,
+    "value": 300
+  },
+  {
+    "id": "item-horn",
+    "name": "Horn",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 300
+  },
+  {
+    "id": "item-hunting-rifle",
+    "name": "Hunting Rifle",
+    "source": "DMG",
+    "type": "R",
+    "weight": 8,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD",
+      "2H"
+    ],
+    "dmg1": "2d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-hunting-rifle",
+    "name": "Hunting Rifle",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 8,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG",
+      "2H|XPHB"
+    ],
+    "dmg1": "2d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-javelin",
+    "name": "Javelin",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 50,
+    "weaponCategory": "simple",
+    "property": [
+      "T"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-javelin",
+    "name": "Javelin",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 50,
+    "weaponCategory": "simple",
+    "property": [
+      "T|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-jewelers-tools",
+    "name": "Jeweler's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 2,
+    "value": 2500
+  },
+  {
+    "id": "item-jewelers-tools",
+    "name": "Jeweler's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 2,
+    "value": 2500
+  },
+  {
+    "id": "item-lance",
+    "name": "Lance",
+    "source": "PHB",
+    "type": "M",
+    "weight": 6,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "R",
+      "S"
+    ],
+    "dmg1": "1d12",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-lance",
+    "name": "Lance",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 6,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "R|XPHB",
+      {
+        "uid": "2H|XPHB",
+        "note": "unless mounted"
+      }
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-laser-pistol",
+    "name": "Laser Pistol",
+    "source": "DMG",
+    "type": "R",
+    "weight": 2,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD"
+    ],
+    "dmg1": "3d6",
+    "dmgType": "R"
+  },
+  {
+    "id": "item-laser-pistol",
+    "name": "Laser Pistol",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 2,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG"
+    ],
+    "dmg1": "3d6",
+    "dmgType": "R"
+  },
+  {
+    "id": "item-laser-rifle",
+    "name": "Laser Rifle",
+    "source": "DMG",
+    "type": "R",
+    "weight": 7,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD",
+      "2H"
+    ],
+    "dmg1": "3d8",
+    "dmgType": "R"
+  },
+  {
+    "id": "item-laser-rifle",
+    "name": "Laser Rifle",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 7,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG",
+      "2H|XPHB"
+    ],
+    "dmg1": "3d8",
+    "dmgType": "R"
+  },
+  {
+    "id": "item-leather-armor",
+    "name": "Leather Armor",
+    "source": "PHB",
+    "type": "Armor",
+    "weight": 10,
+    "value": "10 gp",
+    "ac": 11
+  },
+  {
+    "id": "item-leather-armor",
+    "name": "Leather Armor",
+    "source": "XPHB",
+    "type": "Armor",
+    "weight": 10,
+    "value": "10 gp",
+    "ac": 11
+  },
+  {
+    "id": "item-leatherworkers-tools",
+    "name": "Leatherworker's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 500
+  },
+  {
+    "id": "item-leatherworkers-tools",
+    "name": "Leatherworker's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 500
+  },
+  {
+    "id": "item-light-crossbow",
+    "name": "Light Crossbow",
+    "source": "PHB",
+    "type": "R",
+    "weight": 5,
+    "value": 2500,
+    "weaponCategory": "simple",
+    "property": [
+      "A",
+      "LD",
+      "2H"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-light-crossbow",
+    "name": "Light Crossbow",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 5,
+    "value": 2500,
+    "weaponCategory": "simple",
+    "property": [
+      "A|XPHB",
+      "LD|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-light-hammer",
+    "name": "Light Hammer",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 200,
+    "weaponCategory": "simple",
+    "property": [
+      "L",
+      "T"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-light-hammer",
+    "name": "Light Hammer",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 200,
+    "weaponCategory": "simple",
+    "property": [
+      "L|XPHB",
+      "T|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-light-repeating-crossbow",
+    "name": "Light Repeating Crossbow",
+    "source": "OotA",
+    "type": "R",
+    "weight": 5,
+    "weaponCategory": "simple",
+    "property": [
+      "A",
+      "2H"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-longbow",
+    "name": "Longbow",
+    "source": "PHB",
+    "type": "R",
+    "weight": 2,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "A",
+      "H",
+      "2H"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-longbow",
+    "name": "Longbow",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 2,
+    "value": 5000,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "H|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-longhorn",
+    "name": "Longhorn",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-longsword",
+    "name": "Longsword",
+    "source": "PHB",
+    "type": "Weapon",
+    "weight": 3,
+    "value": "15 gp",
+    "weaponCategory": "martial",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-longsword",
+    "name": "Longsword",
+    "source": "XPHB",
+    "type": "Weapon",
+    "weight": 3,
+    "value": "15 gp",
+    "weaponCategory": "martial",
+    "property": [
+      "V|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-lute",
+    "name": "Lute",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 2,
+    "value": 3500
+  },
+  {
+    "id": "item-lute",
+    "name": "Lute",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 3500
+  },
+  {
+    "id": "item-lyre",
+    "name": "Lyre",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 2,
+    "value": 3000
+  },
+  {
+    "id": "item-lyre",
+    "name": "Lyre",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 3000
+  },
+  {
+    "id": "item-mace",
+    "name": "Mace",
+    "source": "PHB",
+    "type": "M",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-mace",
+    "name": "Mace",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-masons-tools",
+    "name": "Mason's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 8,
+    "value": 1000
+  },
+  {
+    "id": "item-masons-tools",
+    "name": "Mason's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 8,
+    "value": 1000
+  },
+  {
+    "id": "item-maul",
+    "name": "Maul",
+    "source": "PHB",
+    "type": "M",
+    "weight": 10,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "2H"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-maul",
+    "name": "Maul",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 10,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-modern-bullet",
+    "name": "Modern Bullet",
+    "source": "DMG",
+    "type": "AF|DMG",
+    "weight": 0.1
+  },
+  {
+    "id": "item-modern-bullets-10",
+    "name": "Modern Bullets (10)",
+    "source": "DMG",
+    "type": "AF|DMG",
+    "weight": 1
+  },
+  {
+    "id": "item-morningstar",
+    "name": "Morningstar",
+    "source": "PHB",
+    "type": "M",
+    "weight": 4,
+    "value": 1500,
+    "weaponCategory": "martial",
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-morningstar",
+    "name": "Morningstar",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 4,
+    "value": 1500,
+    "weaponCategory": "martial",
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-musket",
+    "name": "Musket",
+    "source": "DMG",
+    "type": "R",
+    "weight": 10,
+    "value": 50000,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "LD",
+      "2H"
+    ],
+    "dmg1": "1d12",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-musket",
+    "name": "Musket",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 10,
+    "value": 50000,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "LD|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d12",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-needle",
+    "name": "Needle",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 0.02,
+    "value": 2
+  },
+  {
+    "id": "item-needles-50",
+    "name": "Needles (50)",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 1,
+    "value": 100
+  },
+  {
+    "id": "item-net",
+    "name": "Net",
+    "source": "PHB",
+    "type": "R",
+    "weight": 3,
+    "value": 100,
+    "weaponCategory": "martial",
+    "property": [
+      "S",
+      "T"
+    ]
+  },
+  {
+    "id": "item-orb",
+    "name": "Orb",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 3,
+    "value": 2000
+  },
+  {
+    "id": "item-orb",
+    "name": "Orb",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 3,
+    "value": 2000
+  },
+  {
+    "id": "item-padded-armor",
+    "name": "Padded Armor",
+    "source": "PHB",
+    "type": "LA",
+    "weight": 8,
+    "value": 500,
+    "ac": 11
+  },
+  {
+    "id": "item-padded-armor",
+    "name": "Padded Armor",
+    "source": "XPHB",
+    "type": "LA|XPHB",
+    "weight": 8,
+    "value": 500,
+    "ac": 11
+  },
+  {
+    "id": "item-painters-supplies",
+    "name": "Painter's Supplies",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 1000
+  },
+  {
+    "id": "item-painters-supplies",
+    "name": "Painter's Supplies",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 1000
+  },
+  {
+    "id": "item-pan-flute",
+    "name": "Pan Flute",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 2,
+    "value": 1200
+  },
+  {
+    "id": "item-pan-flute",
+    "name": "Pan Flute",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 1200
+  },
+  {
+    "id": "item-pike",
+    "name": "Pike",
+    "source": "PHB",
+    "type": "M",
+    "weight": 18,
+    "value": 500,
+    "weaponCategory": "martial",
+    "property": [
+      "H",
+      "R",
+      "2H"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-pike",
+    "name": "Pike",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 18,
+    "value": 500,
+    "weaponCategory": "martial",
+    "property": [
+      "H|XPHB",
+      "R|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-pistol",
+    "name": "Pistol",
+    "source": "DMG",
+    "type": "R",
+    "weight": 3,
+    "value": 25000,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "LD"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-pistol",
+    "name": "Pistol",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 3,
+    "value": 25000,
+    "weaponCategory": "martial",
+    "property": [
+      "A|XPHB",
+      "LD|XPHB"
+    ],
+    "dmg1": "1d10",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-plate-armor",
+    "name": "Plate Armor",
+    "source": "PHB",
+    "type": "HA",
+    "weight": 65,
+    "value": 150000,
+    "ac": 18
+  },
+  {
+    "id": "item-plate-armor",
+    "name": "Plate Armor",
+    "source": "XPHB",
+    "type": "HA|XPHB",
+    "weight": 65,
+    "value": 150000,
+    "ac": 18
+  },
+  {
+    "id": "item-potters-tools",
+    "name": "Potter's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 3,
+    "value": 1000
+  },
+  {
+    "id": "item-potters-tools",
+    "name": "Potter's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 3,
+    "value": 1000
+  },
+  {
+    "id": "item-quarterstaff",
+    "name": "Quarterstaff",
+    "source": "PHB",
+    "type": "M",
+    "weight": 4,
+    "value": 20,
+    "weaponCategory": "simple",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-quarterstaff",
+    "name": "Quarterstaff",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 4,
+    "value": 20,
+    "weaponCategory": "simple",
+    "property": [
+      "V|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-rapier",
+    "name": "Rapier",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 2500,
+    "weaponCategory": "martial",
+    "property": [
+      "F"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-rapier",
+    "name": "Rapier",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 2500,
+    "weaponCategory": "martial",
+    "property": [
+      "F|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-renaissance-bullet",
+    "name": "Renaissance Bullet",
+    "source": "DMG",
+    "type": "AF|DMG",
+    "weight": 0.2,
+    "value": 30
+  },
+  {
+    "id": "item-renaissance-bullets-10",
+    "name": "Renaissance Bullets (10)",
+    "source": "DMG",
+    "type": "AF|DMG",
+    "weight": 2,
+    "value": 300
+  },
+  {
+    "id": "item-revolver",
+    "name": "Revolver",
+    "source": "DMG",
+    "type": "R",
+    "weight": 3,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-revolver",
+    "name": "Revolver",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 3,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-ring-mail",
+    "name": "Ring Mail",
+    "source": "PHB",
+    "type": "HA",
+    "weight": 40,
+    "value": 3000,
+    "ac": 14
+  },
+  {
+    "id": "item-ring-mail",
+    "name": "Ring Mail",
+    "source": "XPHB",
+    "type": "HA|XPHB",
+    "weight": 40,
+    "value": 3000,
+    "ac": 14
+  },
+  {
+    "id": "item-rod",
+    "name": "Rod",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 2,
+    "value": 1000
+  },
+  {
+    "id": "item-rod",
+    "name": "Rod",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 2,
+    "value": 1000
+  },
+  {
+    "id": "item-scale-mail",
+    "name": "Scale Mail",
+    "source": "PHB",
+    "type": "MA",
+    "weight": 45,
+    "value": 5000,
+    "ac": 14
+  },
+  {
+    "id": "item-scale-mail",
+    "name": "Scale Mail",
+    "source": "XPHB",
+    "type": "MA|XPHB",
+    "weight": 45,
+    "value": 5000,
+    "ac": 14
+  },
+  {
+    "id": "item-scimitar",
+    "name": "Scimitar",
+    "source": "PHB",
+    "type": "M",
+    "weight": 3,
+    "value": 2500,
+    "weaponCategory": "martial",
+    "property": [
+      "F",
+      "L"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-scimitar",
+    "name": "Scimitar",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 3,
+    "value": 2500,
+    "weaponCategory": "martial",
+    "property": [
+      "F|XPHB",
+      "L|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-semiautomatic-pistol",
+    "name": "Semiautomatic Pistol",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 3,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG"
+    ],
+    "dmg1": "2d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shawm",
+    "name": "Shawm",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 1,
+    "value": 200
+  },
+  {
+    "id": "item-shawm",
+    "name": "Shawm",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-shawm",
+    "name": "Shawm",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 1,
+    "value": 200
+  },
+  {
+    "id": "item-shield",
+    "name": "Shield",
+    "source": "PHB",
+    "type": "S",
+    "weight": 6,
+    "value": 1000,
+    "ac": 2
+  },
+  {
+    "id": "item-shield",
+    "name": "Shield",
+    "source": "XPHB",
+    "type": "S|XPHB",
+    "weight": 6,
+    "value": 1000,
+    "ac": 2
+  },
+  {
+    "id": "item-shortbow",
+    "name": "Shortbow",
+    "source": "PHB",
+    "type": "R",
+    "weight": 2,
+    "value": 2500,
+    "weaponCategory": "simple",
+    "property": [
+      "A",
+      "2H"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shortbow",
+    "name": "Shortbow",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "weight": 2,
+    "value": 2500,
+    "weaponCategory": "simple",
+    "property": [
+      "A|XPHB",
+      "2H|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shortsword",
+    "name": "Shortsword",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "F",
+      "L"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shortsword",
+    "name": "Shortsword",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 1000,
+    "weaponCategory": "martial",
+    "property": [
+      "F|XPHB",
+      "L|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shotgun",
+    "name": "Shotgun",
+    "source": "DMG",
+    "type": "R",
+    "weight": 7,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|DMG",
+      "RLD",
+      "2H"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-shotgun",
+    "name": "Shotgun",
+    "source": "XDMG",
+    "type": "R|XPHB",
+    "weight": 7,
+    "weaponCategory": "martial",
+    "property": [
+      "AF|XDMG",
+      "RLD|XDMG",
+      "2H|XPHB"
+    ],
+    "dmg1": "2d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-sickle",
+    "name": "Sickle",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 100,
+    "weaponCategory": "simple",
+    "property": [
+      "L"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-sickle",
+    "name": "Sickle",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 100,
+    "weaponCategory": "simple",
+    "property": [
+      "L|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-sling",
+    "name": "Sling",
+    "source": "PHB",
+    "type": "R",
+    "value": 10,
+    "weaponCategory": "simple",
+    "property": [
+      "A"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-sling",
+    "name": "Sling",
+    "source": "XPHB",
+    "type": "R|XPHB",
+    "value": 10,
+    "weaponCategory": "simple",
+    "property": [
+      "A|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-sling-bullet",
+    "name": "Sling Bullet",
+    "source": "PHB",
+    "type": "A",
+    "weight": 0.075,
+    "value": 0.2
+  },
+  {
+    "id": "item-sling-bullet",
+    "name": "Sling Bullet",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 0.075,
+    "value": 0.2
+  },
+  {
+    "id": "item-sling-bullets-20",
+    "name": "Sling Bullets (20)",
+    "source": "PHB",
+    "type": "A",
+    "weight": 1.5,
+    "value": 4
+  },
+  {
+    "id": "item-sling-bullets-20",
+    "name": "Sling Bullets (20)",
+    "source": "XPHB",
+    "type": "A|XPHB",
+    "weight": 1.5,
+    "value": 4
+  },
+  {
+    "id": "item-smiths-tools",
+    "name": "Smith's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 8,
+    "value": 2000
+  },
+  {
+    "id": "item-smiths-tools",
+    "name": "Smith's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 8,
+    "value": 2000
+  },
+  {
+    "id": "item-songhorn",
+    "name": "Songhorn",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-spear",
+    "name": "Spear",
+    "source": "PHB",
+    "type": "M",
+    "weight": 3,
+    "value": 100,
+    "weaponCategory": "simple",
+    "property": [
+      "T",
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-spear",
+    "name": "Spear",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 3,
+    "value": 100,
+    "weaponCategory": "simple",
+    "property": [
+      "T|XPHB",
+      "V|XPHB"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-spiked-armor",
+    "name": "Spiked Armor",
+    "source": "SCAG",
+    "type": "MA",
+    "weight": 45,
+    "value": 7500,
+    "ac": 14
+  },
+  {
+    "id": "item-splint-armor",
+    "name": "Splint Armor",
+    "source": "PHB",
+    "type": "HA",
+    "weight": 60,
+    "value": 20000,
+    "ac": 17
+  },
+  {
+    "id": "item-splint-armor",
+    "name": "Splint Armor",
+    "source": "XPHB",
+    "type": "HA|XPHB",
+    "weight": 60,
+    "value": 20000,
+    "ac": 17
+  },
+  {
+    "id": "item-staff",
+    "name": "Staff",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-staff",
+    "name": "Staff",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-studded-leather-armor",
+    "name": "Studded Leather Armor",
+    "source": "PHB",
+    "type": "LA",
+    "weight": 13,
+    "value": 4500,
+    "ac": 12
+  },
+  {
+    "id": "item-studded-leather-armor",
+    "name": "Studded Leather Armor",
+    "source": "XPHB",
+    "type": "LA|XPHB",
+    "weight": 13,
+    "value": 4500,
+    "ac": 12
+  },
+  {
+    "id": "item-tantan",
+    "name": "Tantan",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-thelarr",
+    "name": "Thelarr",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-tinkers-tools",
+    "name": "Tinker's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 10,
+    "value": 5000
+  },
+  {
+    "id": "item-tinkers-tools",
+    "name": "Tinker's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 10,
+    "value": 5000
+  },
+  {
+    "id": "item-tocken",
+    "name": "Tocken",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-trident",
+    "name": "Trident",
+    "source": "PHB",
+    "type": "M",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "martial",
+    "property": [
+      "T",
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-trident",
+    "name": "Trident",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "martial",
+    "property": [
+      "T|XPHB",
+      "V|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-viol",
+    "name": "Viol",
+    "source": "PHB",
+    "type": "INS",
+    "weight": 1,
+    "value": 3000
+  },
+  {
+    "id": "item-viol",
+    "name": "Viol",
+    "source": "XPHB",
+    "type": "INS|XPHB",
+    "weight": 1,
+    "value": 3000
+  },
+  {
+    "id": "item-wand",
+    "name": "Wand",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 1,
+    "value": 1000
+  },
+  {
+    "id": "item-wand",
+    "name": "Wand",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 1,
+    "value": 1000
+  },
+  {
+    "id": "item-war-pick",
+    "name": "War Pick",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 500,
+    "weaponCategory": "martial",
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-war-pick",
+    "name": "War Pick",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 2,
+    "value": 500,
+    "weaponCategory": "martial",
+    "property": [
+      "V|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-wargong",
+    "name": "Wargong",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-warhammer",
+    "name": "Warhammer",
+    "source": "PHB",
+    "type": "M",
+    "weight": 2,
+    "value": 1500,
+    "weaponCategory": "martial",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-warhammer",
+    "name": "Warhammer",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 5,
+    "value": 1500,
+    "weaponCategory": "martial",
+    "property": [
+      "V|XPHB"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-weavers-tools",
+    "name": "Weaver's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 100
+  },
+  {
+    "id": "item-weavers-tools",
+    "name": "Weaver's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 100
+  },
+  {
+    "id": "item-whip",
+    "name": "Whip",
+    "source": "PHB",
+    "type": "M",
+    "weight": 3,
+    "value": 200,
+    "weaponCategory": "martial",
+    "property": [
+      "F",
+      "R"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-whip",
+    "name": "Whip",
+    "source": "XPHB",
+    "type": "M|XPHB",
+    "weight": 3,
+    "value": 200,
+    "weaponCategory": "martial",
+    "property": [
+      "F|XPHB",
+      "R|XPHB"
+    ],
+    "dmg1": "1d4",
+    "dmgType": "S"
+  },
+  {
+    "id": "item-woodcarvers-tools",
+    "name": "Woodcarver's Tools",
+    "source": "PHB",
+    "type": "AT",
+    "weight": 5,
+    "value": 100
+  },
+  {
+    "id": "item-woodcarvers-tools",
+    "name": "Woodcarver's Tools",
+    "source": "XPHB",
+    "type": "AT|XPHB",
+    "weight": 5,
+    "value": 100
+  },
+  {
+    "id": "item-wooden-staff",
+    "name": "Wooden Staff",
+    "source": "PHB",
+    "type": "SCF",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-wooden-staff",
+    "name": "Wooden Staff",
+    "source": "XPHB",
+    "type": "SCF|XPHB",
+    "weight": 4,
+    "value": 500,
+    "weaponCategory": "simple",
+    "property": [
+      "V"
+    ],
+    "dmg1": "1d6",
+    "dmgType": "B"
+  },
+  {
+    "id": "item-yarting",
+    "name": "Yarting",
+    "source": "FRHoF",
+    "type": "INS|XPHB",
+    "weight": 2,
+    "value": 4000
+  },
+  {
+    "id": "item-yarting",
+    "name": "Yarting",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-yklwa",
+    "name": "Yklwa",
+    "source": "ToA",
+    "type": "M",
+    "weight": 3,
+    "value": 100,
+    "weaponCategory": "simple",
+    "property": [
+      "T"
+    ],
+    "dmg1": "1d8",
+    "dmgType": "P"
+  },
+  {
+    "id": "item-zulkoon",
+    "name": "Zulkoon",
+    "source": "SCAG",
+    "type": "INS"
+  },
+  {
+    "id": "item-backpack",
+    "name": "Backpack",
+    "type": "Gear",
+    "weight": 5,
+    "value": "2 gp"
+  }
+]

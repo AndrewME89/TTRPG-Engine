@@ -1,0 +1,444 @@
+[
+  {
+    "id": "vehicle-apparatus-of-kwalish",
+    "name": "Apparatus of Kwalish",
+    "source": "DMG",
+    "vehicleType": "OBJECT",
+    "size": [
+      "L"
+    ],
+    "ac": 20,
+    "hp": 200,
+    "speed": {
+      "walk": 30,
+      "swim": {
+        "number": 30,
+        "condition": "(or 0 ft. for both if the legs aren't extended)"
+      }
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-apparatus-of-kwalish",
+    "name": "Apparatus of Kwalish",
+    "source": "XDMG",
+    "vehicleType": "OBJECT",
+    "size": [
+      "L"
+    ],
+    "ac": 20,
+    "hp": 200,
+    "speed": {
+      "walk": 30,
+      "swim": {
+        "number": 30,
+        "condition": "(or 0 ft. for both if the legs aren't extended)"
+      }
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-astral-brig",
+    "name": "Astral Brig",
+    "source": "MTF",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-astral-skiff",
+    "name": "Astral Skiff",
+    "source": "MTF",
+    "vehicleType": "SHIP",
+    "size": "H",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-battle-balloon",
+    "name": "Battle Balloon",
+    "source": "AI",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-bombard",
+    "name": "Bombard",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 35
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-damselfly-ship",
+    "name": "Damselfly Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 70
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-demon-grinder",
+    "name": "Demon Grinder",
+    "source": "BGDIA",
+    "vehicleType": "INFWAR",
+    "size": "G",
+    "hp": {
+      "hp": 200,
+      "dt": 10,
+      "mt": 20
+    },
+    "speed": 100,
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-devils-ride",
+    "name": "Devil's Ride",
+    "source": "BGDIA",
+    "vehicleType": "INFWAR",
+    "size": "L",
+    "hp": {
+      "hp": 30,
+      "dt": 5,
+      "mt": 10
+    },
+    "speed": 120,
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-flying-fish-ship",
+    "name": "Flying Fish Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 40
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-galley",
+    "name": "Galley",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-hammerhead-ship",
+    "name": "Hammerhead Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 35
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-keelboat",
+    "name": "Keelboat",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-lamprey-ship",
+    "name": "Lamprey Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 35
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-living-ship",
+    "name": "Living Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 40
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-longship",
+    "name": "Longship",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-lyrandar-air-cruiser",
+    "name": "Lyrandar Air Cruiser",
+    "source": "EFA",
+    "vehicleType": "ELEMENTAL_AIRSHIP",
+    "speed": {
+      "fly": {
+        "number": 100,
+        "condition": "[hover]"
+      },
+      "canHover": true
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-lyrandar-skyskiff",
+    "name": "Lyrandar Skyskiff",
+    "source": "EFA",
+    "vehicleType": "ELEMENTAL_AIRSHIP",
+    "speed": {
+      "fly": {
+        "number": 70,
+        "condition": "[hover]"
+      },
+      "canHover": true
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-mechanical-beholder",
+    "name": "Mechanical Beholder",
+    "source": "AI",
+    "vehicleType": "SHIP",
+    "size": "H",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-nautiloid",
+    "name": "Nautiloid",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 40
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-nightspider",
+    "name": "Nightspider",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 40
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-planar-raider",
+    "name": "Planar Raider",
+    "source": "MTF",
+    "vehicleType": "SHIP",
+    "size": "H",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-rowboat",
+    "name": "Rowboat",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "L",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-sailing-ship",
+    "name": "Sailing Ship",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-scavenger",
+    "name": "Scavenger",
+    "source": "BGDIA",
+    "vehicleType": "INFWAR",
+    "size": "H",
+    "hp": {
+      "hp": 150,
+      "dt": 10,
+      "mt": 20
+    },
+    "speed": 100,
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-scorpion-ship",
+    "name": "Scorpion Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "walk": 30,
+      "fly": 30
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-shrike-ship",
+    "name": "Shrike Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 70
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-space-galleon",
+    "name": "Space Galleon",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 35
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-squid-ship",
+    "name": "Squid Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 30
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-stahlmaster",
+    "name": "Stahlmaster",
+    "source": "DD",
+    "vehicleType": "CREATURE",
+    "size": [
+      "L"
+    ],
+    "ac": [
+      {
+        "ac": 16,
+        "from": [
+          "natural armor"
+        ]
+      }
+    ],
+    "hp": {
+      "average": 67,
+      "formula": "9d10 + 18"
+    },
+    "speed": {
+      "walk": 30
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-star-moth",
+    "name": "Star Moth",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 50
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-strider-airship",
+    "name": "Strider Airship",
+    "source": "EFA",
+    "vehicleType": "ELEMENTAL_AIRSHIP",
+    "speed": {
+      "fly": {
+        "number": 80,
+        "condition": "[hover]"
+      },
+      "canHover": true
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-tashas-creeping-keelboat",
+    "name": "Tasha's Creeping Keelboat",
+    "source": "DitLCoT",
+    "vehicleType": "OBJECT",
+    "size": [
+      "G"
+    ],
+    "speed": {
+      "walk": 20,
+      "swim": {
+        "number": 20,
+        "condition": "(can't travel underwater)"
+      }
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-tormentor",
+    "name": "Tormentor",
+    "source": "BGDIA",
+    "vehicleType": "INFWAR",
+    "size": "H",
+    "hp": {
+      "hp": 60,
+      "dt": 10,
+      "mt": 20
+    },
+    "speed": 100,
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-turtle-ship",
+    "name": "Turtle Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 25,
+      "swim": 25
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-tyrant-ship",
+    "name": "Tyrant Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 40
+    },
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-venatrix",
+    "name": "Venatrix",
+    "source": "VEoR",
+    "vehicleType": "INFWAR",
+    "size": "G",
+    "ac": 19,
+    "hp": {
+      "hp": 200,
+      "dt": 10
+    },
+    "speed": 100,
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-warship",
+    "name": "Warship",
+    "source": "GoS",
+    "vehicleType": "SHIP",
+    "size": "G",
+    "type": "Vehicle"
+  },
+  {
+    "id": "vehicle-wasp-ship",
+    "name": "Wasp Ship",
+    "source": "AAG",
+    "vehicleType": "SPELLJAMMER",
+    "speed": {
+      "fly": 50
+    },
+    "type": "Vehicle"
+  }
+]

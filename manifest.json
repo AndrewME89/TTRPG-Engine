@@ -1,0 +1,10 @@
+{
+  "id": "ttrpg-table",
+  "name": "TTRPG Table",
+  "version": "1.37.0",
+  "minAppVersion": "1.5.0",
+  "description": "TTRPG Table Phase 104: bundled curated map assets for SVG map generation plus faction type selector.",
+  "author": "Andrew Edwards",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
