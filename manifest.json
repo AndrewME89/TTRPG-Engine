@@ -1,9 +1,9 @@
 {
   "id": "ttrpg-table",
   "name": "TTRPG Table",
-  "version": "1.37.0",
+  "version": "1.139.0",
   "minAppVersion": "1.5.0",
-  "description": "TTRPG Table Phase 104: bundled curated map assets for SVG map generation plus faction type selector.",
+  "description": "TTRPG Table Phase 139: fixes Generators & DM Calculators routing and adds campaign-linked Adventure, Quest, and Encounter creation.",
   "author": "Andrew Edwards",
   "authorUrl": "",
   "isDesktopOnly": false

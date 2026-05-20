@@ -10,6 +10,8 @@ The plugin is currently focused on clean layout, stable persistence, saved-conte
 
 ## Current Status
 
+> **Version:** 1.139.0 (Phase 139)
+> 
 > **Development status:** Active early development
 > 
 > **Stability:** Experimental / work-in-progress
