@@ -1,6 +1,5 @@
 :root{
   --ttrpg-leather:#2B241E; --ttrpg-parchment:#F2E8D0; --ttrpg-paper:#fff7e3; --ttrpg-gold:#B48C48; --ttrpg-gold2:#D4AF37; --ttrpg-red:#8C2318; --ttrpg-green:#3A5F41; --ttrpg-blue:#324A5F; --ttrpg-ink:#1A1612; --ttrpg-cream:#E8E0D0; --ttrpg-line:rgba(80,45,18,.28); --ttrpg-radius:14px; --ttrpg-shadow:0 8px 24px rgba(0,0,0,.25);
-  --gap-1: 4px; --gap-2: 8px; --ttrpg-gap-2: 8px; --ttrpg-gap-3: 12px;
 }
 .ttrpg-shell{height:100%;display:flex;flex-direction:column;background:linear-gradient(135deg,var(--ttrpg-leather),#17120e);color:var(--ttrpg-cream);font-family:Georgia, Garamond, serif;overflow:hidden}.ttrpg-shell *{box-sizing:border-box}.ttrpg-topbar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(212,175,55,.35);background:rgba(20,14,10,.92);position:sticky;top:0;z-index:5}.ttrpg-brand{font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ttrpg-gold2);white-space:nowrap}.ttrpg-mode-toggle{display:flex;border:1px solid var(--ttrpg-gold);border-radius:999px;overflow:hidden}.ttrpg-mode-toggle button{border:0;background:transparent;color:var(--ttrpg-cream);padding:6px 10px;font-weight:700}.ttrpg-mode-toggle .is-active{background:var(--ttrpg-gold);color:#1A1612}.ttrpg-search{flex:1;min-width:160px;background:#100c09;color:var(--ttrpg-cream);border:1px solid rgba(212,175,55,.35);border-radius:999px;padding:8px 14px}.ttrpg-body{display:flex;min-height:0;flex:1}.ttrpg-sidebar{width:260px;min-width:220px;padding:12px;background:rgba(13,10,8,.88);border-right:1px solid rgba(212,175,55,.25);overflow:auto}.ttrpg-nav-item{display:flex;width:100%;align-items:center;gap:8px;margin:4px 0;padding:10px 12px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--ttrpg-cream);text-align:left;cursor:pointer}.ttrpg-nav-item:hover,.ttrpg-nav-item.is-active{border-color:rgba(212,175,55,.6);background:rgba(180,140,72,.18);transform:translateY(-1px)}.ttrpg-main{flex:1;overflow:auto;padding:24px;background:radial-gradient(circle at top left,rgba(212,175,55,.10),transparent 35%)}.ttrpg-page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid rgba(180,140,72,.45)}.ttrpg-page-header h1{margin:0;color:var(--ttrpg-gold2);font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em}.ttrpg-muted{color:rgba(232,224,208,.75)}.ttrpg-actions,.ttrpg-card-actions,.ttrpg-modal-buttons{display:flex;gap:8px;flex-wrap:wrap}.ttrpg-btn{border:1px solid rgba(180,140,72,.55);background:rgba(242,232,208,.08);color:var(--ttrpg-cream);padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700}.ttrpg-btn:hover{background:rgba(180,140,72,.22);box-shadow:0 0 0 2px rgba(212,175,55,.14)}.ttrpg-primary{background:linear-gradient(135deg,var(--ttrpg-gold),var(--ttrpg-gold2));color:#1A1612}.ttrpg-danger{border-color:rgba(179,36,36,.65);color:#ffd7d7}.ttrpg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:16px 0}.ttrpg-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin:16px 0}.ttrpg-card,.ttrpg-stat-card{background:linear-gradient(180deg,var(--ttrpg-paper),var(--ttrpg-parchment));color:var(--ttrpg-ink);border:1px solid var(--ttrpg-line);border-radius:var(--ttrpg-radius);box-shadow:var(--ttrpg-shadow);padding:16px;position:relative;overflow:hidden}.ttrpg-card:before,.ttrpg-stat-card:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(112,66,20,.08),transparent,rgba(112,66,20,.06));pointer-events:none}.ttrpg-card-head{display:flex;align-items:center;gap:10px}.ttrpg-card h3{margin:0;color:#704214;font-size:1.1rem}.ttrpg-card-icon{font-size:1.4rem}.ttrpg-card .ttrpg-muted,.ttrpg-stat-card .ttrpg-muted{color:rgba(26,22,18,.72)}.ttrpg-big-number{font-size:2.4rem;line-height:1;color:#8C2318;font-weight:900}.ttrpg-tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.ttrpg-tag{border:1px solid rgba(112,66,20,.35);background:rgba(180,140,72,.18);padding:3px 8px;border-radius:999px;font-size:.8rem}.ttrpg-section-title{margin:28px 0 8px;color:var(--ttrpg-gold2);border-bottom:1px solid rgba(212,175,55,.35);padding-bottom:6px}.ttrpg-empty{text-align:center;border:1px dashed rgba(212,175,55,.45);border-radius:var(--ttrpg-radius);padding:32px;margin:16px 0;background:rgba(242,232,208,.06)}.ttrpg-empty-icon{font-size:2rem}.ttrpg-modal{font-family:Georgia,Garamond,serif}.ttrpg-modal h2{color:#704214;text-transform:uppercase;letter-spacing:.04em}.ttrpg-modal .setting-item{align-items:flex-start}.ttrpg-modal input,.ttrpg-modal textarea,.ttrpg-modal select{width:100%}.ttrpg-textarea{min-height:92px}.ttrpg-generated,.ttrpg-roll-result{white-space:pre-wrap;padding:14px;margin:12px 0;border:1px solid rgba(112,66,20,.25);border-radius:12px;background:rgba(180,140,72,.12);color:#1A1612}.ttrpg-progress{height:10px;background:rgba(0,0,0,.12);border-radius:999px;overflow:hidden;margin:12px 0 18px}.ttrpg-progress-fill{height:100%;background:linear-gradient(90deg,var(--ttrpg-gold),var(--ttrpg-red));}.is-compact .ttrpg-main{padding:12px}.is-compact .ttrpg-card{padding:12px}.is-compact .ttrpg-grid{gap:8px}.is-contrast{--ttrpg-leather:#000;--ttrpg-parchment:#fff6cf;--ttrpg-paper:#fff;--ttrpg-gold:#ffd95a;--ttrpg-gold2:#ffe680;--ttrpg-cream:#fff}.is-wide .ttrpg-grid{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}@media(max-width:800px){.ttrpg-topbar{flex-wrap:wrap}.ttrpg-body{flex-direction:column}.ttrpg-sidebar{width:100%;display:flex;gap:8px;overflow:auto;border-right:0;border-bottom:1px solid rgba(212,175,55,.25)}.ttrpg-nav-item{white-space:nowrap;width:auto}.ttrpg-page-header{flex-direction:column}.ttrpg-main{padding:14px}}
 
@@ -2300,4 +2299,886 @@
 /* Phase 139 — Campaign-linked adventure tools */
 .ttrpg-phase139-link-panel {
   margin-bottom: 1rem;
+}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 140 — Universal Campaign Linking + Relevant Compendium Pickers
+ * -------------------------------------------------------------------------- */
+.ttrpg-phase140-campaign-link,
+.ttrpg-phase140-compendium-picker,
+.ttrpg-phase140-campaign-assets {
+  margin: 0.75rem 0;
+}
+.ttrpg-phase140-upkeep-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.ttrpg-phase140-upkeep-row:first-of-type {
+  border-top: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 141 — Live Combat Theme Cleanup
+ * --------------------------------------------------------------------------
+ * Removes the leftover parchment/gold/red hard-coded live combat styling so
+ * combat cards follow the active Obsidian theme like the rest of the plugin.
+ */
+.ttrpg-live-combat,
+.ttrpg-combat-grid,
+.ttrpg-combat-card,
+.ttrpg-combat-card.is-current-turn,
+.ttrpg-combat-card.is-ko {
+  color: var(--text-normal) !important;
+}
+
+.ttrpg-live-combat {
+  background: var(--background-secondary) !important;
+  border-color: var(--background-modifier-border) !important;
+  box-shadow: none !important;
+}
+
+.ttrpg-live-combat-head {
+  border-bottom-color: var(--background-modifier-border) !important;
+}
+
+.ttrpg-live-title,
+.ttrpg-live-subtitle {
+  color: var(--text-normal) !important;
+}
+
+.ttrpg-combat-card {
+  background: var(--background-primary) !important;
+  color: var(--text-normal) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  box-shadow: none !important;
+}
+
+.ttrpg-combat-card.is-current-turn {
+  border-color: var(--interactive-accent) !important;
+  box-shadow: 0 0 0 1px var(--interactive-accent) !important;
+}
+
+.ttrpg-combat-card.is-ko {
+  opacity: 0.7 !important;
+  filter: none !important;
+}
+
+.ttrpg-combat-card-head h3,
+.ttrpg-combat-card h3,
+.ttrpg-combat-card p,
+.ttrpg-combat-card div:not(.ttrpg-card-actions):not(.ttrpg-tags):not(.ttrpg-tag),
+.ttrpg-combat-card .ttrpg-muted {
+  color: var(--text-normal) !important;
+}
+
+.ttrpg-combat-card .ttrpg-muted,
+.ttrpg-combat-card p {
+  color: var(--text-muted) !important;
+}
+
+.ttrpg-combat-stat {
+  background: var(--background-secondary) !important;
+  border-color: var(--background-modifier-border) !important;
+  color: var(--text-normal) !important;
+}
+
+.ttrpg-combat-stat span {
+  color: var(--text-muted) !important;
+  opacity: 1 !important;
+}
+
+.ttrpg-combat-stat strong {
+  color: var(--text-normal) !important;
+}
+
+.ttrpg-combat-card .ttrpg-tag {
+  background: var(--background-secondary) !important;
+  border-color: var(--background-modifier-border) !important;
+  color: var(--text-muted) !important;
+}
+
+.ttrpg-combat-card .ttrpg-btn,
+.ttrpg-live-controls .ttrpg-btn,
+.ttrpg-combat-hp-controls .ttrpg-btn {
+  background: var(--interactive-normal) !important;
+  color: var(--text-normal) !important;
+  border-color: var(--background-modifier-border) !important;
+}
+
+.ttrpg-combat-card .ttrpg-btn:hover,
+.ttrpg-live-controls .ttrpg-btn:hover,
+.ttrpg-combat-hp-controls .ttrpg-btn:hover {
+  background: var(--interactive-hover) !important;
+}
+
+.ttrpg-live-controls .ttrpg-primary,
+.ttrpg-combat-card .ttrpg-primary {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border-color: var(--interactive-accent) !important;
+}
+
+.ttrpg-live-controls .ttrpg-danger,
+.ttrpg-combat-card .ttrpg-danger {
+  background: var(--background-primary) !important;
+  color: var(--text-error) !important;
+  border-color: var(--text-error) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 142 — Navigation, onboarding, NPC modal and responsive stat boxes
+ * -------------------------------------------------------------------------- */
+.ttrpg-nav-group-label {
+  margin: 14px 10px 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ttrpg-nav-group-rule {
+  margin: 10px 8px 6px;
+  border-top: 1px solid var(--background-modifier-border);
+  height: 1px;
+}
+
+.ttrpg-first-run-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.ttrpg-first-run-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.ttrpg-first-run-copy h2 {
+  margin: 0 0 6px;
+}
+
+.ttrpg-npc-modal .ttrpg-builder-section {
+  margin: 14px 0;
+}
+
+.ttrpg-npc-ability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px 12px;
+  margin: 8px 0 12px;
+}
+
+.ttrpg-npc-ability-grid .setting-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.ttrpg-shell.is-compact .ttrpg-ability-box {
+  clip-path: none !important;
+  border-radius: 14px !important;
+}
+
+@media (max-width: 700px) {
+  .ttrpg-ability-box {
+    clip-path: none !important;
+    border-radius: 14px !important;
+  }
+
+  .ttrpg-first-run-banner {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Phase 144 — Calendar, Divinity, DM Screen, Bastions & full-width heading polish */
+.ttrpg-page-header,
+.ttrpg-full-width-heading,
+.ttrpg-section-title,
+.ttrpg-main > h1,
+.ttrpg-main > h2,
+.ttrpg-main > h3 {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.ttrpg-phase144-dm-screen {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.ttrpg-phase144-dm-panel {
+  width: 100%;
+}
+.ttrpg-phase144-chip-stack,
+.ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.ttrpg-phase144-dm-chip summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+.ttrpg-phase144-quick-actions {
+  margin-bottom: 14px;
+}
+.ttrpg-phase144-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ttrpg-calendar-preview {
+  margin-bottom: 14px;
+}
+.ttrpg-calendar-modal .ttrpg-builder-section,
+.ttrpg-phase144-divinity-section {
+  margin: 14px 0;
+}
+.ttrpg-world-chip-grid.ttrpg-full-width-heading {
+  width: 100%;
+}
+.ttrpg-player-tabs.ttrpg-full-width-heading {
+  width: 100%;
+}
+@media (min-width: 1100px) {
+  .ttrpg-phase144-dm-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 145 — DM Screen Run Action + Campaign Routing Notice
+ * -------------------------------------------------------------------------- */
+.ttrpg-phase145-run-campaign,
+.ttrpg-dm-screen-actions .ttrpg-phase145-run-campaign {
+  background: rgba(179, 36, 36, 0.24) !important;
+  border-color: #B32424 !important;
+  color: #FFD7D7 !important;
+  box-shadow: 0 0 0 1px rgba(179, 36, 36, 0.35), 0 0 18px rgba(179, 36, 36, 0.18) !important;
+}
+.ttrpg-phase145-run-campaign:hover,
+.ttrpg-dm-screen-actions .ttrpg-phase145-run-campaign:hover {
+  background: rgba(179, 36, 36, 0.34) !important;
+  border-color: #D85045 !important;
+  color: #FFFFFF !important;
+}
+.ttrpg-phase145-routing-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 146 — DM layout polish, readable spacing, and 2-column Conditions
+ * -------------------------------------------------------------------------- */
+.ttrpg-main {
+  line-height: 1.45;
+}
+.ttrpg-page-header,
+.ttrpg-section-title,
+.ttrpg-full-width-heading,
+.ttrpg-phase146-full-span {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+.ttrpg-page-header {
+  gap: 18px !important;
+}
+.ttrpg-page-header .ttrpg-actions,
+.ttrpg-dm-screen-actions,
+.ttrpg-phase144-action-grid {
+  align-items: center;
+}
+.ttrpg-card,
+.ttrpg-stat-card {
+  min-width: 0;
+}
+.ttrpg-card p,
+.ttrpg-card li,
+.ttrpg-muted {
+  overflow-wrap: anywhere;
+}
+.ttrpg-dm-screen-title h1 {
+  font-size: clamp(2rem, 3.2vw, 2.8rem) !important;
+  line-height: 1 !important;
+}
+.ttrpg-dm-screen-hero {
+  margin-bottom: 14px !important;
+}
+.ttrpg-phase144-dm-screen,
+.ttrpg-dm-screen.ttrpg-phase144-dm-screen {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(320px, 1fr)) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+.ttrpg-phase144-dm-panel,
+.ttrpg-dm-screen .ttrpg-phase144-dm-panel {
+  grid-column: auto !important;
+  width: 100% !important;
+}
+.ttrpg-phase144-chip-stack,
+.ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack {
+  grid-template-columns: 1fr !important;
+}
+.ttrpg-phase146-conditions-panel,
+.ttrpg-dm-screen .ttrpg-phase146-conditions-panel {
+  grid-column: 1 / -1 !important;
+}
+.ttrpg-phase146-conditions-grid,
+.ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack.ttrpg-phase146-conditions-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(260px, 1fr)) !important;
+  gap: 10px !important;
+}
+.ttrpg-phase144-dm-chip,
+.ttrpg-dm-condition {
+  min-width: 0;
+}
+.ttrpg-phase144-dm-chip summary,
+.ttrpg-dm-condition summary {
+  line-height: 1.35;
+}
+.ttrpg-dm-screen-search-wrap {
+  grid-column: 1 / -1 !important;
+}
+.ttrpg-dm-screen-search-wrap .ttrpg-muted {
+  font-size: 0.9rem;
+}
+@media (max-width: 980px) {
+  .ttrpg-phase144-dm-screen,
+  .ttrpg-dm-screen.ttrpg-phase144-dm-screen {
+    grid-template-columns: 1fr !important;
+  }
+  .ttrpg-phase146-conditions-grid,
+  .ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack.ttrpg-phase146-conditions-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Phase 147 — Full layout rationalisation
+ * -------------------------------------------------------------------------- */
+.ttrpg-phase147-shell,
+.ttrpg-phase147-shell .ttrpg-body,
+.ttrpg-phase147-shell .ttrpg-main {
+  min-width: 0;
+}
+
+.ttrpg-phase147-shell .ttrpg-main,
+.ttrpg-phase147-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 16px;
+  padding-block: 22px;
+}
+
+.ttrpg-phase147-main > * {
+  min-width: 0;
+}
+
+.ttrpg-phase147-main > h1,
+.ttrpg-phase147-main > h2,
+.ttrpg-phase147-main > h3,
+.ttrpg-phase147-main > h4,
+.ttrpg-phase147-main > .ttrpg-page-header,
+.ttrpg-phase147-main > .ttrpg-section-title,
+.ttrpg-phase147-main > .ttrpg-section-block,
+.ttrpg-phase147-main > .ttrpg-phase147-section-block,
+.ttrpg-phase147-main > .ttrpg-first-run-banner,
+.ttrpg-phase147-main > .ttrpg-live-combat,
+.ttrpg-phase147-main > .ttrpg-dm-screen-hero,
+.ttrpg-phase147-main > .ttrpg-dm-screen-search-wrap,
+.ttrpg-phase147-main > .ttrpg-dm-screen,
+.ttrpg-phase147-main > .ttrpg-player-tabs,
+.ttrpg-phase147-main > .ttrpg-player-select {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+
+.ttrpg-phase147-page-header,
+.ttrpg-phase147-shell .ttrpg-page-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+  align-items: start !important;
+  gap: 16px 22px !important;
+  margin-bottom: 0 !important;
+  padding: 0 0 16px !important;
+}
+
+.ttrpg-phase147-header-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ttrpg-phase147-header-copy h1 {
+  margin: 0 !important;
+  line-height: 1.05 !important;
+  max-width: 18ch;
+}
+
+.ttrpg-phase147-existing-subtitle,
+.ttrpg-phase147-helper {
+  max-width: 82ch;
+  margin: 0 !important;
+  line-height: 1.45;
+}
+
+.ttrpg-phase147-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ttrpg-phase147-context-pill {
+  width: fit-content;
+}
+
+.ttrpg-phase147-action-bar,
+.ttrpg-phase147-action-row,
+.ttrpg-phase147-shell .ttrpg-actions,
+.ttrpg-phase147-shell .ttrpg-card-actions,
+.ttrpg-phase147-shell .ttrpg-live-controls,
+.ttrpg-phase147-shell .ttrpg-dm-screen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ttrpg-phase147-action-bar {
+  justify-content: flex-end;
+  align-content: flex-start;
+  max-width: 560px;
+}
+
+.ttrpg-phase147-action-bar .ttrpg-btn,
+.ttrpg-phase147-action-row .ttrpg-btn {
+  min-height: 34px;
+}
+
+.ttrpg-phase147-primary-action,
+.ttrpg-phase147-action-bar .ttrpg-primary {
+  font-size: 0.96rem;
+}
+
+.ttrpg-phase147-card-grid,
+.ttrpg-phase147-shell .ttrpg-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+  gap: 14px !important;
+  align-items: stretch !important;
+  margin: 0 !important;
+}
+
+.ttrpg-phase147-stat-grid,
+.ttrpg-phase147-shell .ttrpg-stat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)) !important;
+  gap: 12px !important;
+  margin: 0 !important;
+}
+
+.ttrpg-phase147-mini-grid,
+.ttrpg-phase147-shell .ttrpg-mini-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+  gap: 12px !important;
+}
+
+.ttrpg-phase147-section-block {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ttrpg-phase147-section-block > .ttrpg-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 0 !important;
+  padding-bottom: 8px !important;
+}
+
+.ttrpg-phase147-section-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  opacity: 0.86;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ttrpg-phase147-section-block > .ttrpg-empty,
+.ttrpg-phase147-section-block > .ttrpg-grid,
+.ttrpg-phase147-section-block > .ttrpg-card,
+.ttrpg-phase147-section-block > .ttrpg-stat-grid {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.ttrpg-phase147-dense-page .ttrpg-phase147-section-block {
+  padding: 12px;
+}
+
+.ttrpg-phase147-dense-page .ttrpg-phase147-section-block .ttrpg-card {
+  min-height: unset;
+}
+
+.ttrpg-phase147-section-library .ttrpg-phase147-card-grid,
+.ttrpg-phase147-dense-page .ttrpg-phase147-section-block .ttrpg-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) !important;
+}
+
+.ttrpg-phase147-section-library .ttrpg-card,
+.ttrpg-phase147-section-rules .ttrpg-card,
+.ttrpg-phase147-section-world .ttrpg-card,
+.ttrpg-phase147-section-geography .ttrpg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ttrpg-phase147-section-library .ttrpg-card .ttrpg-card-actions,
+.ttrpg-phase147-dense-page .ttrpg-card .ttrpg-card-actions {
+  margin-top: auto;
+}
+
+.ttrpg-phase147-surface,
+.ttrpg-phase147-shell .ttrpg-card,
+.ttrpg-phase147-shell .ttrpg-stat-card,
+.ttrpg-phase147-shell .ttrpg-empty {
+  min-width: 0;
+}
+
+.ttrpg-phase147-shell .ttrpg-card p,
+.ttrpg-phase147-shell .ttrpg-card li,
+.ttrpg-phase147-shell .ttrpg-card .ttrpg-muted,
+.ttrpg-phase147-shell .ttrpg-field-value {
+  overflow-wrap: anywhere;
+}
+
+.ttrpg-phase147-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px !important;
+}
+
+.ttrpg-phase147-empty-state h2 {
+  margin: 0;
+}
+
+.ttrpg-phase147-empty-state p {
+  max-width: 62ch;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.ttrpg-phase147-empty-actions {
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.ttrpg-phase147-shell .ttrpg-topbar {
+  gap: 8px 10px;
+  padding-block: 10px;
+}
+
+.ttrpg-phase147-shell .ttrpg-search {
+  min-width: min(100%, 220px);
+}
+
+.ttrpg-phase147-shell .ttrpg-top-action,
+.ttrpg-phase147-shell .ttrpg-topbar > .ttrpg-btn {
+  padding: 7px 10px;
+}
+
+.ttrpg-phase147-shell .ttrpg-sidebar {
+  padding: 10px;
+}
+
+.ttrpg-phase147-shell .ttrpg-nav-group-label {
+  margin: 14px 8px 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.ttrpg-phase147-shell .ttrpg-nav-item {
+  min-height: 36px;
+}
+
+.ttrpg-phase147-shell .ttrpg-dm-screen-hero,
+.ttrpg-phase147-shell .ttrpg-live-combat,
+.ttrpg-phase147-shell .ttrpg-player-tabs,
+.ttrpg-phase147-shell .ttrpg-player-select {
+  margin-bottom: 0 !important;
+}
+
+.ttrpg-phase147-shell .ttrpg-dm-screen.ttrpg-phase144-dm-screen,
+.ttrpg-phase147-shell .ttrpg-phase144-dm-screen {
+  margin-top: 0 !important;
+}
+
+.ttrpg-phase147-shell .ttrpg-phase146-conditions-grid,
+.ttrpg-phase147-shell .ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack.ttrpg-phase146-conditions-grid {
+  grid-template-columns: repeat(2, minmax(min(100%, 260px), 1fr)) !important;
+}
+
+.ttrpg-phase147-shell .ttrpg-modal .setting-item {
+  padding-block: 10px;
+}
+
+.ttrpg-phase147-shell .ttrpg-builder-section,
+.ttrpg-modal .ttrpg-builder-section {
+  display: grid;
+  gap: 10px;
+}
+
+@media (min-width: 1200px) {
+  .ttrpg-phase147-main {
+    gap: 18px;
+  }
+
+  .ttrpg-phase147-section-dashboard .ttrpg-phase147-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .ttrpg-phase147-page-header,
+  .ttrpg-phase147-shell .ttrpg-page-header {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ttrpg-phase147-action-bar {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .ttrpg-phase147-shell .ttrpg-phase146-conditions-grid,
+  .ttrpg-phase147-shell .ttrpg-dm-condition-grid.ttrpg-phase144-chip-stack.ttrpg-phase146-conditions-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .ttrpg-phase147-shell .ttrpg-main,
+  .ttrpg-phase147-main {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .ttrpg-phase147-section-block {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .ttrpg-phase147-section-block > .ttrpg-section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* ==========================================================================
+ * Phase 148 — Layout Rationalisation & Card UX Cleanup
+ * ========================================================================== */
+
+/* ── Type/Category chips beside card titles ─────────────────────────────── */
+
+.ttrpg-phase148-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.ttrpg-phase148-type-chip {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  background: rgba(112, 66, 20, 0.12);
+  border: 1px solid rgba(112, 66, 20, 0.3);
+  border-radius: 999px;
+  color: #704214;
+  white-space: nowrap;
+}
+
+/* ── Hidden system tags ──────────────────────────────────────────────────── */
+
+.ttrpg-phase148-hidden-tag,
+.ttrpg-phase148-hidden-action {
+  display: none !important;
+}
+
+/* ── NPC preview fields ──────────────────────────────────────────────────── */
+
+.ttrpg-phase148-npc-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 0.85rem;
+}
+
+.ttrpg-phase148-npc-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.ttrpg-phase148-npc-label {
+  font-weight: 700;
+  color: #704214;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  min-width: 64px;
+  flex-shrink: 0;
+}
+
+.ttrpg-phase148-npc-value {
+  color: rgba(26, 22, 18, 0.82);
+  flex: 1;
+}
+
+/* ── Campaign card More menu ─────────────────────────────────────────────── */
+
+.ttrpg-phase148-more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.ttrpg-phase148-more-btn {
+  white-space: nowrap;
+}
+
+.ttrpg-phase148-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  background: var(--ttrpg-paper, #f5ead4);
+  border: 1px solid rgba(112, 66, 20, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  padding: 6px;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ttrpg-phase148-more-menu[hidden] {
+  display: none;
+}
+
+.ttrpg-phase148-more-item {
+  background: transparent;
+  border: none;
+  color: var(--ttrpg-ink, #1A1612);
+  padding: 7px 10px;
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ttrpg-phase148-more-item:hover {
+  background: rgba(180, 140, 72, 0.18);
+}
+
+/* ── DM Screen row labels ─────────────────────────────────────────────────── */
+
+.ttrpg-phase148-row-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(212, 175, 55, 0.7);
+  margin-bottom: 4px;
+  padding-top: 2px;
+}
+
+.ttrpg-phase148-filter-label {
+  margin-right: 8px;
+  display: inline-block;
+  align-self: center;
+}
+
+.ttrpg-dm-screen-search-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Quick Navigation helper text ───────────────────────────────────────── */
+
+.ttrpg-phase148-quick-nav-help {
+  font-size: 0.82rem;
+  margin: 4px 0 8px;
+}
+
+/* ── Conditions 2-column (reinforce phase146 class) ─────────────────────── */
+
+.ttrpg-phase148-conditions-two-col {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+@media (max-width: 700px) {
+  .ttrpg-phase148-conditions-two-col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Hybrid Ancestry example card ───────────────────────────────────────── */
+
+.ttrpg-phase148-example-hybrid {
+  opacity: 0.85;
+  border-style: dashed !important;
+}
+
+.ttrpg-phase148-example-note {
+  font-size: 0.78rem;
+  font-style: italic;
+  margin: 6px 0 0;
 }

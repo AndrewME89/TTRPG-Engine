@@ -1,8 +1,8 @@
 const { Plugin, ItemView, Modal, Notice, Setting, normalizePath } = require('obsidian');
 
 const VIEW_TYPE = 'ttrpg-table-main-view';
-const PLUGIN_VERSION = '1.139.0';
-const EXPORT_ROOT = 'TTRPG/Exports';
+const PLUGIN_VERSION = '1.147.0';
+const EXPORT_ROOT = 'Unassigned Campaign/10 Player Packet/Exports';
 
 const NAV = [
   ['dashboard', '🏰', 'Dashboard'],
@@ -23,6 +23,33 @@ const NAV = [
 const ENTITY_LABELS = {
   campaigns: 'Campaign', worlds: 'World', factions: 'Faction', deities: 'Deity', languages: 'Language', cultures: 'Race / Culture', myths: 'Legend / Myth / Rumour', regions: 'Region', settlements: 'Settlement', pois: 'Point of Interest', maps: 'Map', npcs: 'NPC', creatures: 'Creature', adventures: 'Adventure', quests: 'Quest', encounters: 'Encounter', rules: 'Rule', conditions: 'Condition', damageTypes: 'Damage Type', downtime: 'Downtime Activity', projects: 'Project', bastions: 'Bastion / Stronghold', hirelings: 'Hireling', sessions: 'Session Log', milestones: 'Milestone', secrets: 'Secret', handouts: 'Handout', compendium: 'Compendium Entry', homebrew: 'Homebrew Entry', tables: 'Rollable Table'
 };
+
+function createDefaultState() {
+  return {
+    version: PLUGIN_VERSION,
+    mode: 'DM',
+    activeSection: 'dashboard',
+    search: '',
+    activeCampaignId: '',
+    settings: {
+      campaignFolder: 'Unassigned Campaign',
+      exportFolder: EXPORT_ROOT,
+      compact: false,
+      wide: true,
+      highContrast: false,
+      theme: 'Parchment & Leather'
+    },
+    wizardDraft: {},
+    entities: {
+      campaigns: [], worlds: [], factions: [], deities: [], languages: [], cultures: [], myths: [],
+      regions: [], settlements: [], pois: [], maps: [], npcs: [], creatures: [], adventures: [], quests: [], encounters: [],
+      rules: seedRules(), conditions: seedConditions(), damageTypes: seedDamageTypes(), downtime: [], projects: [], bastions: [], hirelings: [],
+      sessions: [], milestones: [], secrets: [], handouts: [], compendium: seedCompendium(), homebrew: [], tables: []
+    },
+    generatorHistory: [],
+    diceHistory: []
+  };
+}
 
 function seedRules() {
   return [
@@ -45,9 +72,10 @@ function seedCompendium() {
   ];
 }
 function uid(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+let __ttrpgSearchSaveTimer = null;
 function persistSearchSilently(plugin) {
-  if (plugin._searchSaveTimer) clearTimeout(plugin._searchSaveTimer);
-  plugin._searchSaveTimer = setTimeout(() => {
+  if (__ttrpgSearchSaveTimer) window.clearTimeout(__ttrpgSearchSaveTimer);
+  __ttrpgSearchSaveTimer = window.setTimeout(() => {
     plugin.state.version = PLUGIN_VERSION;
     plugin.saveData(plugin.state);
   }, 250);
@@ -70,7 +98,7 @@ function safeArray(value) { return Array.isArray(value) ? value : []; }
 function activeCampaign(state) { return safeArray(state.entities.campaigns).find(c => c.id === state.activeCampaignId) || safeArray(state.entities.campaigns)[0]; }
 function slugify(value) { return String(value || 'Untitled').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim().replace(/\s+/g, '-').slice(0, 80) || 'Untitled'; }
 function tagsFromText(value) { return String(value || '').split(',').map(v => v.trim()).filter(Boolean); }
-function matchesSearch(item, query) { if (!query) return true; const q = query.toLowerCase(); const fields = [item.name, item.title, item.summary, item.description, item.notes, item.content, (item.tags || []).join(' ')]; return fields.some(f => f && String(f).toLowerCase().includes(q)); }
+function matchesSearch(item, query) { if (!query) return true; return JSON.stringify(item).toLowerCase().includes(query.toLowerCase()); }
 function moneyText(entry) { return entry && entry.gp ? `${entry.gp} gp` : ''; }
 function modifier(score) { const n = Number(score || 10); return Math.floor((n - 10) / 2); }
 function proficiency(level) { const l = Math.max(1, Number(level || 1)); return Math.ceil(l / 4) + 1; }
@@ -280,6 +308,15 @@ function renderLibrary(main, plugin) {
   ]);
   ['compendium','homebrew','tables'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: '📚' }); });
 }
+function renderPlayerView(main, plugin) {
+  header(main, 'Player View', 'Player-safe summary only. DM-only, secret, and unrevealed content is hidden.', [ { label: 'Back to DM Mode', onClick: async () => { plugin.state.mode = 'DM'; plugin.state.activeSection = 'dashboard'; await plugin.saveState(); } }, { label: 'Export Player Packet', primary: true, onClick: () => exportPlayerSafePacket(plugin) } ]);
+  const g = grid(main);
+  safeArray(plugin.state.entities.campaigns).forEach(c => card(g, c.name, c.summary || c.description || 'Campaign overview.', '📜'));
+  safeArray(plugin.state.entities.quests).filter(q => q.visibility !== 'dm-only' && q.visibility !== 'secret').forEach(q => card(g, q.name || q.title, q.summary || q.objectives || '', '📝'));
+  safeArray(plugin.state.entities.handouts).filter(h => h.visibility !== 'dm-only' && h.visibility !== 'secret').forEach(h => card(g, h.name, h.summary || h.description || '', '📣'));
+  if (!g.children.length) empty(main, 'No player-visible content yet.', 'Reveal quests, handouts, maps, or notes from DM mode.');
+}
+
 class EntityModal extends Modal {
   constructor(app, plugin, key, item) { super(app); this.plugin = plugin; this.key = key; this.item = item || {}; this.values = Object.assign({ id: uid(key), name: '', type: '', status: '', summary: '', description: '', notes: '', tags: [], visibility: 'dm-only' }, this.item); }
   onOpen() { const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} ${ENTITY_LABELS[this.key] || 'Entry'}` });
@@ -436,7 +473,7 @@ class CampaignWizardModal extends Modal {
 }
 function nice(k){ return String(k).replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()); }
 function addText(parent,name,value,onChange){ new Setting(parent).setName(name).addText(t=>t.setValue(String(value ?? '')).onChange(onChange)); }
-function addNumber(parent,name,value,onChange){ new Setting(parent).setName(name).addText(t=>t.setValue(String(value ?? '')).onChange(v=>onChange(v === '' ? '' : (Number(v) || 0)))); }
+function addNumber(parent,name,value,onChange){ new Setting(parent).setName(name).addText(t=>t.setValue(String(value ?? '')).onChange(v=>onChange(Number(v)||0))); }
 function addTextArea(parent,name,value,onChange){ new Setting(parent).setName(name).addTextArea(t=>{ t.setValue(String(value ?? '')).onChange(onChange); t.inputEl.rows=4; t.inputEl.addClass('ttrpg-textarea'); }); }
 function addSelect(parent,name,value,options,onChange){ new Setting(parent).setName(name).addDropdown(d=>{ options.forEach(o=>d.addOption(String(o),String(o))); d.setValue(String(value ?? options[0])); d.onChange(onChange); }); }
 function modalButtons(parent, modal, onSave){ const row=parent.createDiv('ttrpg-modal-buttons'); btn(row,'Cancel','ttrpg-btn',()=>modal.close()); btn(row,'Save','ttrpg-btn ttrpg-primary',onSave); }
@@ -465,6 +502,7 @@ function stripDmBlocks(text){ return String(text).replace(/\[dm-only\][\s\S]*?\[
 async function exportPlayerSafePacket(plugin){ const state=plugin.state; const campaign=activeCampaign(state); const lines=[`# Player Packet${campaign?`: ${campaign.name}`:''}`,'','Generated from TTRPG Table. DM-only and secret plugin entries are excluded.','','## Campaigns']; safeArray(state.entities.campaigns).forEach(c=>lines.push(`- **${c.name}** — ${c.summary||''}`)); lines.push('\n## Visible Quests'); safeArray(state.entities.quests).filter(x=>x.visibility==='player-visible').forEach(q=>lines.push(`- **${q.name}** — ${stripDmBlocks(q.summary||q.objectives||'')}`)); lines.push('\n## Handouts'); safeArray(state.entities.handouts).filter(x=>x.visibility!=='secret'&&x.visibility!=='dm-only').forEach(h=>lines.push(`- **${h.name}** — ${stripDmBlocks(h.summary||h.description||'')}`)); const path=`${state.settings.exportFolder}/player-safe-packet-${new Date().toISOString().slice(0,10)}.md`; await writeFile(plugin,path,lines.join('\n')); new Notice(`Player-safe packet exported: ${path}`); }
 async function scanVisibilityTags(plugin){ const files=plugin.app.vault.getMarkdownFiles(); let count=0; for(const file of files){ const text=await plugin.app.vault.cachedRead(file); if(/\[(dm-only|player-visible|secret|reveal-date)\]/i.test(text)) count++; } new Notice(`Visibility scan complete: ${count} markdown file(s) contain visibility tags.`); }
 
+module.exports = TTRPGTablePlugin;
 
 /* --------------------------------------------------------------------------
  * Phase 62 — Player Mode Completion Pass
@@ -494,7 +532,7 @@ function createDefaultState() {
     search: '',
     activeCampaignId: '',
     settings: {
-      campaignFolder: 'TTRPG/Campaigns',
+      campaignFolder: 'Unassigned Campaign',
       exportFolder: EXPORT_ROOT,
       compact: false,
       wide: true,
@@ -612,7 +650,8 @@ function renderPcSheet(main, plugin, pc) {
   playerPanel(g, 'Equipment & Inventory', '🎒', `${pc.equipment || ''}\n${pc.inventory || ''}\n\nWeight: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0}`.trim());
   playerPanel(g, 'Currency', '💰', `${pc.pp || 0} pp • ${pc.gp || 0} gp • ${pc.ep || 0} ep • ${pc.sp || 0} sp • ${pc.cp || 0} cp`);
   playerPanel(g, 'Background & Personality', '📖', `Background: ${pc.background || '—'}\nPersonality: ${pc.personality || '—'}\nIdeals: ${pc.ideals || '—'}\nBonds: ${pc.bonds || '—'}\nFlaws: ${pc.flaws || '—'}`);
-  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death saves: ${pc.deathSuccesses || 0} success / ${pc.deathFailures || 0} failure\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
+  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death save successes: ${pc.deathSuccesses || 0}
+Death save failures: ${pc.deathFailures || 0}\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
   playerPanel(g, 'Backstory & Personal Notes', '🖋️', `${pc.backstory || ''}\n\n${pc.personalNotes || ''}`.trim() || 'No backstory/personal notes yet.');
   playerPanel(g, 'Private Notes', '🔒', pc.privateSecrets || 'Private player/DM notes can live here.');
 }
@@ -1141,7 +1180,8 @@ renderPcSheet = function renderRulesDrivenPcSheet(main, plugin, pc) {
   playerPanel(g, 'Equipment & Inventory', '🎒', `${pc.equipment || ''}\n${pc.inventory || ''}\n\nWeight: ${pc.carriedWeight || 0}/${pc.encumbranceLimit || 0}`.trim());
   playerPanel(g, 'Currency', '💰', `${pc.pp || 0} pp • ${pc.gp || 0} gp • ${pc.ep || 0} ep • ${pc.sp || 0} sp • ${pc.cp || 0} cp`);
   playerPanel(g, 'Background & Personality', '📖', `Background: ${pc.background || '—'}\nPersonality: ${pc.personality || '—'}\nIdeals: ${pc.ideals || '—'}\nBonds: ${pc.bonds || '—'}\nFlaws: ${pc.flaws || '—'}`);
-  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death saves: ${pc.deathSuccesses || 0} success / ${pc.deathFailures || 0} failure\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
+  playerPanel(g, 'Death Saves / Inspiration / Resources', '❤️', `Death save successes: ${pc.deathSuccesses || 0}
+Death save failures: ${pc.deathFailures || 0}\nInspiration: ${pc.inspiration ? 'Yes' : 'No'}\nHero points: ${pc.heroPoints || 0}\nResources: ${pc.resources || 'None tracked.'}`);
   playerPanel(g, 'Backstory & Personal Notes', '🖋️', `${pc.backstory || ''}\n\n${pc.personalNotes || ''}`.trim() || 'No backstory/personal notes yet.');
   playerPanel(g, 'Private Notes', '🔒', pc.privateSecrets || 'Private player/DM notes can live here.');
 };
@@ -1284,7 +1324,7 @@ function renderCampaignList(main, plugin) {
     { label: 'Launch Campaign Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
     { label: 'Quick Campaign Card', onClick: () => new EntityModal(plugin.app, plugin, 'campaigns').open() }
   ]);
-  itemCards(main, plugin, 'campaigns', { icon: '📚', empty: 'No campaigns yet. Launch the wizard to generate one.' });
+  itemCards(main, plugin, 'campaigns', { icon: '🗂️', empty: 'No campaigns yet. Launch the wizard to generate one.' });
 }
 renderCampaign = function phase64CampaignWizardTab(main, plugin) {
   header(main, 'Campaign Builder Wizard', 'This tab is intentionally clean: create or resume campaign setup from here. Existing campaigns live under the Campaigns tab.', [
@@ -1825,7 +1865,7 @@ attachStableSearch = function phase68AttachStableSearch(search, view, main) {
     else if (view.plugin.state.mode === 'PLAYER') renderPlayerView(main, view.plugin);
     else renderSection(main, view.plugin, view.plugin.state.activeSection || 'dashboard');
     window.setTimeout(() => {
-      try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (e) { console.warn('[TTRPG Table]', e); }
+      try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
     }, 0);
   });
 };
@@ -2664,7 +2704,7 @@ function phase74PortraitSrc(plugin, rawPath) {
   try {
     const file = plugin.app.vault.getAbstractFileByPath(normalizePath(value));
     if (file && plugin.app.vault.getResourcePath) return plugin.app.vault.getResourcePath(file);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (e) {}
   return value;
 }
 function phase74AddPortraitField(parent, plugin, values, label) {
@@ -3011,7 +3051,7 @@ function phase78SplitValues(value) {
 }
 function phase78Slug(value) { return slugify(value || 'Untitled'); }
 function phase78CampaignRoot(plugin, campaign) {
-  return normalizePath(`${plugin.state.settings?.campaignFolder || 'TTRPG/Campaigns'}/${phase78Slug(campaign?.name || 'Campaign')}`);
+  return normalizePath(`${plugin.state.settings?.campaignFolder || 'Unassigned Campaign'}/${phase78Slug(campaign?.name || 'Campaign')}`);
 }
 function phase78Yaml(value) {
   return String(value ?? '').replace(/\n/g, ' ').replace(/:/g, ' -').trim();
@@ -3094,7 +3134,7 @@ async function phase78WriteTemplateNote(plugin, campaign, key, item) {
   return path;
 }
 async function writeEntityNote(plugin, key, item) {
-  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
   const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
   new Notice(`Template note written: ${path}`);
 }
@@ -3553,7 +3593,7 @@ phase78WriteTemplateNote = async function phase80WriteTemplateNote(plugin, campa
 };
 
 writeEntityNote = async function phase80WriteEntityNote(plugin, key, item) {
-  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
   const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
   const storeKey = key || phase80KeyFromMarkdown(path, phase78TemplateFor(key, item, campaign));
   if (storeKey && item?.id) upsert(plugin.state, storeKey, item);
@@ -3569,7 +3609,7 @@ async function phase80SyncLinkedNotes(plugin) {
     for (const key of PHASE80_SYNC_KEYS) {
       for (const item of safeArray(state.entities?.[key])) {
         if (!item || !item.id || !(item.notePath || item.filePath)) continue;
-        await phase78WriteTemplateNote(plugin, activeCampaign(state) || { name: item.campaign || 'Loose Notes', id: item.campaignId || '' }, key, item);
+        await phase78WriteTemplateNote(plugin, activeCampaign(state) || { name: item.campaign || 'Unassigned Campaign', id: item.campaignId || '' }, key, item);
       }
     }
   } catch (error) {
@@ -3756,7 +3796,7 @@ async function phase81ReadPluginJson(plugin, fileName) {
     try {
       const raw = await plugin.app.vault.adapter.read(path);
       return JSON.parse(raw);
-    } catch (e) { console.warn('[TTRPG Table]', e); }
+    } catch (e) {}
   }
   return null;
 }
@@ -3845,7 +3885,7 @@ phase70MapSvg = function phase81MapSvgOverride(entry) {
   return phase81MapSvg(entry || {});
 };
 async function phase81WriteSvgFile(plugin, entry) {
-  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
   const root = phase78CampaignRoot(plugin, campaign);
   const folder = `${root}/02 Geography & Maps/Maps`;
   if (!entry.mapSeed) entry.mapSeed = phase81HashSeed(entry.name || 'map');
@@ -3863,7 +3903,7 @@ function phase81ResourcePath(plugin, path) {
   try {
     const file = plugin.app.vault.getAbstractFileByPath(normalizePath(path || ''));
     if (file && plugin.app.vault.getResourcePath) return plugin.app.vault.getResourcePath(file);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (e) {}
   return '';
 }
 phase70RenderMapPreview = function phase81RenderMapPreview(parent, entry) {
@@ -4541,7 +4581,7 @@ async function phase84ReadAllData(plugin) {
   if (Array.isArray(PHASE70_SPELLS) && PHASE84_DATA.spells.length) PHASE70_SPELLS.splice(0, PHASE70_SPELLS.length, ...PHASE84_DATA.spells.map(phase81NormaliseSpell));
   if (Array.isArray(PHASE70_FEATS) && PHASE84_DATA.feats.length) PHASE70_FEATS.splice(0, PHASE70_FEATS.length, ...PHASE84_DATA.feats.map(phase81NormaliseFeat));
   if (Array.isArray(PHASE70_ITEMS) && PHASE84_DATA.equipment.length) PHASE70_ITEMS.splice(0, PHASE70_ITEMS.length, ...PHASE84_DATA.equipment.map(phase81NormaliseItem));
-  try { phase70EnsureBuiltInCompendium(plugin.state); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { phase70EnsureBuiltInCompendium(plugin.state); } catch (_) {}
 }
 const phase84BaseOnload = TTRPGTablePlugin.prototype.onload;
 TTRPGTablePlugin.prototype.onload = async function phase84Onload() {
@@ -4562,7 +4602,7 @@ attachStableSearch = function phase84StableSearch(search, view, main) {
     else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, view.plugin, 'hybridAncestry');
     else if (state.mode === 'PLAYER') renderPlayerView(main, view.plugin);
     else renderSection(main, view.plugin, state.activeSection || 'dashboard');
-    window.setTimeout(() => { try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (e) { console.warn('[TTRPG Table]', e); } }, 0);
+    window.setTimeout(() => { try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (_) {} }, 0);
   });
 };
 TTRPGMainView.prototype.render = function phase84MainRender() {
@@ -4621,7 +4661,7 @@ NPCModal.prototype.onOpen = function phase84NPCOpenDataDriven() {
   clear(contentEl);
   contentEl.addClass('ttrpg-modal');
   contentEl.createEl('h2', { text: 'Full NPC Builder' });
-  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (_) {}
 
   const basics = contentEl.createDiv('ttrpg-builder-section');
   basics.createEl('h3', { text: 'Identity & Rules Data' });
@@ -5165,7 +5205,7 @@ try {
   if (Array.isArray(PHASE69_GENERATOR_TYPES)) {
     ['Full Blacksmith','Full General Store','Full Inn','Full Tavern','Full Apothecary'].forEach(t => { if (!PHASE69_GENERATOR_TYPES.includes(t)) PHASE69_GENERATOR_TYPES.push(t); });
   }
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (e) {}
 const phase90BaseFullGenerator = phase64FullGenerator;
 phase64FullGenerator = function phase90FullGenerator(type, state) {
   if (/tavern|shop|blacksmith|general store|inn|apothecary/i.test(String(type || ''))) return phase90ShopEntry(type);
@@ -5366,7 +5406,7 @@ try {
     const lib = PHASE82_DM_NAV.find(x => x[0] === 'library'); if (lib) lib[2] = 'Library & Compendium';
   }
   if (ENTITY_LABELS.homebrew) ENTITY_LABELS.homebrew = 'Forge Entry';
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (e) {}
 
 /* --------------------------------------------------------------------------
  * Phase 91 — Randomised Map Generator Upgrade
@@ -5521,7 +5561,7 @@ phase81MapSvg = function phase91Phase81MapSvgOverride(entry) { return phase91Map
 
 // Ensure SVG files are regenerated with the currently assigned seed and type.
 phase81WriteSvgFile = async function phase91WriteSvgFile(plugin, entry) {
-  const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
   const root = phase78CampaignRoot(plugin, campaign);
   const folder = `${root}/02 Geography & Maps/Maps`;
   if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
@@ -6416,7 +6456,7 @@ function phase96SaveButtons(parent, modal, saveKey, saveLabel, compendiumKind) {
 
 NPCModal.prototype.onOpen = function phase96NpcOpenCompendiumLinked() {
   const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.createEl('h2', { text: 'Full NPC Builder' });
-  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { phase74AddPortraitField(contentEl, this.plugin, this.values, 'NPC Portrait Image Path'); } catch (_) {}
   phase96AppendCompendiumPicker(contentEl, this.plugin, this.values, 'npcs', ['npc','humanoid','creature','monster','person','villager','guard','archer','fighter'], comp => { this.values = phase96MergeCompendiumIntoValues(this.values, comp, 'npcs'); this.onOpen(); });
   const basics = contentEl.createDiv('ttrpg-builder-section'); basics.createEl('h3', { text: 'Identity & Rules Data' });
   addText(basics, 'Name', this.values.name || '', v => this.values.name = v);
@@ -6430,7 +6470,7 @@ NPCModal.prototype.onOpen = function phase96NpcOpenCompendiumLinked() {
   btn(stats, 'Roll NPC Stats', 'ttrpg-btn', () => { const rolled = phase76RollAbilityArray(); PC_RULES.abilities.forEach(a => { this.values[a] = rolled.scores[a]; }); this.values.rolledStatsDetail = Object.entries(rolled.detail).map(([a,v]) => `${a.toUpperCase()}: ${this.values[a]} (${v})`).join('\n'); this.onOpen(); });
   if (this.values.rolledStatsDetail) ce(stats, 'pre', 'ttrpg-roll-detail', this.values.rolledStatsDetail);
   const adders = contentEl.createDiv('ttrpg-builder-section'); adders.createEl('h3', { text: 'Data-Driven Adders' });
-  try { phase70AddAppendSelect(adders, 'Add Built-In Item / Equipment', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.onOpen(); }); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { phase70AddAppendSelect(adders, 'Add Built-In Item / Equipment', PHASE70_ITEMS, phase70ItemLabel, item => { this.values.equipment = phase70MergeCsv(this.values.equipment, item.name); this.onOpen(); }); } catch (_) {}
   phase84AppendDataPicker(adders, 'Use Built-In Language', PHASE84_DATA.languages, lang => { this.values.languages = phase70MergeCsv(this.values.languages, lang.name); this.onOpen(); });
   phase84AppendDataPicker(adders, 'Use Built-In Deity / Power', PHASE84_DATA.deities, d => { this.values.deity = d.name; this.values.summary = this.values.summary || `${d.name}${d.pantheon ? ` of the ${d.pantheon} pantheon` : ''}.`; this.onOpen(); });
   const details = contentEl.createDiv('ttrpg-builder-section'); details.createEl('h3', { text: 'Details' });
@@ -6537,7 +6577,7 @@ HybridAncestryModal.prototype.render = function phase96HybridRenderWithCompendiu
 const phase96OldPhase84Refresh = phase84RefreshRuleOptionsFromData;
 phase84RefreshRuleOptionsFromData = function phase96RefreshRuleOptionsWithCompendiumHybrids() {
   phase96OldPhase84Refresh();
-  try { phase83RegisterSavedHybrids(window?.app?.plugins?.plugins?.['ttrpg-table']?.state || {}); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { phase83RegisterSavedHybrids(window?.app?.plugins?.plugins?.['ttrpg-table']?.state || {}); } catch (_) {}
 };
 
 function phase96CanMap(key) { return ['regions','settlements','pois','maps'].includes(key); }
@@ -6705,7 +6745,7 @@ function phase97DisplayText(value, depth = 0) {
 function phase97NiceLabel(key) {
   try {
     if (typeof phase94HumaniseObjectLabel === 'function') return phase94HumaniseObjectLabel(key);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
   return String(key || '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')
@@ -6859,7 +6899,7 @@ itemCards = function phase97ItemCards(parent, plugin, key, opts) {
       try {
         const src = phase74PortraitSrc(plugin, portrait);
         if (src) { const img = c.createEl('img', { cls: 'ttrpg-card-portrait' }); img.src = src; img.alt = `${title} portrait`; img.onerror = () => img.remove(); }
-      } catch (e) { console.warn('[TTRPG Table]', e); }
+      } catch (_) {}
     }
   });
 };
@@ -7015,7 +7055,7 @@ phase80SyncLinkedNotes = async function phase101SyncLinkedNotes(plugin) {
         try {
           await phase78WriteTemplateNote(
             plugin,
-            activeCampaign(state) || { name: item.campaign || 'Loose Notes', id: item.campaignId || '' },
+            activeCampaign(state) || { name: item.campaign || 'Unassigned Campaign', id: item.campaignId || '' },
             key,
             item
           );
@@ -7064,7 +7104,7 @@ function phase102IsUsableMarkdownPath(path) {
   return true;
 }
 function phase102FallbackNotePath(plugin, campaign, key, item) {
-  const root = phase78CampaignRoot(plugin, campaign || activeCampaign(plugin.state) || { name: 'Loose Notes' });
+  const root = phase78CampaignRoot(plugin, campaign || activeCampaign(plugin.state) || { name: 'Unassigned Campaign' });
   const folder = phase78FolderForKey(key, item);
   const filename = `${phase78Slug(item?.name || item?.title || ENTITY_LABELS[key] || key || 'Entry')}.md`;
   return normalizePath(`${root}/${folder}/${filename}`);
@@ -7088,7 +7128,7 @@ async function phase102OpenNote(plugin, path) {
 }
 
 phase78WriteTemplateNote = async function phase102WriteTemplateNote(plugin, campaign, key, item) {
-  const active = campaign || activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+  const active = campaign || activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
   const path = phase102PreferredNotePath(plugin, active, key, item);
   const md = phase78TemplateFor(key, item, active);
   await phase80WriteFile(plugin, path, md);
@@ -7103,7 +7143,7 @@ phase78WriteTemplateNote = async function phase102WriteTemplateNote(plugin, camp
 
 writeEntityNote = async function phase102WriteEntityNote(plugin, key, item) {
   try {
-    const campaign = activeCampaign(plugin.state) || { name: item?.campaign || 'Loose Notes', id: item?.campaignId || '' };
+    const campaign = activeCampaign(plugin.state) || { name: item?.campaign || 'Unassigned Campaign', id: item?.campaignId || '' };
     const path = await phase78WriteTemplateNote(plugin, campaign, key, item);
     const storeKey = key || phase80KeyFromMarkdown(path, phase78TemplateFor(key, item, campaign));
     if (storeKey && item?.id) upsert(plugin.state, storeKey, item);
@@ -7307,7 +7347,7 @@ async function phase104MapSvgWithAssets(plugin, entry) {
 const phase104BaseWriteSvgFile = phase81WriteSvgFile;
 phase81WriteSvgFile = async function phase104WriteAssetBackedSvgFile(plugin, entry) {
   try {
-    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
     const root = phase78CampaignRoot(plugin, campaign);
     const folder = `${root}/02 Geography & Maps/Maps`;
     if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
@@ -7353,7 +7393,7 @@ EntityModal.prototype.onOpen = function phase104FactionModalWithTypeSelector() {
       if (!PHASE104_FACTION_TYPES.includes(this.values.type)) this.values.type = this.values.category || 'Faction';
       this.onOpen();
     });
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
   addText(contentEl, 'Name / Title', this.values.name || this.values.title || '', v => { this.values.name = v; this.values.title = v; });
   addSelect(contentEl, 'Faction Type', this.values.type || this.values.category || 'Faction', PHASE104_FACTION_TYPES, v => { this.values.type = v; this.values.category = v; });
   addSelect(contentEl, 'Visibility', this.values.visibility || 'dm-only', ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
@@ -7560,7 +7600,7 @@ async function phase105MapSvgWithAssets(plugin, entry) {
 
 phase81WriteSvgFile = async function phase105WriteDisciplinedAssetMap(plugin, entry) {
   try {
-    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
     const root = phase78CampaignRoot(plugin, campaign);
     const folder = `${root}/02 Geography & Maps/Maps`;
     if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
@@ -7901,7 +7941,7 @@ async function phase106MapSvgWithAssets(plugin, entry) {
 
 phase81WriteSvgFile = async function phase106WriteStructuredAssetMap(plugin, entry) {
   try {
-    const campaign = activeCampaign(plugin.state) || { name: 'Loose Notes', id: '' };
+    const campaign = activeCampaign(plugin.state) || { name: 'Unassigned Campaign', id: '' };
     const root = phase78CampaignRoot(plugin, campaign);
     const folder = `${root}/02 Geography & Maps/Maps`;
     if (!entry.mapSeed) entry.mapSeed = phase91FreshSeed(entry.name || entry.type || 'map');
@@ -7929,7 +7969,7 @@ phase66GeneratedPreview = function phase106StructuredGeneratedPreview(parent, ge
   phase106BaseGeneratedPreview(parent, generated);
   const entry = generated && generated.entry;
   if (!entry || !(generated.kind === 'maps' || generated.kind === 'settlements' || generated.kind === 'pois' || generated.type === 'Fantasy Map')) return;
-  const plugin = window.app?.plugins?.getPlugin?.('ttrpg-table');
+  const plugin = window.__ttrpgTablePluginInstance;
   if (!plugin) return;
   const preview = parent.createEl('div', { cls: 'ttrpg-map-preview ttrpg-generated-map-preview' });
   preview.createEl('div', { cls: 'ttrpg-muted', text: 'Structured asset map preview' });
@@ -8136,7 +8176,7 @@ try {
     this.state.version = PHASE108_VERSION;
     return phase108BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 110 — Asset-Based Portrait & Token Picker
@@ -8286,16 +8326,16 @@ phase74PortraitSrc = function phase110PortraitSrc(plugin, rawPath) {
   path = phase110NormalPath(path);
   try {
     if (plugin.app.vault.adapter && plugin.app.vault.adapter.getResourcePath) return plugin.app.vault.adapter.getResourcePath(path);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
   try {
     const file = plugin.app.vault.getAbstractFileByPath(path);
     if (file && plugin.app.vault.getResourcePath) return plugin.app.vault.getResourcePath(file);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
   return phase110BasePortraitSrc ? phase110BasePortraitSrc(plugin, value) : value;
 };
 
 function phase110RefreshPortraitPreview(parent, plugin, values) {
-  try { parent.querySelectorAll('.ttrpg-portrait-preview').forEach(el => el.remove()); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { parent.querySelectorAll('.ttrpg-portrait-preview').forEach(el => el.remove()); } catch (_) {}
   const rawPath = values && (values.portraitPath || values.imagePath || values.tokenPath);
   const src = phase74PortraitSrc(plugin, rawPath);
   if (!src) return;
@@ -8541,7 +8581,7 @@ try {
     this.state.version = PHASE110_VERSION;
     return phase110BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 111 — Map Generation Removed
@@ -8560,7 +8600,7 @@ function phase111StripMapGeneratorTypes() {
         if (t.includes('fantasy map') || t.includes('map generator')) PHASE69_GENERATOR_TYPES.splice(i, 1);
       }
     }
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 }
 phase111StripMapGeneratorTypes();
 
@@ -9268,7 +9308,7 @@ try {
     this.state.version = PHASE112_VERSION;
     return phase112BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 114 — Geography Map Maker Priority + Remove Legacy Map Buttons
@@ -9287,7 +9327,7 @@ function phase114NoMapGeneratorTypes() {
         if (t.includes('fantasy map') || t.includes('map generator')) PHASE69_GENERATOR_TYPES.splice(i, 1);
       }
     }
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 }
 phase114NoMapGeneratorTypes();
 
@@ -9350,7 +9390,7 @@ try {
     this.state.version = PHASE114_VERSION;
     return phase114BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 
 /* --------------------------------------------------------------------------
@@ -9370,7 +9410,7 @@ function phase115StripLegacyMapGenerators() {
         if (t.includes('fantasy map') || t.includes('map generator') || t === 'map') PHASE69_GENERATOR_TYPES.splice(i, 1);
       }
     }
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 }
 phase115StripLegacyMapGenerators();
 
@@ -9515,7 +9555,7 @@ renderSection = function phase115RenderSection(main, plugin, section) {
   const normalised = /mapgenerator|map-generator|fantasymap|fantasy-map/i.test(raw) ? 'geography' : raw;
   if (normalised !== raw) {
     plugin.state.activeSection = 'geography';
-    try { plugin.saveState(); } catch (e) { console.warn('[TTRPG Table]', e); }
+    try { plugin.saveState(); } catch (_) {}
   }
   if (normalised === 'geography') return phase115RenderGeography(main, plugin);
   if (normalised === 'generators') return phase115RenderGenerators(main, plugin);
@@ -9536,7 +9576,7 @@ try {
     this.state.version = PHASE115_VERSION;
     return phase115BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 118 — Hard Purge Legacy Map Generator UI
@@ -9741,7 +9781,7 @@ try {
     this.state.version = PHASE118_VERSION;
     return phase118BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 119 — Asset Settings, Top Grid Overlay, Vault Portrait Save
@@ -9805,7 +9845,7 @@ function phase119EnsureMapGridOverlay(modal) {
     if (!overlay) overlay = canvas.createDiv('ttrpg-map-grid-overlay');
     const cell = typeof modal.cellSize === 'function' ? modal.cellSize() : 32;
     overlay.style.setProperty('--ttrpg-map-cell', `${cell}px`);
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 }
 
 const Phase119BaseSettingsModal = SettingsModal;
@@ -9854,7 +9894,7 @@ async function phase119EnsureFolder(plugin, folderPath) {
     current = current ? `${current}/${part}` : part;
     try {
       if (!(await plugin.app.vault.adapter.exists(current))) await plugin.app.vault.createFolder(current);
-    } catch (e) { console.warn('[TTRPG Table]', e); }
+    } catch (_) {}
   }
   return clean;
 }
@@ -9877,12 +9917,12 @@ async function phase119ReadBinary(plugin, rawPath) {
   const raw = String(rawPath || '').trim();
   if (!raw) throw new Error('No portrait path selected.');
   attempts.push(phase110NormalPath(raw));
-  try { attempts.push(decodeURIComponent(raw.replace(/^app:\/\/local\//i, ''))); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { attempts.push(decodeURIComponent(raw.replace(/^app:\/\/local\//i, ''))); } catch (_) {}
   if (raw.startsWith('plugin://')) attempts.push(phase110NormalPath(`${plugin.manifest.dir}/${raw.replace(/^plugin:\/\//, '')}`));
   for (const p of Array.from(new Set(attempts.filter(Boolean)))) {
     try {
       if (await adapter.exists(p)) return await adapter.readBinary(p);
-    } catch (e) { console.warn('[TTRPG Table]', e); }
+    } catch (_) {}
   }
   throw new Error(`Could not read portrait asset: ${raw}`);
 }
@@ -9946,7 +9986,7 @@ try {
     this.state.version = PHASE119_VERSION;
     return phase119BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 120 — Root Asset Folder Structure
@@ -10005,7 +10045,7 @@ async function phase120EnsureAssetFolders(plugin) {
   const settings = phase120ApplyRootAssetFolders(plugin, true);
   const folders = [settings.assetRootFolder, settings.mapAssetFolder, settings.mapBackgroundFolder, settings.portraitAssetFolder, settings.tokenAssetFolder, settings.portraitVaultFolder];
   for (const folder of folders) {
-    try { await phase119EnsureFolder(plugin, folder); } catch (e) { console.warn('[TTRPG Table]', e); }
+    try { await phase119EnsureFolder(plugin, folder); } catch (_) {}
   }
 }
 
@@ -10102,7 +10142,7 @@ try {
     this.state.version = PHASE120_VERSION;
     return phase120BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 121 — Export Tile Maps to Vault PNG
@@ -10269,7 +10309,7 @@ if (typeof MapMakerModal !== 'undefined') {
           exportBtn.dataset.ttrpgExportPng = 'true';
         }
         if (this.statusEl) this.statusEl.setText(`${this.assets.length} map asset${this.assets.length === 1 ? '' : 's'} indexed. PNG exports save to /${this.plugin.state.settings.savedMapFolder}.`);
-      } catch (e) { console.warn('[TTRPG Table]', e); }
+      } catch (_) {}
       return result;
     }
     async exportPngOnly() {
@@ -10346,7 +10386,7 @@ try {
     this.state.version = PHASE121_VERSION;
     return phase121BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 122 — Campaign-Scoped Asset Folder Structure
@@ -10402,7 +10442,7 @@ function phase122CampaignForAssets(plugin) {
 function phase122CampaignRoot(plugin, campaign) {
   const c = campaign || phase122CampaignForAssets(plugin);
   if (c) return normalizePath(phase78CampaignRoot(plugin, c));
-  return 'Loose Notes';
+  return 'Unassigned Campaign';
 }
 
 function phase122AssetRoot(plugin, campaign) {
@@ -10432,10 +10472,10 @@ function phase122ApplyCampaignAssetFolders(plugin, campaign) {
 async function phase122EnsureCampaignFolderTree(plugin, campaign) {
   const root = phase122CampaignRoot(plugin, campaign);
   for (const folder of PHASE122_CAMPAIGN_TOP_FOLDERS) {
-    try { await ensureFolder(plugin, `${root}/${folder}`); } catch (e) { console.warn('[TTRPG Table]', e); }
+    try { await ensureFolder(plugin, `${root}/${folder}`); } catch (_) {}
   }
   for (const folder of PHASE122_ASSET_SUBFOLDERS) {
-    try { await ensureFolder(plugin, `${root}/${folder}`); } catch (e) { console.warn('[TTRPG Table]', e); }
+    try { await ensureFolder(plugin, `${root}/${folder}`); } catch (_) {}
   }
   return root;
 }
@@ -10460,7 +10500,7 @@ phase119EnsureSettings = function phase122EnsureSettings(plugin) {
   if (!plugin.state) plugin.state = createDefaultState();
   plugin.state.settings = Object.assign({
     campaignFolder: '',
-    exportFolder: 'TTRPG/Exports',
+    exportFolder: 'Unassigned Campaign/10 Player Packet/Exports',
     compact: false,
     wide: true,
     highContrast: false,
@@ -10598,7 +10638,7 @@ try {
     this.state.version = PHASE122_VERSION;
     return phase122BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 123 — Dashboard becomes a searchable DM Screen
@@ -10705,7 +10745,7 @@ renderDashboard = function phase123RenderDashboard(main, plugin) {
 
   const searchWrap = ce(main, 'div', 'ttrpg-dm-screen-search-wrap');
   const search = ce(searchWrap, 'input', 'ttrpg-search ttrpg-dm-screen-search');
-  search.placeholder = 'Search the DM Screen: prone, concentration, travel, cover, death save, language…';
+  search.placeholder = 'Search the DM screen: prone, concentration, travel, cover, death saves, language…';
   ce(searchWrap, 'span', 'ttrpg-muted', 'Filters the screen below without changing the global plugin search.');
 
   const screen = ce(main, 'div', 'ttrpg-dm-screen');
@@ -10736,7 +10776,7 @@ renderDashboard = function phase123RenderDashboard(main, plugin) {
   phase123Rule(ac.body, 'Temporary HP', 'Do not add together. Use the highest pool. Lasts until lost or rest/end condition.', 'healing');
   phase123Rule(ac.body, 'Death Saves', '3 successes = stable. 3 failures = dead. Nat 1 = 2 failures. Nat 20 = 1 HP.', 'death');
   phase123Rule(ac.body, 'Concentration', 'Only one concentration spell at a time. Damage forces Con save DC 10 or half damage taken, whichever is higher. Incapacitation breaks it.', 'spell');
-  phase123Rule(ac.body, 'Spell Save DC / Attack', 'Save DC = 8 + proficiency + ability mod + item bonus. Spell attack = d20 + proficiency + ability mod + item bonus.', 'spell');
+  phase123Rule(ac.body, 'Spell Save DC / Attack', 'Save DC = 8 + proficiency + ability modifier + item bonus. Spell attack = d20 + proficiency + ability modifier + item bonus.', 'spell');
   phase123Rule(ac.body, 'Spell Targets & Areas', 'Creature, object, point, cone, cube, cylinder, line, or sphere. Components: V, S, M.', 'spell');
 
   const explore = phase123Panel(screen, 'Exploration & Adventuring', '🗺️');
@@ -10823,7 +10863,7 @@ try {
     this.state.version = PHASE123_VERSION;
     return phase123BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 126 — Wide Portrait & Token Picker
@@ -10850,7 +10890,7 @@ try {
     this.state.version = PHASE126_VERSION;
     return phase126BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 127 — Cleaner Notes, Faction Organisation Types, Shop Menus
@@ -11047,7 +11087,7 @@ try {
     this.state.version = PHASE127_VERSION;
     return phase127BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 128 — Card/Note Output Hard Cleanup
@@ -11229,7 +11269,7 @@ itemCards = function phase128ItemCards(parent, plugin, key, opts) {
           img.alt = `${title} portrait`;
           img.onerror = () => img.remove();
         }
-      } catch (e) { console.warn('[TTRPG Table]', e); }
+      } catch (_) {}
     }
   });
 };
@@ -11285,7 +11325,7 @@ try {
     this.state.version = PHASE128_VERSION;
     return phase128BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 129 — Adventure Module Importer / Runner Foundation
@@ -11635,7 +11675,7 @@ try {
     this.state.version = PHASE129_VERSION;
     return phase129BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 130 — Adventure Encounter Combat Resolution
@@ -11793,7 +11833,7 @@ renderLiveCombatTracker = function phase130RenderLiveCombatTracker(main, plugin)
     Array.from(main.querySelectorAll('.ttrpg-combat-card h3')).forEach(h => {
       if (/\[object Object\]/i.test(String(h.textContent || ''))) h.textContent = String(h.textContent || '').replace(/\[object Object\]/gi, 'Unnamed Combatant');
     });
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 };
 
 try {
@@ -11802,7 +11842,7 @@ try {
     this.state.version = PHASE130_VERSION;
     return phase130BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 131 — DM Party Tracker
@@ -11811,7 +11851,7 @@ try {
  */
 const PHASE131_VERSION = '1.131.0';
 
-try { ENTITY_LABELS.partyMembers = 'Party Member'; } catch (e) { console.warn('[TTRPG Table]', e); }
+try { ENTITY_LABELS.partyMembers = 'Party Member'; } catch (_) {}
 
 function phase131EnsurePartyState(state) {
   if (!state.entities) state.entities = {};
@@ -12166,7 +12206,7 @@ renderDashboard = function phase131RenderDashboard(main, plugin) {
       const action = btn(actionGrid, '🧑‍🤝‍🧑 Party Tracker', 'ttrpg-btn', () => phase123Go(plugin, 'party'));
       action.dataset.phase131PartyAction = 'true';
     }
-  } catch (e) { console.warn('[TTRPG Table]', e); }
+  } catch (_) {}
 };
 
 phase64VisibleNav = function phase131VisibleNav(state) {
@@ -12200,7 +12240,7 @@ try {
     this.state.version = PHASE131_VERSION;
     return phase131BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 132 — Adventure Progress Tracker
@@ -12593,7 +12633,7 @@ try {
     this.state.version = PHASE132_VERSION;
     return phase132BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 
 /* --------------------------------------------------------------------------
@@ -12880,7 +12920,7 @@ try {
     this.state.version = PHASE133_VERSION;
     return phase133BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 134 — Missing Reference Resolver
@@ -13232,7 +13272,7 @@ try {
       }
     }
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 try {
   const phase134BaseRunnerRender = AdventureRunnerModal.prototype.render;
@@ -13255,7 +13295,7 @@ try {
       }
     } catch (err) { console.warn('Phase 134 runner resolver injection failed', err); }
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 try {
   const phase134BaseSaveState = TTRPGTablePlugin.prototype.saveState;
@@ -13263,7 +13303,7 @@ try {
     this.state.version = PHASE134_VERSION;
     return phase134BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 135 — Homebrew Campaign Adventure Export + Wizard Runner
@@ -13280,7 +13320,7 @@ function phase135ListText(value) {
   return String(value || '').split(/\n|,/g).map(s => s.trim()).filter(Boolean);
 }
 function phase135CampaignRoot(plugin, campaign) {
-  try { if (typeof phase122CampaignRoot === 'function') return phase122CampaignRoot(plugin, campaign); } catch (e) { console.warn('[TTRPG Table]', e); }
+  try { if (typeof phase122CampaignRoot === 'function') return phase122CampaignRoot(plugin, campaign); } catch (_) {}
   return campaign?.rootFolder || campaign?.folderPath || phase86CleanFolderName?.(campaign?.name || 'Campaign') || slugify(campaign?.name || 'Campaign');
 }
 function phase135BelongsToCampaign(item, campaign) {
@@ -13706,7 +13746,7 @@ try {
     btn(row, 'Run / Resume', 'ttrpg-btn ttrpg-primary', () => phase135RunCampaign(plugin, campaign));
     btn(row, 'Export Adventure JSON', 'ttrpg-btn', () => phase135OpenExport(plugin, campaign));
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 try {
   const phase135BaseSaveState = TTRPGTablePlugin.prototype.saveState;
@@ -13714,7 +13754,7 @@ try {
     this.state.version = PHASE135_VERSION;
     return phase135BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 
 /* --------------------------------------------------------------------------
@@ -14073,7 +14113,7 @@ try {
     this.state.version = PHASE136_VERSION;
     return phase136BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 137 — Adventure Runner Relevance, Full Campaign Editing, Downtime/Bastions
@@ -14442,7 +14482,7 @@ try {
     this.state.version = PHASE137_VERSION;
     return phase137BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 /* --------------------------------------------------------------------------
  * Phase 138 — Generator & Calculator Expansion
@@ -14488,7 +14528,7 @@ try {
     });
     if (typeof phase115StripLegacyMapGenerators === 'function') phase115StripLegacyMapGenerators();
   }
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 function phase138Pick(list) { return list[Math.floor(Math.random() * list.length)] || list[0]; }
 function phase138RollDie(sides) { return Math.floor(Math.random() * sides) + 1; }
@@ -14766,7 +14806,7 @@ try {
     this.state.version = PHASE138_VERSION;
     return phase138BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 
 /* --------------------------------------------------------------------------
@@ -15015,7 +15055,7 @@ try {
   phase64VisibleNav = function phase139VisibleNav(state) {
     return safeArray(phase139BaseVisibleNav(state)).map(item => item?.[0] === 'generators' ? ['generators', '🎲', 'Generators & Calculators'] : item);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
 try {
   const phase139BaseSaveState = TTRPGTablePlugin.prototype.saveState;
@@ -15023,6 +15063,2474 @@ try {
     this.state.version = PHASE139_VERSION;
     return phase139BaseSaveState.call(this);
   };
-} catch (e) { console.warn('[TTRPG Table]', e); }
+} catch (_) {}
 
-module.exports = TTRPGTablePlugin;
+
+/* --------------------------------------------------------------------------
+ * Phase 140 — Universal Campaign Linking + Relevant Compendium Pickers
+ * --------------------------------------------------------------------------
+ * Makes every campaign-facing record connectable to the active/selected campaign,
+ * shows linked campaign assets in campaign context, and tightens compendium
+ * template pickers so Bastion creation only offers Bastion entries, etc.
+ */
+const PHASE140_VERSION = '1.140.0';
+
+const PHASE140_CAMPAIGN_KEYS = [
+  'adventures','quests','encounters','npcs','creatures','factions','worlds','deities','languages','cultures','myths',
+  'regions','settlements','pois','maps','rules','conditions','damageTypes','downtime','projects','bastions','hirelings',
+  'sessions','milestones','secrets','handouts','playerCharacters','partyMembers','partyNotes','partyInventory',
+  'personalNotes','knownLocations','knownNpcs','playerDowntime','playerProjects','playerRewards','homebrew','tables'
+];
+const PHASE140_PLAYER_SAFE_KEYS = ['bastions','downtime','projects','hirelings','quests','handouts','maps','playerRewards'];
+const PHASE140_CAMPAIGN_RELATION_LABELS = {
+  playerCharacters: 'Player Characters', partyMembers: 'Party Tracker', npcs: 'NPCs', creatures: 'Creatures', factions: 'Factions',
+  adventures: 'Adventures / Chapters', quests: 'Quests', encounters: 'Encounters', secrets: 'Secrets / Reveals', handouts: 'Handouts',
+  maps: 'Maps', downtime: 'Downtime', projects: 'Projects', bastions: 'Player Bastions', hirelings: 'Hirelings', sessions: 'Sessions',
+  milestones: 'Milestones', regions: 'Regions', settlements: 'Settlements', pois: 'Locations / POIs', rules: 'Rules', tables: 'Tables'
+};
+function phase140ActiveCampaign(plugin) {
+  try { return activeCampaign(plugin.state) || safeArray(plugin.state.entities?.campaigns)[0] || null; } catch (_) { return safeArray(plugin.state.entities?.campaigns)[0] || null; }
+}
+function phase140CampaignId(campaign) { return campaign?.id || campaign?.campaignId || ''; }
+function phase140CampaignName(campaign) { return campaign?.name || campaign?.title || 'Campaign'; }
+function phase140BelongsToCampaign(item, campaign) {
+  if (!item || !campaign) return false;
+  const id = phase140CampaignId(campaign);
+  const name = phase140CampaignName(campaign);
+  return String(item.campaignId || item.campaignID || item.campaign_id || '') === String(id)
+    || String(item.campaign || item.campaignName || '') === String(name)
+    || safeArray(item.campaignIds).map(String).includes(String(id));
+}
+function phase140LinkItemToCampaign(item, campaign, role) {
+  if (!item || !campaign) return item;
+  item.campaignId = phase140CampaignId(campaign);
+  item.campaign = phase140CampaignName(campaign);
+  item.campaignName = phase140CampaignName(campaign);
+  item.linkedAt = item.linkedAt || new Date().toISOString();
+  item.campaignRole = role || item.campaignRole || '';
+  item.tags = uniqueList([...(safeArray(item.tags)), 'campaign-linked']);
+  if (role) item.tags = uniqueList([...(safeArray(item.tags)), role]);
+  return item;
+}
+function phase140RoleForKey(key) {
+  if (key === 'bastions') return 'player-bastion';
+  if (key === 'downtime') return 'campaign-downtime';
+  if (key === 'projects') return 'campaign-project';
+  if (key === 'hirelings') return 'campaign-hireling';
+  if (key === 'playerCharacters' || key === 'partyMembers') return 'party-member';
+  if (key === 'quests') return 'campaign-quest';
+  if (key === 'encounters') return 'campaign-encounter';
+  if (key === 'adventures') return 'campaign-adventure';
+  return 'campaign-record';
+}
+function phase140CanAutoLinkKey(key) {
+  return PHASE140_CAMPAIGN_KEYS.includes(key) && key !== 'campaigns' && key !== 'compendium';
+}
+function phase140MaybeAutoLink(state, key, item) {
+  if (!phase140CanAutoLinkKey(key) || !item) return item;
+  const campaign = activeCampaign(state) || safeArray(state.entities?.campaigns)[0];
+  if (!campaign) return item;
+  // Avoid stealing explicitly campaign-linked content away from another campaign.
+  if (item.campaignId || item.campaign || item.campaignName) return item;
+  return phase140LinkItemToCampaign(item, campaign, phase140RoleForKey(key));
+}
+
+try {
+  const phase140BaseUpsert = upsert;
+  upsert = function phase140Upsert(state, key, item) {
+    phase140MaybeAutoLink(state, key, item);
+    return phase140BaseUpsert(state, key, item);
+  };
+} catch (err) { console.warn('Phase 140 upsert campaign-link patch failed', err); }
+
+function phase140CompendiumKindText(entry) {
+  return [entry?.kind, entry?.type, entry?.category, entry?.subtype, entry?.templateType, entry?.name, entry?.title, ...(safeArray(entry?.tags))]
+    .map(x => String(x || '').toLowerCase()).join(' ');
+}
+function phase140CompendiumFilterForKey(key) {
+  const filters = {
+    bastions: /(^|\b)(bastion|stronghold|base|headquarters)(\b|$)/i,
+    downtime: /(^|\b)(downtime|training|crafting|research|carousing|work|recuperat|activity)(\b|$)/i,
+    projects: /(^|\b)(project|crafting|construction|research|upgrade|work order)(\b|$)/i,
+    hirelings: /(^|\b)(hireling|staff|retainer|specialist|servant|crew|employee)(\b|$)/i,
+    encounters: /(^|\b)(encounter|combat|monster|creature|hazard)(\b|$)/i,
+    quests: /(^|\b)(quest|objective|mission|hook|adventure seed)(\b|$)/i,
+    adventures: /(^|\b)(adventure|chapter|scene|module|story beat)(\b|$)/i,
+    npcs: /(^|\b)(npc|nonplayer|non-player|character|villain|ally|patron)(\b|$)/i,
+    creatures: /(^|\b)(creature|monster|beast|undead|fiend|dragon|humanoid)(\b|$)/i,
+    maps: /(^|\b)(map|battlemap|region|location|dungeon|settlement)(\b|$)/i,
+    secrets: /(^|\b)(secret|reveal|twist|clue|rumour|rumor)(\b|$)/i,
+    handouts: /(^|\b)(handout|letter|document|clue|player packet)(\b|$)/i,
+    rules: /(^|\b)(rule|mechanic|condition|optional rule|procedure)(\b|$)/i,
+    tables: /(^|\b)(table|rollable|random table|d\d+)(\b|$)/i,
+  };
+  return filters[key] || null;
+}
+function phase140RelevantCompendium(plugin, key) {
+  const rx = phase140CompendiumFilterForKey(key);
+  const all = safeArray(plugin.state.entities?.compendium);
+  if (!rx) return all;
+  return all.filter(entry => rx.test(phase140CompendiumKindText(entry)));
+}
+function phase140ApplyCompendiumTemplate(values, entry, key) {
+  if (!entry || !values) return;
+  const preservedId = values.id;
+  const preservedCampaign = { campaignId: values.campaignId, campaign: values.campaign, campaignName: values.campaignName };
+  Object.assign(values, JSON.parse(JSON.stringify(entry || {})));
+  values.id = preservedId || uid(key || 'record');
+  values.name = values.name || values.title || entry.name || entry.title || '';
+  values.title = values.title || values.name;
+  values.type = values.type || entry.type || entry.category || nice(key || 'Entry');
+  values.category = values.category || entry.category || entry.type || nice(key || 'Entry');
+  values.compendiumSourceId = entry.id || entry.sourceId || '';
+  values.source = values.source || entry.source || 'Compendium';
+  values.visibility = values.visibility || 'dm-only';
+  values.tags = uniqueList([...(safeArray(values.tags)), ...(safeArray(entry.tags)), 'from-compendium']);
+  Object.assign(values, Object.fromEntries(Object.entries(preservedCampaign).filter(([_, v]) => v)));
+  if (key === 'bastions') {
+    values.type = values.type && /bastion|stronghold|base|headquarters/i.test(values.type) ? values.type : 'Bastion';
+    values.category = 'Player Bastion';
+    values.status = values.status || 'Active';
+    values.upkeepStatus = values.upkeepStatus || 'Requires Review';
+    values.upkeepInterval = values.upkeepInterval || 'Weekly / Between Sessions';
+    values.owner = values.owner || 'Party';
+    values.visibility = values.visibility || 'player-visible';
+    values.tags = uniqueList([...(safeArray(values.tags)), 'bastion', 'player-bastion', 'upkeep']);
+  }
+}
+function phase140CampaignPicker(parent, plugin, values, key) {
+  if (!phase140CanAutoLinkKey(key)) return;
+  const campaigns = safeArray(plugin.state.entities?.campaigns);
+  if (!campaigns.length) return;
+  const active = phase140ActiveCampaign(plugin);
+  if (!values.campaignId && active) phase140LinkItemToCampaign(values, active, phase140RoleForKey(key));
+  const block = ce(parent, 'section', 'ttrpg-card ttrpg-phase140-campaign-link');
+  ce(block, 'h3', '', 'Campaign Link');
+  ce(block, 'p', 'ttrpg-muted', 'This record can be attached to a campaign so it appears in campaign context, runner notes, player packets, and upkeep reminders where relevant.');
+  const current = values.campaignId || active?.id || '';
+  new Setting(block).setName('Linked Campaign').setDesc('Defaults to the active campaign.').addDropdown(d => {
+    d.addOption('', 'No campaign link');
+    campaigns.forEach(c => d.addOption(c.id, phase140CampaignName(c)));
+    d.setValue(String(current || ''));
+    d.onChange(v => {
+      if (!v) { delete values.campaignId; delete values.campaign; delete values.campaignName; return; }
+      const chosen = campaigns.find(c => c.id === v);
+      phase140LinkItemToCampaign(values, chosen, phase140RoleForKey(key));
+    });
+  });
+}
+function phase140RelevantCompendiumPicker(parent, plugin, values, key) {
+  const pool = phase140RelevantCompendium(plugin, key);
+  if (!pool.length) return;
+  const block = ce(parent, 'section', 'ttrpg-card ttrpg-phase140-compendium-picker');
+  ce(block, 'h3', '', 'Relevant Compendium Template');
+  ce(block, 'p', 'ttrpg-muted', key === 'bastions'
+    ? 'Only Bastion / stronghold / base templates are shown here.'
+    : `Only compendium entries relevant to ${ENTITY_LABELS[key] || nice(key)} are shown here.`);
+  let selected = pool[0]?.id || '';
+  new Setting(block).setName('Template').addDropdown(d => {
+    pool.forEach(entry => d.addOption(entry.id, `${entry.name || entry.title || 'Untitled'}${entry.type || entry.category ? ` — ${entry.type || entry.category}` : ''}`));
+    d.setValue(selected);
+    d.onChange(v => selected = v);
+  }).addButton(b => b.setButtonText('Use Template').setCta().onClick(() => {
+    const entry = pool.find(e => e.id === selected);
+    phase140ApplyCompendiumTemplate(values, entry, key);
+    new Notice(`Applied ${entry?.name || entry?.title || 'compendium'} template.`);
+    new Notice('Template applied. Review the fields below or save the record.');
+  }));
+}
+
+try {
+  const phase140BaseEntityOpen = EntityModal.prototype.onOpen;
+  EntityModal.prototype.onOpen = function phase140EntityModalOpen() {
+    phase140MaybeAutoLink(this.plugin.state, this.key, this.values);
+    phase140BaseEntityOpen.call(this);
+    if (phase140CanAutoLinkKey(this.key)) {
+      phase140CampaignPicker(this.contentEl, this.plugin, this.values, this.key);
+      phase140RelevantCompendiumPicker(this.contentEl, this.plugin, this.values, this.key);
+    }
+  };
+} catch (err) { console.warn('Phase 140 EntityModal campaign/compendium patch failed', err); }
+
+// Dedicated Bastion modal: clearer fields, strict Bastion compendium picker, campaign linkage, and upkeep reminders.
+class Phase140BastionModal extends EntityModal {
+  constructor(app, plugin, item) {
+    super(app, plugin, 'bastions', item);
+    this.values = Object.assign({
+      id: uid('bastion'), name: '', type: 'Bastion', category: 'Player Bastion', owner: 'Party', status: 'Active', visibility: 'player-visible',
+      location: '', level: '', facilities: '', defenders: '', staff: '', storage: '', income: '', upkeepCost: '', upkeepInterval: 'Weekly / Between Sessions',
+      upkeepStatus: 'Requires Review', nextUpkeep: '', benefits: '', complications: '', playerNotes: '', dmNotes: '', summary: '', tags: ['bastion','player-bastion','upkeep']
+    }, this.values || {});
+  }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.addClass('ttrpg-wide-modal');
+    contentEl.createEl('h2', { text: `${this.item?.id ? 'Edit' : 'New'} Player Bastion` });
+    phase140MaybeAutoLink(this.plugin.state, 'bastions', this.values);
+    phase140CampaignPicker(contentEl, this.plugin, this.values, 'bastions');
+    phase140RelevantCompendiumPicker(contentEl, this.plugin, this.values, 'bastions');
+    addText(contentEl, 'Bastion Name', this.values.name || this.values.title || '', v => { this.values.name = v; this.values.title = v; });
+    addText(contentEl, 'Owner / Party Member', this.values.owner || 'Party', v => this.values.owner = v);
+    addSelect(contentEl, 'Status', this.values.status || 'Active', ['Active','Under Construction','Damaged','Neglected','Lost','Retired'], v => this.values.status = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility || 'player-visible', ['player-visible','dm-only','secret'], v => this.values.visibility = v);
+    addText(contentEl, 'Location', this.values.location || '', v => this.values.location = v);
+    addText(contentEl, 'Bastion Level / Tier', this.values.level || '', v => this.values.level = v);
+    addTextArea(contentEl, 'Facilities / Rooms', this.values.facilities || '', v => this.values.facilities = v);
+    addTextArea(contentEl, 'Staff / Hirelings / Defenders', this.values.staff || this.values.defenders || '', v => { this.values.staff = v; this.values.defenders = v; });
+    addTextArea(contentEl, 'Benefits / Orders / Features', this.values.benefits || '', v => this.values.benefits = v);
+    addText(contentEl, 'Upkeep Cost', this.values.upkeepCost || '', v => this.values.upkeepCost = v);
+    addText(contentEl, 'Upkeep Interval', this.values.upkeepInterval || '', v => this.values.upkeepInterval = v);
+    addSelect(contentEl, 'Upkeep Status', this.values.upkeepStatus || 'Requires Review', ['Paid / Stable','Requires Review','Overdue','Complication Active','No Upkeep Required'], v => this.values.upkeepStatus = v);
+    addText(contentEl, 'Next Upkeep / Review', this.values.nextUpkeep || '', v => this.values.nextUpkeep = v);
+    addTextArea(contentEl, 'Storage / Treasury', this.values.storage || '', v => this.values.storage = v);
+    addTextArea(contentEl, 'Complications / Threats', this.values.complications || '', v => this.values.complications = v);
+    addTextArea(contentEl, 'Player Notes', this.values.playerNotes || '', v => this.values.playerNotes = v);
+    addTextArea(contentEl, 'DM Notes', this.values.dmNotes || this.values.notes || '', v => { this.values.dmNotes = v; this.values.notes = v; });
+    addText(contentEl, 'Tags', safeArray(this.values.tags).join(', '), v => this.values.tags = uniqueList(tagsFromText(v).concat(['bastion','player-bastion','upkeep'])));
+    modalButtons(contentEl, this, async () => {
+      this.values.type = 'Bastion'; this.values.category = 'Player Bastion';
+      phase140LinkItemToCampaign(this.values, phase140ActiveCampaign(this.plugin), 'player-bastion');
+      upsert(this.plugin.state, 'bastions', this.values);
+      await this.plugin.saveState();
+      new Notice(`Bastion saved and linked to ${this.values.campaign || 'campaign'}.`);
+      this.close();
+    });
+  }
+}
+
+function phase140LinkedItems(plugin, campaign, key) {
+  return safeArray(plugin.state.entities?.[key]).filter(item => phase140BelongsToCampaign(item, campaign));
+}
+function phase140CampaignLinkedSummary(parent, plugin, campaign) {
+  if (!campaign) return;
+  const wrap = ce(parent, 'section', 'ttrpg-card ttrpg-phase140-campaign-assets');
+  ce(wrap, 'h3', '', 'Campaign-Linked Content');
+  ce(wrap, 'p', 'ttrpg-muted', 'Everything created while this campaign is active can be attached here: NPCs, maps, quests, encounters, downtime, bastions, hirelings, handouts, and more.');
+  const g = grid(wrap, 'ttrpg-grid ttrpg-mini-grid');
+  Object.keys(PHASE140_CAMPAIGN_RELATION_LABELS).forEach(key => {
+    const count = phase140LinkedItems(plugin, campaign, key).length;
+    if (!count) return;
+    const c = card(g, PHASE140_CAMPAIGN_RELATION_LABELS[key], `${count} linked`, key === 'bastions' ? '🏰' : key === 'encounters' ? '⚔️' : key === 'quests' ? '📝' : '🔗');
+    phase64CardClick(c, () => phase64SetSection(plugin, phase68SectionForKey ? phase68SectionForKey(key) : 'dashboard'));
+  });
+  if (!g.children.length) ce(wrap, 'p', 'ttrpg-muted', 'No linked content yet. Create something while this campaign is active, or edit an entry and choose this campaign under Campaign Link.');
+  const bastions = phase140LinkedItems(plugin, campaign, 'bastions');
+  if (bastions.length) {
+    ce(wrap, 'h4', '', 'Bastion Upkeep');
+    bastions.slice(0, 8).forEach(b => {
+      const line = ce(wrap, 'div', 'ttrpg-phase140-upkeep-row');
+      ce(line, 'strong', '', b.name || b.title || 'Bastion');
+      ce(line, 'span', 'ttrpg-tag', b.upkeepStatus || 'Requires Review');
+      ce(line, 'span', 'ttrpg-muted', `${b.upkeepCost || 'No cost recorded'} · ${b.nextUpkeep || b.upkeepInterval || 'No schedule recorded'}`);
+      btn(line, 'Open', 'ttrpg-btn', () => new Phase140BastionModal(plugin.app, plugin, b).open());
+    });
+  }
+}
+
+try {
+  const phase140BaseRenderCampaignList = renderCampaignList;
+  renderCampaignList = function phase140RenderCampaignList(main, plugin) {
+    phase140BaseRenderCampaignList(main, plugin);
+    const campaign = phase140ActiveCampaign(plugin);
+    phase140CampaignLinkedSummary(main, plugin, campaign);
+  };
+} catch (err) { console.warn('Phase 140 campaign summary patch failed', err); }
+
+try {
+  const phase140BaseRenderDowntime = renderDowntime;
+  renderDowntime = function phase140RenderDowntime(main, plugin) {
+    header(main, 'Downtime, Bastions & Base Management', 'Campaign-linked downtime, crafting, research, player bastions, strongholds, hirelings, upkeep ledgers, progress clocks, staff, and storage.', [
+      { label: 'Downtime Activity', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'downtime').open() },
+      { label: 'Project / Crafting', onClick: () => new ProjectModal(plugin.app, plugin).open() },
+      { label: 'Player Bastion', onClick: () => new Phase140BastionModal(plugin.app, plugin).open() },
+      { label: 'Hireling', onClick: () => new EntityModal(plugin.app, plugin, 'hirelings').open() }
+    ]);
+    const campaign = phase140ActiveCampaign(plugin);
+    if (campaign) phase140CampaignLinkedSummary(main, plugin, campaign);
+    ['downtime','projects','bastions','hirelings'].forEach(k => { ce(main, 'h2', 'ttrpg-section-title', ENTITY_LABELS[k] + 's'); itemCards(main, plugin, k, { icon: k === 'bastions' ? '🏰' : '⏳' }); });
+  };
+} catch (err) { console.warn('Phase 140 downtime render patch failed', err); }
+
+try {
+  const phase140BasePlayerView = renderPlayerView;
+  renderPlayerView = function phase140RenderPlayerView(main, plugin) {
+    phase140BasePlayerView(main, plugin);
+    const campaign = phase140ActiveCampaign(plugin);
+    const visibleBastions = phase140LinkedItems(plugin, campaign, 'bastions').filter(b => b.visibility === 'player-visible');
+    if (!visibleBastions.length) return;
+    ce(main, 'h2', 'ttrpg-section-title', 'Player Bastions');
+    const g = grid(main);
+    visibleBastions.forEach(b => {
+      const text = [b.summary, b.location ? `Location: ${b.location}` : '', b.upkeepStatus ? `Upkeep: ${b.upkeepStatus}` : '', b.nextUpkeep ? `Next Review: ${b.nextUpkeep}` : '', b.playerNotes].filter(Boolean).join('\n');
+      card(g, b.name || b.title || 'Bastion', text, '🏰');
+    });
+  };
+} catch (err) { console.warn('Phase 140 player bastion patch failed', err); }
+
+// Add a small post-render action to existing Bastion cards so old records open in the richer modal.
+try {
+  const phase140BaseItemCards = itemCards;
+  itemCards = function phase140ItemCards(main, plugin, key, opts = {}) {
+    if (key !== 'bastions') return phase140BaseItemCards(main, plugin, key, opts);
+    const g = grid(main);
+    const items = safeArray(plugin.state.entities?.bastions);
+    if (!items.length) { empty(main, 'No bastions yet.', 'Create a player bastion and link it to the active campaign so upkeep appears in DM and player views.'); return; }
+    items.forEach(item => {
+      const summary = [item.summary, item.campaign ? `Campaign: ${item.campaign}` : '', item.owner ? `Owner: ${item.owner}` : '', item.upkeepStatus ? `Upkeep: ${item.upkeepStatus}` : ''].filter(Boolean).join('\n');
+      const c = card(g, item.name || item.title || 'Bastion', summary, '🏰');
+      phase64CardClick(c, () => new Phase140BastionModal(plugin.app, plugin, item).open());
+      const row = ce(c, 'div', 'ttrpg-card-actions');
+      btn(row, 'Open / Edit', 'ttrpg-btn', () => new Phase140BastionModal(plugin.app, plugin, item).open());
+      const campaign = phase140ActiveCampaign(plugin);
+      if (campaign && !phase140BelongsToCampaign(item, campaign)) btn(row, 'Link Active Campaign', 'ttrpg-btn', async () => { phase140LinkItemToCampaign(item, campaign, 'player-bastion'); await plugin.saveState(); new Notice(`Linked to ${phase140CampaignName(campaign)}.`); });
+    });
+  };
+} catch (err) { console.warn('Phase 140 bastion cards patch failed', err); }
+
+try {
+  const phase140BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase140SaveState() {
+    this.state.version = PHASE140_VERSION;
+    return phase140BaseSaveState.call(this);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 141 cleanup marker
+ * --------------------------------------------------------------------------
+ * Keeps internal save-state versioning aligned with manifest.json after the
+ * live-combat theme cleanup release.
+ */
+const PHASE141_VERSION = '1.141.0';
+
+try {
+  const phase141BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase141SaveState() {
+    this.state.version = PHASE141_VERSION;
+    return phase141BaseSaveState.call(this);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 142 — Navigation, Combat Entry & First-Run UX
+ * --------------------------------------------------------------------------
+ * Cleans sidebar navigation, moves the Campaign Wizard out of the nav model,
+ * improves first-run onboarding, standardises player tabs, sections the NPC
+ * modal, adds setting descriptions, and keeps combatant entry discoverable.
+ */
+const PHASE142_VERSION = '1.142.0';
+
+function phase142PlayerSections() {
+  try { return typeof PHASE88_PLAYER_SECTIONS !== 'undefined' ? PHASE88_PLAYER_SECTIONS : ['player','hybridAncestry']; }
+  catch (_) { return ['player','hybridAncestry']; }
+}
+
+function phase142NormaliseNavItem(item) {
+  if (!item || !Array.isArray(item)) return item;
+  if (item[0] === 'campaignList') return ['campaignList', '🗂️', 'Campaigns'];
+  if (item[0] === 'generators') return ['generators', '🎲', 'Generators & Calculators'];
+  return item;
+}
+
+try {
+  const phase142BaseVisibleNav = phase64VisibleNav;
+  phase64VisibleNav = function phase142VisibleNav(state) {
+    const base = safeArray(phase142BaseVisibleNav(state))
+      .filter(item => item && item[0] !== 'campaign' && !/campaign wizard/i.test(String(item[2] || '')))
+      .map(phase142NormaliseNavItem);
+    return base;
+  };
+} catch (err) { console.warn('Phase 142 nav cleanup failed', err); }
+
+const PHASE142_NAV_GROUPS = [
+  { label: '', ids: ['dashboard'] },
+  { label: 'Campaign', ids: ['campaignList','world','geography'] },
+  { label: 'People & Adventure', ids: ['party','npcs','adventure','combat'] },
+  { label: 'Creation Tools', ids: ['generators','homebrewForge','hybridAncestry','rules'] },
+  { label: 'Campaign Management', ids: ['downtime','sessions','secrets','library'] }
+];
+
+function phase142RenderNavButton(side, state, plugin, id, icon, label) {
+  const text = state.settings.sidebarCollapsed ? icon : `${icon} ${label}`;
+  const item = btn(side, text, `ttrpg-nav-item ${state.activeSection === id ? 'is-active' : ''}`, async () => {
+    state.activeSection = id;
+    state.search = '';
+    await plugin.saveState();
+  });
+  item.dataset.section = id;
+  item.title = label;
+  return item;
+}
+
+function phase142RenderGroupedSidebar(side, state, plugin) {
+  const nav = safeArray(phase64VisibleNav(state));
+  if (state.mode === 'PLAYER') {
+    nav.forEach(([id, icon, label]) => phase142RenderNavButton(side, state, plugin, id, icon, label));
+    return;
+  }
+  const byId = new Map(nav.map(item => [item[0], item]));
+  const used = new Set();
+  PHASE142_NAV_GROUPS.forEach(group => {
+    const items = group.ids.map(id => byId.get(id)).filter(Boolean);
+    if (!items.length) return;
+    if (group.label && !state.settings.sidebarCollapsed) ce(side, 'div', 'ttrpg-nav-group-label', group.label);
+    if (group.label && state.settings.sidebarCollapsed) ce(side, 'div', 'ttrpg-nav-group-rule', '');
+    items.forEach(([id, icon, label]) => {
+      used.add(id);
+      phase142RenderNavButton(side, state, plugin, id, icon, label);
+    });
+  });
+  const leftovers = nav.filter(item => !used.has(item[0]));
+  if (leftovers.length) {
+    if (!state.settings.sidebarCollapsed) ce(side, 'div', 'ttrpg-nav-group-label', 'Other');
+    leftovers.forEach(([id, icon, label]) => phase142RenderNavButton(side, state, plugin, id, icon, label));
+  }
+}
+
+TTRPGMainView.prototype.render = function phase142MainRender() {
+  const root = this.containerEl.children[1]; clear(root);
+  const state = this.plugin.state; phase68EnsureState(state); phase83EnsureState(state);
+  if (state.mode === 'DM' && state.activeSection === 'campaign') state.activeSection = 'campaignList';
+  root.className = `ttrpg-shell ${state.settings.compact ? 'is-compact' : ''} ${state.settings.wide ? 'is-wide' : ''} ${state.settings.highContrast ? 'is-contrast' : ''} ${state.settings.sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${ttrpgClassThemeClass(state)}`;
+  const top = ce(root, 'header', 'ttrpg-topbar');
+  ce(top, 'div', 'ttrpg-brand', '🏰 TTRPG Table');
+  const mode = ce(top, 'div', 'ttrpg-mode-toggle');
+  const playerSections = phase142PlayerSections();
+  btn(mode, 'DM', state.mode === 'DM' ? 'is-active' : '', async () => { state.mode = 'DM'; if (playerSections.includes(state.activeSection)) state.activeSection = 'dashboard'; await this.plugin.saveState(); });
+  btn(mode, 'PLAYER', state.mode === 'PLAYER' ? 'is-active' : '', async () => { state.mode = 'PLAYER'; if (!playerSections.includes(state.activeSection)) state.activeSection = 'player'; await this.plugin.saveState(); });
+  const search = ce(top, 'input', 'ttrpg-search'); search.placeholder = 'Search all entries…'; search.value = state.search || ''; search.title = 'Search saved plugin entries';
+  btn(top, 'Campaign Wizard', 'ttrpg-btn ttrpg-primary ttrpg-top-action', () => new CampaignWizardModal(this.app, this.plugin).open());
+  btn(top, state.settings.compact ? 'Compact: On' : 'Compact', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.compact = !state.settings.compact; await this.plugin.saveState(); });
+  btn(top, state.settings.highContrast ? 'Contrast: On' : 'Contrast', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.highContrast = !state.settings.highContrast; await this.plugin.saveState(); });
+  btn(top, state.settings.sidebarCollapsed ? 'Show Sidebar' : 'Collapse Sidebar', 'ttrpg-btn ttrpg-top-action', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  btn(top, 'Settings', 'ttrpg-btn ttrpg-top-action', () => new SettingsModal(this.app, this.plugin).open());
+  const body = ce(root, 'div', 'ttrpg-body');
+  const side = ce(body, 'aside', 'ttrpg-sidebar');
+  const collapse = btn(side, state.settings.sidebarCollapsed ? '☰' : '☰ Collapse', 'ttrpg-nav-item ttrpg-collapse-control', async () => { state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed; await this.plugin.saveState(); });
+  collapse.title = state.settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  phase142RenderGroupedSidebar(side, state, this.plugin);
+  const main = ce(body, 'main', 'ttrpg-main');
+  attachStableSearch(search, this, main);
+  if (String(state.search || '').trim()) renderGlobalSearch(main, this.plugin);
+  else if (state.mode === 'PLAYER' && state.activeSection === 'hybridAncestry') renderSection(main, this.plugin, 'hybridAncestry');
+  else if (state.mode === 'PLAYER') renderPlayerView(main, this.plugin);
+  else renderSection(main, this.plugin, state.activeSection || 'dashboard');
+};
+
+function phase142FirstRunBanner(main, plugin) {
+  const campaigns = safeArray(plugin.state?.entities?.campaigns);
+  if (campaigns.length) return;
+  if (main.querySelector('[data-phase142-first-run="true"]')) return;
+  const banner = document.createElement('section');
+  banner.className = 'ttrpg-card ttrpg-first-run-banner';
+  banner.dataset.phase142FirstRun = 'true';
+  const icon = ce(banner, 'div', 'ttrpg-first-run-icon', '🏰');
+  const copy = ce(banner, 'div', 'ttrpg-first-run-copy');
+  ce(copy, 'h2', '', 'Welcome to TTRPG Table');
+  ce(copy, 'p', 'ttrpg-muted', 'Start by launching the Campaign Builder Wizard, or create a quick campaign card if you already know what you need.');
+  const actions = ce(banner, 'div', 'ttrpg-card-actions');
+  btn(actions, 'Launch Campaign Wizard', 'ttrpg-btn ttrpg-primary', () => new CampaignWizardModal(plugin.app, plugin).open());
+  btn(actions, 'Create Blank Campaign', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'campaigns').open());
+  if (main.firstChild) main.insertBefore(banner, main.firstChild); else main.appendChild(banner);
+}
+
+try {
+  const phase142BaseRenderDashboard = renderDashboard;
+  renderDashboard = function phase142RenderDashboard(main, plugin) {
+    phase142BaseRenderDashboard(main, plugin);
+    phase142FirstRunBanner(main, plugin);
+  };
+} catch (err) { console.warn('Phase 142 dashboard onboarding failed', err); }
+
+try {
+  const phase142BaseRenderCampaignList = renderCampaignList;
+  renderCampaignList = function phase142RenderCampaignList(main, plugin) {
+    phase142BaseRenderCampaignList(main, plugin);
+    const emptyBox = main.querySelector('.ttrpg-empty');
+    if (emptyBox && !emptyBox.querySelector('[data-phase142-wizard-empty="true"]')) {
+      const row = ce(emptyBox, 'div', 'ttrpg-card-actions');
+      const b = btn(row, 'Launch Campaign Wizard', 'ttrpg-btn ttrpg-primary', () => new CampaignWizardModal(plugin.app, plugin).open());
+      b.dataset.phase142WizardEmpty = 'true';
+    }
+  };
+} catch (err) { console.warn('Phase 142 campaign list onboarding failed', err); }
+
+renderPlayerTabs = function phase142RenderPlayerTabs(main, plugin) {
+  const tabs = [
+    ['sheet','📋 Sheet'], ['campaign','🗺️ Campaign'], ['tools','🎲 Tools'], ['journal','📓 Journal'], ['party','👥 Party'], ['export','📤 Export']
+  ];
+  const wrap = ce(main, 'div', 'ttrpg-player-tabs');
+  tabs.forEach(([id,label]) => btn(wrap, label, `ttrpg-player-tab ${plugin.state.activePlayerTab === id ? 'is-active' : ''}`, async () => { plugin.state.activePlayerTab = id; await plugin.saveState(); }));
+};
+
+function phase142Section(parent, title, desc) {
+  const section = ce(parent, 'section', 'ttrpg-builder-section ttrpg-npc-section');
+  ce(section, 'h3', '', title);
+  if (desc) ce(section, 'p', 'ttrpg-muted', desc);
+  return section;
+}
+
+try {
+  const Phase142BaseNPCModal = NPCModal;
+  NPCModal = class Phase142NPCModal extends Phase142BaseNPCModal {
+    onOpen() {
+      const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal'); contentEl.addClass('ttrpg-npc-modal');
+      contentEl.createEl('h2', { text: 'Full NPC Builder' });
+      const identity = phase142Section(contentEl, '1. Identity', 'Core identity, role, table status, and starting attitude.');
+      addText(identity,'Name',this.values.name,v=>this.values.name=v);
+      addText(identity,'Race / Ancestry',this.values.race,v=>this.values.race=v);
+      addText(identity,'Role / Job / Rank',this.values.role,v=>this.values.role=v);
+      addSelect(identity,'Status',this.values.status,['Alive','Dead','Missing','Captured','Retired'],v=>this.values.status=v);
+      addSelect(identity,'Starting / Current Attitude',this.values.attitude,['Friendly','Indifferent','Hostile'],v=>this.values.attitude=v);
+
+      const combat = phase142Section(contentEl, '2. Combat', 'Table-facing stats, attacks, spells, and equipment.');
+      addNumber(combat,'AC',this.values.ac,v=>this.values.ac=v);
+      addNumber(combat,'HP',this.values.hp,v=>this.values.hp=v);
+      addText(combat,'Speed',this.values.speed,v=>this.values.speed=v);
+      const abilityGrid = ce(combat, 'div', 'ttrpg-npc-ability-grid');
+      ['str','dex','con','int','wis','cha'].forEach(a=>addNumber(abilityGrid,`${a.toUpperCase()} (${modifier(this.values[a]) >= 0 ? '+' : ''}${modifier(this.values[a])})`,this.values[a],v=>this.values[a]=v));
+      ['attacks','spells','equipment'].forEach(f=>addTextArea(combat, nice(f), this.values[f] || '', v=>this.values[f]=v));
+
+      const personality = phase142Section(contentEl, '3. Personality', 'Voice, appearance, behaviour hooks, and roleplay texture.');
+      ['voice','appearance','traits','ideals','bonds','flaws','quirks'].forEach(f=>addTextArea(personality, nice(f), this.values[f] || '', v=>this.values[f]=v));
+
+      const story = phase142Section(contentEl, '4. Story', 'Motivations, secrets, relationships, dialogue, and schedule notes.');
+      ['motives','relationships','dialogue','schedule','secrets'].forEach(f=>addTextArea(story, nice(f), this.values[f] || '', v=>this.values[f]=v));
+      addText(contentEl,'Tags', (this.values.tags||[]).join(', '), v=>this.values.tags=tagsFromText(v));
+      modalButtons(contentEl,this,async()=>{ upsert(this.plugin.state,'npcs',this.values); await this.plugin.saveState(); new Notice('NPC saved.'); this.close(); });
+    }
+  };
+} catch (err) { console.warn('Phase 142 NPC modal sectioning failed', err); }
+
+function phase142AddText(parent, name, desc, value, onChange) {
+  new Setting(parent).setName(name).setDesc(desc).addText(t=>t.setValue(String(value ?? '')).onChange(onChange));
+}
+function phase142AddSelect(parent, name, desc, value, options, onChange) {
+  new Setting(parent).setName(name).setDesc(desc).addDropdown(d=>{ options.forEach(o=>d.addOption(String(o),String(o))); d.setValue(String(value ?? options[0])); d.onChange(onChange); });
+}
+
+try {
+  SettingsModal = class Phase142SettingsModal extends Modal {
+    constructor(app, plugin){ super(app); this.plugin=plugin; this.values=Object.assign({}, plugin.state.settings); }
+    onOpen(){
+      const {contentEl}=this; clear(contentEl); contentEl.addClass('ttrpg-modal');
+      contentEl.createEl('h2',{text:'TTRPG Table Settings'});
+      phase142AddText(contentEl,'Campaign folder','Default location for campaign notes and generated campaign material.',this.values.campaignFolder,v=>this.values.campaignFolder=v);
+      phase142AddText(contentEl,'Export folder','Where player packets, markdown exports, and generated handouts are written.',this.values.exportFolder,v=>this.values.exportFolder=v);
+      phase142AddSelect(contentEl,'Compact Mode','Tightens spacing for smaller panes or busy vault layouts.',String(this.values.compact),['false','true'],v=>this.values.compact=v==='true');
+      phase142AddSelect(contentEl,'Wide Dashboard','Lets dashboard panels use more horizontal room when Obsidian has space.',String(this.values.wide),['true','false'],v=>this.values.wide=v==='true');
+      phase142AddSelect(contentEl,'High Contrast','Boosts contrast for readability and theme compatibility.',String(this.values.highContrast),['false','true'],v=>this.values.highContrast=v==='true');
+      phase142AddSelect(contentEl,'Sidebar starts collapsed','Keeps the left navigation compact until expanded.',String(this.values.sidebarCollapsed || false),['false','true'],v=>this.values.sidebarCollapsed=v==='true');
+      modalButtons(contentEl,this,async()=>{ this.plugin.state.settings=Object.assign(this.plugin.state.settings,this.values); await this.plugin.saveState(); new Notice('Settings saved.'); this.close(); });
+    }
+  };
+} catch (err) { console.warn('Phase 142 settings modal failed', err); }
+
+function phase142EnsureManualCombatButton(main, plugin) {
+  const controls = main.querySelector('.ttrpg-live-controls');
+  if (!controls) return;
+  const existing = Array.from(controls.querySelectorAll('button')).find(b => /combatant/i.test(String(b.textContent || '')));
+  if (existing) { existing.textContent = '+ Combatant'; return; }
+  const b = btn(controls, '+ Combatant', 'ttrpg-btn', () => new CombatantModal(plugin.app, plugin).open());
+  controls.insertBefore(b, controls.firstChild || null);
+}
+
+try {
+  const phase142BaseRenderCombat = renderCombat;
+  renderCombat = function phase142RenderCombat(main, plugin) {
+    phase142BaseRenderCombat(main, plugin);
+    phase142EnsureManualCombatButton(main, plugin);
+  };
+} catch (err) { console.warn('Phase 142 combat add button failed', err); }
+
+try {
+  const phase142BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase142SaveState() {
+    await phase142BaseSaveState.call(this);
+    this.state.version = PHASE142_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 143 — QA, Regression & Combat Validation
+ * --------------------------------------------------------------------------
+ * Hardening pass for Phase 142: validates that navigation, Campaign Wizard
+ * launch paths, first-run onboarding, combat entry, settings persistence,
+ * Player Mode tabs, compact ability boxes, search, and legacy map-generator
+ * suppression all remain stable after the navigation/combat UX changes.
+ */
+const PHASE143_VERSION = '1.143.0';
+
+function phase143OpenCampaignWizard(plugin) {
+  return new CampaignWizardModal(plugin.app, plugin).open();
+}
+
+function phase143NormaliseNavItem(item) {
+  if (!item || !Array.isArray(item)) return item;
+  if (item[0] === 'campaign' || /campaign wizard/i.test(String(item[2] || ''))) return null;
+  if (item[0] === 'campaignList') return ['campaignList', '🗂️', 'Campaigns'];
+  if (item[0] === 'generators') return ['generators', '🎲', 'Generators & Calculators'];
+  return item;
+}
+
+try {
+  const phase143BaseVisibleNav = phase64VisibleNav;
+  phase64VisibleNav = function phase143VisibleNav(state) {
+    const base = safeArray(phase143BaseVisibleNav(state));
+    const out = [];
+    const seen = new Set();
+    base.forEach(item => {
+      const cleaned = phase143NormaliseNavItem(item);
+      if (!cleaned || !cleaned[0] || seen.has(cleaned[0])) return;
+      seen.add(cleaned[0]);
+      out.push(cleaned);
+    });
+    return out;
+  };
+} catch (err) { console.warn('Phase 143 nav validation patch failed', err); }
+
+function phase143ReplaceWizardButtons(root, plugin) {
+  if (!root || !root.querySelectorAll) return;
+  try {
+    Array.from(root.querySelectorAll('button')).forEach((button) => {
+      const label = String(button.textContent || '').trim();
+      if (!/^launch campaign wizard$/i.test(label) && !/^campaign wizard$/i.test(label)) return;
+      if (button.dataset.phase143WizardLaunch === 'true') return;
+      const clone = button.cloneNode(true);
+      clone.dataset.phase143WizardLaunch = 'true';
+      clone.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        phase143OpenCampaignWizard(plugin);
+      });
+      button.replaceWith(clone);
+    });
+  } catch (err) { console.warn('Phase 143 Campaign Wizard launch validation failed', err); }
+}
+
+try {
+  const phase143BaseRenderCampaignList = renderCampaignList;
+  renderCampaignList = function phase143RenderCampaignList(main, plugin) {
+    phase143BaseRenderCampaignList(main, plugin);
+    phase143ReplaceWizardButtons(main, plugin);
+  };
+} catch (err) { console.warn('Phase 143 Campaigns page validation failed', err); }
+
+function phase143LegacyMapText(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return t === 'generate / regenerate svg map'
+    || t === 'generate map'
+    || t === 'regenerate map'
+    || t === 'save location + svg map'
+    || t === 'save + generate map'
+    || t === 'fantasy map'
+    || t === 'fantasy map generator'
+    || t === 'd&d map generator';
+}
+
+function phase143RemoveLegacyMapGeneratorUi(root) {
+  if (!root || !root.querySelectorAll) return;
+  try {
+    Array.from(root.querySelectorAll('button, option')).forEach(el => {
+      if (phase143LegacyMapText(el.textContent)) el.remove();
+    });
+    Array.from(root.querySelectorAll('.ttrpg-card, section, .ttrpg-generated-preview')).forEach(el => {
+      const text = String(el.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+      if (text.includes('generate / regenerate svg map') || text.includes('save location + svg map') || text.includes('fantasy map generator')) el.remove();
+    });
+  } catch (err) { console.warn('Phase 143 legacy map-generator validation failed', err); }
+}
+
+function phase143EnsureCombatButton(main, plugin) {
+  const controls = main?.querySelector?.('.ttrpg-live-controls');
+  if (!controls) return;
+  const existing = Array.from(controls.querySelectorAll('button')).find(b => /combatant/i.test(String(b.textContent || '')));
+  if (existing) {
+    existing.textContent = '+ Combatant';
+    existing.title = 'Add a manual combatant to the live tracker';
+    return;
+  }
+  const b = btn(controls, '+ Combatant', 'ttrpg-btn', () => new CombatantModal(plugin.app, plugin).open());
+  b.title = 'Add a manual combatant to the live tracker';
+  controls.insertBefore(b, controls.firstChild || null);
+}
+
+try {
+  const phase143BaseRenderCombat = renderCombat;
+  renderCombat = function phase143RenderCombat(main, plugin) {
+    phase143BaseRenderCombat(main, plugin);
+    phase143EnsureCombatButton(main, plugin);
+  };
+} catch (err) { console.warn('Phase 143 combat validation patch failed', err); }
+
+function phase143PostRender(view) {
+  try {
+    const root = view.containerEl?.children?.[1];
+    if (!root) return;
+    const state = view.plugin.state || {};
+    if (state.mode === 'DM' && state.activeSection === 'campaign') state.activeSection = 'campaignList';
+    phase143ReplaceWizardButtons(root, view.plugin);
+    phase143RemoveLegacyMapGeneratorUi(root);
+  } catch (err) { console.warn('Phase 143 post-render validation failed', err); }
+}
+
+try {
+  const phase143BaseMainRender = TTRPGMainView.prototype.render;
+  TTRPGMainView.prototype.render = function phase143MainRender() {
+    const result = phase143BaseMainRender.call(this);
+    phase143PostRender(this);
+    return result;
+  };
+} catch (err) { console.warn('Phase 143 render validation patch failed', err); }
+
+try {
+  const phase143BaseOnload = TTRPGTablePlugin.prototype.onload;
+  TTRPGTablePlugin.prototype.onload = async function phase143Onload() {
+    await phase143BaseOnload.call(this);
+    if (!this.state.settings) this.state.settings = {};
+    if (typeof this.state.settings.sidebarCollapsed !== 'boolean') this.state.settings.sidebarCollapsed = false;
+    if (this.state.mode === 'DM' && this.state.activeSection === 'campaign') this.state.activeSection = 'campaignList';
+    this.state.version = PHASE143_VERSION;
+  };
+
+  const phase143BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase143SaveState() {
+    if (!this.state.settings) this.state.settings = {};
+    if (typeof this.state.settings.sidebarCollapsed !== 'boolean') this.state.settings.sidebarCollapsed = false;
+    if (this.state.mode === 'DM' && this.state.activeSection === 'campaign') this.state.activeSection = 'campaignList';
+    this.state.version = PHASE143_VERSION;
+    await phase143BaseSaveState.call(this);
+    this.state.version = PHASE143_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 144 — Calendar, Compendium Delete, Divinity, DM Screen & Bastions
+ * --------------------------------------------------------------------------
+ * Adds richer calendar creation, explicit compendium deletion, divinity/fey
+ * worldbuilding records with campaign linking, stacked dropdown-chip DM Screen
+ * layout, Player-side Bastion builder/manager, and full-width heading polish.
+ */
+const PHASE144_VERSION = '1.144.0';
+
+const PHASE144_DIVINITY_KEYS = ['deities', 'pantheons', 'archfey', 'feyDomains', 'feyCourts'];
+
+function phase144EnsureState(pluginOrState) {
+  const state = pluginOrState?.state || pluginOrState || {};
+  state.entities = state.entities || {};
+  Object.assign(ENTITY_LABELS, {
+    pantheons: 'Pantheon',
+    archfey: 'Fey / Archfey',
+    feyDomains: 'Fey Domain',
+    feyCourts: 'Fey Court'
+  });
+  PHASE144_DIVINITY_KEYS.forEach(key => {
+    if (!Array.isArray(state.entities[key])) state.entities[key] = [];
+  });
+  if (!state.calendar || typeof state.calendar !== 'object') {
+    state.calendar = {
+      name: 'Campaign Calendar',
+      preset: 'Custom Fantasy',
+      era: '',
+      year: 1492,
+      month: 'Hammer',
+      day: 1,
+      weekday: 'Moonday',
+      weekdays: 'Moonday, Godsday, Waterday, Earthday, Freeday, Starday, Sunday',
+      months: 'Hammer|30\nAlturiak|30\nChes|30\nTarsakh|30\nMirtul|30\nKythorn|30\nFlamerule|30\nEleasis|30\nEleint|30\nMarpenoth|30\nUktar|30\nNightal|30',
+      seasons: 'Spring, Summer, Autumn, Winter',
+      moons: 'Selûne|30|Waxing',
+      holidays: '',
+      leapRules: '',
+      dayLength: '24 hours',
+      notes: ''
+    };
+  }
+  return state;
+}
+
+function phase144ActiveCampaign(plugin) {
+  try { return activeCampaign(plugin.state); } catch (_) { return null; }
+}
+function phase144CampaignName(campaign) {
+  return campaign?.name || campaign?.title || campaign?.id || 'Campaign';
+}
+function phase144CampaignOptions(plugin) {
+  const campaigns = safeArray(plugin.state?.entities?.campaigns);
+  const out = [['', 'No campaign link']];
+  campaigns.forEach(c => out.push([String(c.id || c.name || c.title || ''), phase144CampaignName(c)]));
+  return out;
+}
+function phase144LinkToActiveCampaign(plugin, item, type) {
+  const campaign = phase144ActiveCampaign(plugin);
+  if (!campaign) return false;
+  item.campaignId = campaign.id || campaign.name || campaign.title;
+  item.campaign = phase144CampaignName(campaign);
+  item.campaignName = phase144CampaignName(campaign);
+  item.campaignLinkType = type || item.campaignLinkType || 'linked';
+  item.tags = uniqueList([...(safeArray(item.tags)), 'campaign-linked']);
+  return true;
+}
+function phase144AddCampaignSelector(parent, plugin, values, desc) {
+  const options = phase144CampaignOptions(plugin);
+  const current = String(values.campaignId || values.campaign || '');
+  new Setting(parent)
+    .setName('Campaign Link')
+    .setDesc(desc || 'Attach this record to a saved campaign so it appears in campaign summaries and filtered prep.')
+    .addDropdown(drop => {
+      options.forEach(([id, label]) => drop.addOption(id, label));
+      drop.setValue(options.some(([id]) => id === current) ? current : '');
+      drop.onChange(v => {
+        values.campaignId = v;
+        const found = safeArray(plugin.state?.entities?.campaigns).find(c => String(c.id || c.name || c.title || '') === String(v));
+        values.campaign = found ? phase144CampaignName(found) : '';
+        values.campaignName = values.campaign;
+      });
+    });
+  const active = phase144ActiveCampaign(plugin);
+  if (active) {
+    const row = ce(parent, 'div', 'ttrpg-modal-actions');
+    btn(row, `Use Active Campaign: ${phase144CampaignName(active)}`, 'ttrpg-btn', () => {
+      phase144LinkToActiveCampaign(plugin, values, values.entryType || values.type || 'linked');
+      new Notice(`Linked draft to ${phase144CampaignName(active)}. Save to keep it.`);
+    });
+  }
+}
+
+class Phase144DivinityModal extends EntityModal {
+  constructor(app, plugin, key, item) {
+    key = key || 'deities';
+    super(app, plugin, key, item);
+    const defaults = {
+      name: '',
+      entryType: key === 'pantheons' ? 'Pantheon' : key === 'archfey' ? 'Archfey' : key === 'feyDomains' ? 'Fey Domain' : key === 'feyCourts' ? 'Fey Court' : 'Deity',
+      title: '',
+      pantheon: '',
+      court: '',
+      realm: '',
+      domainType: '',
+      alignment: '',
+      domains: '',
+      symbol: '',
+      portfolio: '',
+      worshippers: '',
+      dogma: '',
+      rites: '',
+      holyDays: '',
+      boons: '',
+      curses: '',
+      bargains: '',
+      taboos: '',
+      allies: '',
+      enemies: '',
+      relationships: '',
+      myths: '',
+      adventureHooks: '',
+      secrets: '',
+      campaignId: '',
+      campaign: '',
+      visibility: 'dm-only',
+      tags: [key.replace(/[A-Z]/g, m => '-' + m.toLowerCase()).replace(/^-/, '')]
+    };
+    this.key = key;
+    this.values = Object.assign(defaults, this.values || {}, item || {});
+  }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal');
+    contentEl.createEl('h2', { text: `${ENTITY_LABELS[this.key] || 'Divinity'} Details` });
+
+    const identity = ce(contentEl, 'section', 'ttrpg-builder-section ttrpg-phase144-divinity-section');
+    ce(identity, 'h3', '', 'Identity');
+    addSelect(identity, 'Entry Type', this.values.entryType, ['Deity','Pantheon','Divine Power','Saint / Exarch','Dead God','Primordial','Fey','Archfey','Fey Court','Fey Domain','Spirit','Other'], v => this.values.entryType = v);
+    addText(identity, 'Name', this.values.name, v => this.values.name = v);
+    addText(identity, 'Title / Epithet', this.values.title, v => this.values.title = v);
+    addText(identity, 'Pantheon / Court', this.values.pantheon || this.values.court || '', v => { this.values.pantheon = v; this.values.court = v; });
+    addText(identity, 'Realm / Domain', this.values.realm || this.values.domainType || '', v => { this.values.realm = v; this.values.domainType = v; });
+    phase144AddCampaignSelector(identity, this.plugin, this.values);
+
+    const divine = ce(contentEl, 'section', 'ttrpg-builder-section ttrpg-phase144-divinity-section');
+    ce(divine, 'h3', '', 'Portfolio & Worship');
+    addText(divine, 'Alignment / Ethos', this.values.alignment, v => this.values.alignment = v);
+    addText(divine, 'Domains / Portfolio', this.values.domains || this.values.portfolio || '', v => { this.values.domains = v; this.values.portfolio = v; });
+    addText(divine, 'Symbol', this.values.symbol, v => this.values.symbol = v);
+    ['summary','worshippers','dogma','rites','holyDays','taboos'].forEach(f => addTextArea(divine, nice(f), this.values[f] || '', v => this.values[f] = v));
+
+    const fey = ce(contentEl, 'section', 'ttrpg-builder-section ttrpg-phase144-divinity-section');
+    ce(fey, 'h3', '', 'Fey, Boons & Bargains');
+    ['boons','curses','bargains','adventureHooks'].forEach(f => addTextArea(fey, nice(f), this.values[f] || '', v => this.values[f] = v));
+
+    const story = ce(contentEl, 'section', 'ttrpg-builder-section ttrpg-phase144-divinity-section');
+    ce(story, 'h3', '', 'Story Links');
+    ['allies','enemies','relationships','myths','secrets','notes'].forEach(f => addTextArea(story, nice(f), this.values[f] || '', v => this.values[f] = v));
+    addSelect(story, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret','reveal-date'], v => this.values.visibility = v);
+    addText(story, 'Tags', safeArray(this.values.tags).join(', '), v => this.values.tags = tagsFromText(v));
+
+    const row = ce(contentEl, 'div', 'ttrpg-modal-buttons');
+    btn(row, 'Save', 'ttrpg-btn ttrpg-primary', async () => {
+      if (!this.values.id) this.values.id = uid(this.key.replace(/s$/, '') || 'divinity');
+      if (!this.values.tags || !this.values.tags.length) this.values.tags = [this.key];
+      upsert(this.plugin.state, this.key, this.values);
+      await this.plugin.saveState();
+      new Notice(`${ENTITY_LABELS[this.key] || 'Divinity entry'} saved.`);
+      this.close();
+    });
+    btn(row, 'Save + Add to Compendium', 'ttrpg-btn', async () => {
+      if (!this.values.id) this.values.id = uid(this.key.replace(/s$/, '') || 'divinity');
+      upsert(this.plugin.state, this.key, this.values);
+      try { await phase96SaveCurrentToCompendium(this.plugin, this.values, this.values.entryType || ENTITY_LABELS[this.key] || this.key); }
+      catch (_) { upsert(this.plugin.state, 'compendium', Object.assign({}, this.values, { id: uid('compendium'), type: this.values.entryType || ENTITY_LABELS[this.key] || this.key, source: 'Divinity Builder' })); await this.plugin.saveState(); }
+      new Notice(`${ENTITY_LABELS[this.key] || 'Entry'} saved and added to compendium.`);
+      this.close();
+    });
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+  }
+}
+
+function phase144OpenDivinity(plugin, key, item) { new Phase144DivinityModal(plugin.app, plugin, key, item).open(); }
+function phase144DivinityIcon(key) {
+  return key === 'pantheons' ? '⛩️' : key === 'archfey' ? '🧚' : key === 'feyDomains' ? '🍄' : key === 'feyCourts' ? '👑' : '☀️';
+}
+function phase144RenderDivinityCards(parent, plugin, key) {
+  const items = safeArray(plugin.state?.entities?.[key]).filter(x => { try { return matchesSearch(x, plugin.state.search); } catch (_) { return true; } });
+  if (!items.length) { empty(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, 'Create one from the buttons above, then link it to the active campaign when useful.'); return; }
+  const g = grid(parent);
+  items.forEach(item => {
+    const summary = [item.entryType || ENTITY_LABELS[key], item.campaign ? `Campaign: ${item.campaign}` : '', item.domains || item.portfolio ? `Domains: ${item.domains || item.portfolio}` : '', item.realm ? `Realm: ${item.realm}` : '', item.summary || item.dogma || item.notes || ''].filter(Boolean).join('\n');
+    const c = card(g, item.name || item.title || ENTITY_LABELS[key], summary, phase144DivinityIcon(key));
+    const tags = ce(c, 'div', 'ttrpg-tags');
+    safeArray(item.tags).slice(0, 6).forEach(t => ce(tags, 'span', 'ttrpg-tag', t));
+    if (item.visibility) ce(tags, 'span', 'ttrpg-tag', item.visibility);
+    const row = ce(c, 'div', 'ttrpg-card-actions');
+    btn(row, 'Open / Edit', 'ttrpg-btn', () => phase144OpenDivinity(plugin, key, item));
+    btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, key, item));
+    const active = phase144ActiveCampaign(plugin);
+    if (active && String(item.campaignId || '') !== String(active.id || active.name || active.title || '')) {
+      btn(row, 'Link Active Campaign', 'ttrpg-btn', async () => { phase144LinkToActiveCampaign(plugin, item, item.entryType || ENTITY_LABELS[key]); upsert(plugin.state, key, item); await plugin.saveState(); new Notice(`Linked to ${phase144CampaignName(active)}.`); });
+    }
+    btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => { remove(plugin.state, key, item.id); await plugin.saveState(); new Notice(`${ENTITY_LABELS[key] || 'Entry'} deleted.`); });
+  });
+}
+
+function phase144SectionTitle(parent, label) {
+  const h = ce(parent, 'h2', 'ttrpg-section-title ttrpg-full-width-heading', label);
+  return h;
+}
+
+const PHASE144_CALENDAR_PRESETS = {
+  'Custom Fantasy': null,
+  'Forgotten Realms-style': {
+    weekdays: 'First-day, Second-day, Third-day, Fourth-day, Fifth-day, Sixth-day, Seventh-day, Eighth-day, Ninth-day, Tenth-day',
+    months: 'Hammer|30\nAlturiak|30\nChes|30\nTarsakh|30\nMirtul|30\nKythorn|30\nFlamerule|30\nEleasis|30\nEleint|30\nMarpenoth|30\nUktar|30\nNightal|30',
+    seasons: 'Winter, Spring, Summer, Autumn',
+    holidays: 'Midwinter|Hammer|31|Between Hammer and Alturiak\nGreengrass|Tarsakh|31|Spring festival\nMidsummer|Flamerule|31|Summer festival\nHighharvestide|Eleint|31|Harvest festival\nFeast of the Moon|Uktar|31|Remembrance'
+  },
+  'Gregorian-like': {
+    weekdays: 'Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday',
+    months: 'January|31\nFebruary|28\nMarch|31\nApril|30\nMay|31\nJune|30\nJuly|31\nAugust|31\nSeptember|30\nOctober|31\nNovember|30\nDecember|31',
+    seasons: 'Spring, Summer, Autumn, Winter',
+    holidays: ''
+  },
+  'Four Seasons / 13 Moons': {
+    weekdays: 'Moonday, Godsday, Waterday, Earthday, Freeday, Starday, Sunday',
+    months: 'Moon 1|28\nMoon 2|28\nMoon 3|28\nMoon 4|28\nMoon 5|28\nMoon 6|28\nMoon 7|28\nMoon 8|28\nMoon 9|28\nMoon 10|28\nMoon 11|28\nMoon 12|28\nMoon 13|28',
+    seasons: 'Spring, Summer, Autumn, Winter',
+    holidays: 'Year Turning|Moon 13|29|Festival outside the normal calendar'
+  }
+};
+function phase144CalendarMonths(values) {
+  return String(values.months || '').split(/\n+/).map(line => {
+    const parts = line.split('|').map(x => x.trim());
+    if (!parts[0]) return null;
+    return { name: parts[0], days: Math.max(1, Number(parts[1] || 30) || 30) };
+  }).filter(Boolean);
+}
+function phase144CalendarWeekdays(values) { return String(values.weekdays || '').split(',').map(x => x.trim()).filter(Boolean); }
+function phase144CalendarAdvance(values, amount) {
+  const months = phase144CalendarMonths(values); if (!months.length) return values;
+  const weekdays = phase144CalendarWeekdays(values);
+  let monthIndex = Math.max(0, months.findIndex(m => m.name === values.month));
+  if (monthIndex < 0) monthIndex = 0;
+  let day = Number(values.day || 1) || 1;
+  let year = Number(values.year || 0) || 0;
+  let remaining = Number(amount || 0) || 0;
+  const dir = remaining < 0 ? -1 : 1;
+  remaining = Math.abs(remaining);
+  while (remaining > 0) {
+    if (dir > 0) {
+      day += 1;
+      if (day > months[monthIndex].days) { day = 1; monthIndex += 1; if (monthIndex >= months.length) { monthIndex = 0; year += 1; } }
+    } else {
+      day -= 1;
+      if (day < 1) { monthIndex -= 1; if (monthIndex < 0) { monthIndex = months.length - 1; year -= 1; } day = months[monthIndex].days; }
+    }
+    remaining -= 1;
+  }
+  values.day = day; values.month = months[monthIndex].name; values.year = year;
+  if (weekdays.length) {
+    let wi = Math.max(0, weekdays.findIndex(w => w === values.weekday));
+    if (wi < 0) wi = 0;
+    wi = ((wi + (Number(amount || 0) % weekdays.length)) % weekdays.length + weekdays.length) % weekdays.length;
+    values.weekday = weekdays[wi];
+  }
+  return values;
+}
+function phase144CalendarPreview(values) {
+  const era = values.era ? ` ${values.era}` : '';
+  return `${values.weekday || ''} ${values.day || ''} ${values.month || ''}, ${values.year || ''}${era}`.replace(/\s+/g, ' ').trim();
+}
+
+CalendarModal = class Phase144CalendarModal extends Modal {
+  constructor(app, plugin) {
+    super(app); this.plugin = plugin;
+    const current = phase144EnsureState(plugin).calendar || {};
+    this.values = Object.assign({
+      name: 'Campaign Calendar', preset: 'Custom Fantasy', era: '', year: 1492, month: 'Hammer', day: 1, weekday: 'Moonday',
+      weekdays: 'Moonday, Godsday, Waterday, Earthday, Freeday, Starday, Sunday',
+      months: 'Hammer|30\nAlturiak|30\nChes|30\nTarsakh|30\nMirtul|30\nKythorn|30\nFlamerule|30\nEleasis|30\nEleint|30\nMarpenoth|30\nUktar|30\nNightal|30',
+      seasons: 'Spring, Summer, Autumn, Winter', moons: 'Selûne|30|Waxing', holidays: '', leapRules: '', dayLength: '24 hours', notes: '', attachActiveCampaign: true
+    }, current);
+  }
+  rerender(){ this.onOpen(); }
+  onOpen() {
+    const { contentEl } = this; clear(contentEl); contentEl.addClass('ttrpg-modal ttrpg-calendar-modal');
+    contentEl.createEl('h2', { text: 'Campaign Calendar Builder' });
+    const preview = ce(contentEl, 'section', 'ttrpg-card ttrpg-calendar-preview');
+    ce(preview, 'h3', '', this.values.name || 'Campaign Calendar');
+    ce(preview, 'p', 'ttrpg-muted', phase144CalendarPreview(this.values) || 'Set the current date below.');
+    const advance = ce(preview, 'div', 'ttrpg-card-actions');
+    btn(advance, '− Day', 'ttrpg-btn', () => { phase144CalendarAdvance(this.values, -1); this.rerender(); });
+    btn(advance, '+ Day', 'ttrpg-btn', () => { phase144CalendarAdvance(this.values, 1); this.rerender(); });
+    btn(advance, '+ Week', 'ttrpg-btn', () => { phase144CalendarAdvance(this.values, phase144CalendarWeekdays(this.values).length || 7); this.rerender(); });
+    btn(advance, '+ Month', 'ttrpg-btn', () => { const months = phase144CalendarMonths(this.values); const m = months.find(x => x.name === this.values.month) || months[0]; phase144CalendarAdvance(this.values, m?.days || 30); this.rerender(); });
+
+    const structure = ce(contentEl, 'section', 'ttrpg-builder-section');
+    ce(structure, 'h3', '', 'Calendar Structure');
+    addText(structure, 'Calendar Name', this.values.name, v => this.values.name = v);
+    addSelect(structure, 'Preset', this.values.preset || 'Custom Fantasy', Object.keys(PHASE144_CALENDAR_PRESETS), v => {
+      this.values.preset = v;
+      const preset = PHASE144_CALENDAR_PRESETS[v];
+      if (preset) Object.assign(this.values, preset);
+      this.rerender();
+    });
+    addText(structure, 'Era / Age Label', this.values.era || '', v => this.values.era = v);
+    addText(structure, 'Weekdays', this.values.weekdays || '', v => this.values.weekdays = v);
+    addTextArea(structure, 'Months, one per line: Name|days', this.values.months || '', v => this.values.months = v);
+    addText(structure, 'Seasons', this.values.seasons || '', v => this.values.seasons = v);
+    addText(structure, 'Day Length', this.values.dayLength || '', v => this.values.dayLength = v);
+
+    const current = ce(contentEl, 'section', 'ttrpg-builder-section');
+    ce(current, 'h3', '', 'Current Campaign Date');
+    addText(current, 'Year', this.values.year, v => this.values.year = v);
+    addText(current, 'Month', this.values.month, v => this.values.month = v);
+    addText(current, 'Day', this.values.day, v => this.values.day = v);
+    addText(current, 'Weekday', this.values.weekday || '', v => this.values.weekday = v);
+
+    const lore = ce(contentEl, 'section', 'ttrpg-builder-section');
+    ce(lore, 'h3', '', 'Moons, Holidays & Notes');
+    addTextArea(lore, 'Moons, one per line: Name|cycle days|current phase', this.values.moons || '', v => this.values.moons = v);
+    addTextArea(lore, 'Holidays, one per line: Name|month|day|notes', this.values.holidays || '', v => this.values.holidays = v);
+    addTextArea(lore, 'Leap Rules / Intercalary Days', this.values.leapRules || '', v => this.values.leapRules = v);
+    addTextArea(lore, 'Calendar Notes', this.values.notes || '', v => this.values.notes = v);
+    const active = phase144ActiveCampaign(this.plugin);
+    if (active) addSelect(lore, 'Attach to Active Campaign', String(this.values.attachActiveCampaign !== false), ['true','false'], v => this.values.attachActiveCampaign = v === 'true');
+
+    const row = ce(contentEl, 'div', 'ttrpg-modal-buttons');
+    btn(row, 'Save Calendar', 'ttrpg-btn ttrpg-primary', async () => {
+      const copy = Object.assign({}, this.values);
+      this.plugin.state.calendar = copy;
+      if (active && copy.attachActiveCampaign !== false) {
+        active.calendar = copy;
+        active.calendarName = copy.name;
+        upsert(this.plugin.state, 'campaigns', active);
+      }
+      await this.plugin.saveState();
+      new Notice('Calendar saved.');
+      this.close();
+    });
+    btn(row, 'Cancel', 'ttrpg-btn', () => this.close());
+  }
+};
+
+function phase144DeleteCompendium(plugin, item) {
+  const id = item?.id || item?.name || item?.title;
+  const store = safeArray(plugin.state?.entities?.compendium);
+  const idx = store.findIndex(x => String(x.id || x.name || x.title) === String(id));
+  if (idx >= 0) store.splice(idx, 1);
+}
+
+renderLibrary = function phase144RenderLibrary(main, plugin) {
+  phase93NormalizeCompendiumState?.(plugin.state);
+  header(main, 'Library & Compendium', 'Search, filter, import, edit, delete, and manage compendium entries and locally stored rules data.', [
+    { label: 'Import Markdown Campaign', primary: true, onClick: () => new MarkdownCampaignImportModal(plugin.app, plugin).open() },
+    { label: 'Compendium Entry', onClick: () => new EntityModal(plugin.app, plugin, 'compendium').open() },
+    { label: 'Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() }
+  ]);
+  const controls = ce(main, 'section', 'ttrpg-card ttrpg-library-controls');
+  ce(controls, 'h3', '', 'Compendium Search');
+  const input = ce(controls, 'input', 'ttrpg-input');
+  input.type = 'search'; input.placeholder = 'Search compendium entries…'; input.value = plugin.state.librarySearch || '';
+  input.addEventListener('input', () => { plugin.state.librarySearch = input.value; if (plugin._phase93LibraryTimer) window.clearTimeout(plugin._phase93LibraryTimer); plugin._phase93LibraryTimer = window.setTimeout(() => plugin.refreshViews(), 120); });
+  const rawComp = getStore(plugin.state, 'compendium');
+  const comp = rawComp.map(x => phase94CleanDisplayValue ? phase94CleanDisplayValue(phase93NormalizeCompendiumItem ? phase93NormalizeCompendiumItem(x) : x) : x);
+  const categories = uniqueList(comp.flatMap(phase93ItemCategories || (x => safeArray(x.tags)))).filter(Boolean).filter(c => c !== 'Compendium Entry').sort((a,b)=>a.localeCompare(b));
+  const chips = ce(controls, 'div', 'ttrpg-tags ttrpg-library-chip-row');
+  const all = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${!plugin.state.libraryCategory ? 'is-active' : ''}`, 'All');
+  all.type = 'button'; all.addEventListener('click', async () => { plugin.state.libraryCategory = ''; await plugin.saveState(); });
+  categories.forEach(cat => { const b = ce(chips, 'button', `ttrpg-tag ttrpg-click-tag ${plugin.state.libraryCategory === cat ? 'is-active' : ''}`, cat); b.type = 'button'; b.addEventListener('click', async () => { plugin.state.libraryCategory = cat; await plugin.saveState(); }); });
+  const q = String(plugin.state.librarySearch || plugin.state.search || '').toLowerCase();
+  const cat = plugin.state.libraryCategory ? phase93TitleCase(plugin.state.libraryCategory) : '';
+  const pairs = rawComp.map((raw, i) => ({ raw, item: comp[i] })).filter(({item}) => (!q || JSON.stringify(item).toLowerCase().includes(q)) && (!cat || phase93ItemCategories(item).includes(cat)));
+  phase144SectionTitle(main, `Compendium Entries (${pairs.length})`);
+  if (!pairs.length) empty(main, 'No matching compendium entries.', 'Change the search, pick another category chip, or import/add compendium data.');
+  else {
+    const g = grid(main);
+    pairs.slice(0, 80).forEach(({raw, item}) => {
+      const c = card(g, item.name || item.title || raw.name || raw.title || 'Compendium Entry', item.summary || item.description || item.mechanics || item.category || raw.summary || raw.description || '', '📚');
+      const tags = ce(c, 'div', 'ttrpg-tags');
+      phase93ItemCategories(item).filter(t => t !== 'Compendium Entry').slice(0, 5).forEach(t => ce(tags, 'span', 'ttrpg-tag', t));
+      const row = ce(c, 'div', 'ttrpg-card-actions');
+      btn(row, 'Open / Edit', 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, 'compendium', raw).open());
+      btn(row, 'Note', 'ttrpg-btn', () => writeEntityNote(plugin, 'compendium', raw));
+      const del = btn(row, 'Delete', 'ttrpg-btn ttrpg-danger', async () => {
+        if (del.dataset.confirmDelete !== 'true') { del.dataset.confirmDelete = 'true'; del.textContent = 'Confirm Delete'; return; }
+        phase144DeleteCompendium(plugin, raw); await plugin.saveState(); new Notice('Compendium entry deleted.');
+      });
+    });
+    if (pairs.length > 80) ce(main, 'p', 'ttrpg-muted', 'Showing first 80 results. Narrow with search or category chips.');
+  }
+};
+
+function phase144DmChip(parent, title, body, tag) {
+  const item = ce(parent, 'details', 'ttrpg-dm-condition ttrpg-phase144-dm-chip');
+  item.dataset.search = `${title || ''} ${Array.isArray(body) ? body.join(' ') : body || ''} ${tag || ''}`.toLowerCase();
+  const summary = ce(item, 'summary', '', title || 'Reference');
+  if (tag) ce(summary, 'span', 'ttrpg-tag', tag);
+  if (Array.isArray(body)) { const ul = ce(item, 'ul'); body.forEach(x => ce(ul, 'li', '', x)); }
+  else ce(item, 'p', '', body || '');
+  return item;
+}
+function phase144DmPanel(parent, title, icon) {
+  const panel = ce(parent, 'section', 'ttrpg-card ttrpg-dm-panel ttrpg-phase144-dm-panel');
+  const head = ce(panel, 'div', 'ttrpg-dm-panel-head');
+  ce(head, 'span', 'ttrpg-card-icon', icon || '📜'); ce(head, 'h2', '', title);
+  return ce(panel, 'div', 'ttrpg-dm-condition-grid ttrpg-phase144-chip-stack');
+}
+function phase144QuickAction(parent, label, section, plugin, primary) {
+  return btn(parent, label, primary ? 'ttrpg-btn ttrpg-primary' : 'ttrpg-btn', () => {
+    if (section === 'wizard') return new CampaignWizardModal(plugin.app, plugin).open();
+    phase123Go(plugin, section);
+  });
+}
+
+renderDashboard = function phase144RenderDashboard(main, plugin) {
+  clear(main); phase144EnsureState(plugin);
+  const state = plugin.state || {}; const campaign = phase144ActiveCampaign(plugin);
+  const hero = ce(main, 'section', 'ttrpg-dm-screen-hero ttrpg-full-width-heading');
+  const titleBox = ce(hero, 'div', 'ttrpg-dm-screen-title');
+  ce(titleBox, 'h1', '', 'Dungeon Master Screen');
+  ce(titleBox, 'p', 'ttrpg-muted ttrpg-dm-active-campaign', `Active Campaign: ${campaign?.name || campaign?.title || 'No active campaign selected'}`);
+  const heroActions = ce(hero, 'div', 'ttrpg-dm-screen-actions');
+  phase144QuickAction(heroActions, 'New Campaign', 'wizard', plugin, true);
+  phase144QuickAction(heroActions, 'Live Combat', 'combat', plugin);
+  btn(heroActions, 'Roll Dice', 'ttrpg-btn', () => new DiceModal(plugin.app, plugin).open());
+  btn(heroActions, 'Export Player Packet', 'ttrpg-btn', () => exportPlayerSafePacket(plugin));
+
+  const quick = ce(main, 'section', 'ttrpg-card ttrpg-phase144-quick-actions ttrpg-full-width-heading');
+  ce(quick, 'h2', '', 'Campaign Quick Actions');
+  const actionGrid = ce(quick, 'div', 'ttrpg-dm-action-grid ttrpg-phase144-action-grid');
+  [
+    ['🗂️ Campaigns','campaignList',true], ['🧙 Wizard','wizard'], ['🌌 World','world'], ['🗺️ Maps','geography'], ['👤 NPCs','npcs'], ['⚔️ Combat','combat'], ['📝 Quests','adventure'], ['🎲 Generators','generators'], ['🔒 Secrets','secrets'], ['📚 Compendium','library']
+  ].forEach(([label, section, primary]) => phase144QuickAction(actionGrid, label, section, plugin, primary));
+
+  const status = ce(main, 'div', 'ttrpg-dm-status-strip ttrpg-full-width-heading');
+  const e = state.entities || {};
+  phase123MiniStat(status, 'Campaigns', safeArray(e.campaigns).length, () => phase123Go(plugin, 'campaignList'));
+  phase123MiniStat(status, 'NPCs', safeArray(e.npcs).length, () => phase123Go(plugin, 'npcs'));
+  phase123MiniStat(status, 'Quests', safeArray(e.quests).length, () => phase123Go(plugin, 'adventure'));
+  phase123MiniStat(status, 'Encounters', safeArray(e.encounters).length, () => phase123Go(plugin, 'combat'));
+  phase123MiniStat(status, 'Secrets', safeArray(e.secrets).length, () => phase123Go(plugin, 'secrets'));
+  phase123MiniStat(status, 'Sessions', safeArray(e.sessions).length, () => phase123Go(plugin, 'sessions'));
+
+  const searchWrap = ce(main, 'div', 'ttrpg-dm-screen-search-wrap ttrpg-full-width-heading');
+  const search = ce(searchWrap, 'input', 'ttrpg-search ttrpg-dm-screen-search');
+  search.placeholder = 'Search the DM screen: prone, concentration, travel, cover, death saves, language…';
+  ce(searchWrap, 'span', 'ttrpg-muted', 'Filter the dropdown chips below without changing the global plugin search.');
+
+  const screen = ce(main, 'div', 'ttrpg-dm-screen ttrpg-phase144-dm-screen');
+  let body;
+  body = phase144DmPanel(screen, 'Combat Rules', '⚔️');
+  phase144DmChip(body, 'Combat Sequence', ['Determine surprise.', 'Establish positions.', 'Roll initiative.', 'Take turns.', 'Begin next round.'], 'basics');
+  phase144DmChip(body, 'Actions in Combat', 'Attack, Cast a Spell, Dash, Disengage, Dodge, Help, Hide, Ready, Search, Use an Object.', 'action');
+  phase144DmChip(body, 'Movement & Position', 'Speed, difficult terrain ×2 cost, crawling at half speed, squeezing, falling, prone, grappling, and shoving.', 'movement');
+  phase144DmChip(body, 'Attack / Advantage / Cover', ['Attack: d20 + proficiency + ability modifier vs. AC.', 'Advantage/disadvantage: roll 2d20, take higher/lower.', 'Cover: half +2 AC/Dex saves; three-quarters +5; total cannot be targeted directly.'], 'attack');
+  phase144DmChip(body, 'Damage Rules', ['Critical hit: roll double damage dice.', 'Resistance halves damage.', 'Vulnerability doubles damage.', 'Falling: 1d6 per 10 ft, max 20d6.'], 'damage');
+
+  body = phase144DmPanel(screen, 'AC, HP & Spellcasting', '🛡️');
+  phase144DmChip(body, 'Armor Class', ['Unarmored: 10 + Dex mod.', 'Light: 11–14 + Dex mod.', 'Medium: 12–15 + Dex mod, max +2.', 'Heavy: 16–18, no Dex.', 'Shield: +2.', 'Mage Armor: 13 + Dex mod.'], 'defense');
+  phase144DmChip(body, 'Hit Points & Death Saves', ['Short rest: spend Hit Dice.', 'Long rest: full HP, restored features, and half total Hit Dice recovered.', 'Death saves: 3 successes = stable; 3 failures = dead; nat 1 = 2 failures; nat 20 = 1 HP.'], 'healing');
+  phase144DmChip(body, 'Concentration', 'Only one concentration spell at a time. Damage forces Con save DC 10 or half damage taken, whichever is higher. Incapacitation breaks concentration.', 'spell');
+  phase144DmChip(body, 'Spell Save / Attack', 'Save DC = 8 + proficiency + ability modifier + item bonus. Spell attack = d20 + proficiency + ability modifier + item bonus.', 'spell');
+
+  body = phase144DmPanel(screen, 'Exploration & Adventuring', '🗺️');
+  phase144DmChip(body, 'Travel Pace', ['Fast: 4 mph, −5 passive Perception, 30 miles/day.', 'Normal: 3 mph, 24 miles/day.', 'Slow: 2 mph, stealth possible, 18 miles/day.'], 'travel');
+  phase144DmChip(body, 'Visibility & Terrain', 'Bright light, dim light, darkness, obscurement, forest, swamp, hills, mountains, desert, and arctic terrain may affect checks or movement cost.', 'travel');
+  phase144DmChip(body, 'Resting', ['Short rest: 1 hour, spend Hit Dice, short-rest abilities return.', 'Long rest: 8 hours, full HP, features restored.', 'Most humanoids need 6 hours sleep; elves trance for 4 hours.'], 'rest');
+  phase144DmChip(body, 'Foraging / Navigation', 'Use Survival checks to find food/water or avoid becoming lost. Increase DC for hostile terrain, weather, time pressure, or poor maps.', 'travel');
+
+  body = phase144DmPanel(screen, 'Skills, DCs & Time', '🔍');
+  phase144DmChip(body, 'Difficulty Classes', ['DC 5 very easy.', 'DC 10 easy.', 'DC 15 moderate.', 'DC 20 hard.', 'DC 25 very hard.', 'DC 30 nearly impossible.'], 'skills');
+  phase144DmChip(body, 'Checks', ['Ability check: d20 + ability mod + proficiency if applicable.', 'Group check: at least half the party succeeds.', 'Passive score: 10 + mod + proficiency.'], 'skills');
+  phase144DmChip(body, 'Skill Families', 'Str: Athletics. Dex: Acrobatics, Sleight of Hand, Stealth. Int: Arcana, History, Investigation, Nature, Religion. Wis: Animal Handling, Insight, Medicine, Perception, Survival. Cha: Deception, Intimidation, Performance, Persuasion.', 'skills');
+  phase144DmChip(body, 'Time Units', 'Round 6s · Minute · Hour · Day · Week · Month · Year.', 'time');
+
+  body = phase144DmPanel(screen, 'Interaction & Social', '💬');
+  phase144DmChip(body, 'NPC Attitude', 'Hostile → Unfriendly → Indifferent → Friendly → Helpful.', 'social');
+  phase144DmChip(body, 'Attitude Adjusters', 'Deception, Intimidation, Persuasion, gifts, alignment, history, leverage, promises, consequences, and what the NPC stands to lose.', 'social');
+  phase144DmChip(body, 'Languages & Alignment', ['Standard: Common, Dwarvish, Elvish, Giant, Gnomish, Goblin, Halfling, Orc.', 'Exotic: Abyssal, Celestial, Draconic, Deep Speech, Infernal, Primordial, Sylvan, Undercommon.', 'Alignment: Lawful/Neutral/Chaotic + Good/Neutral/Evil.'], 'social');
+
+  body = phase144DmPanel(screen, 'Core Reference Tables', '📊');
+  phase144DmChip(body, 'Core Math', ['Saving throws: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma.', 'Ability modifier: (score − 10) ÷ 2, rounded down.', 'Proficiency: +2 levels 1–4, +3 5–8, +4 9–12, +5 13–16, +6 17–20.'], 'reference');
+  phase144DmChip(body, 'Size / Vision / Light', ['Size: Tiny → Small → Medium → Large → Huge → Gargantuan.', 'Vision: normal, Darkvision 60/120 ft, Blindsight, Truesight.', 'Light: candle 5 ft; torch/lantern 20 ft bright + 20 ft dim; sunlight is bright.'], 'reference');
+  phase144DmChip(body, 'Coinage & Magic Items', ['1 gp = 10 sp = 100 cp.', '1 pp = 10 gp.', 'Electrum = 5 sp.', 'Magic item rarity: Common → Uncommon → Rare → Very Rare → Legendary → Artifact.'], 'reference');
+
+  body = phase144DmPanel(screen, 'Conditions', '🧠');
+  [
+    ['Blinded', ['Can’t see; automatically fails checks requiring sight.', 'Attack rolls against it have advantage; its attack rolls have disadvantage.']],
+    ['Charmed', ['Can’t attack the charmer or target them with harmful abilities/magical effects.', 'Charmer has advantage on social checks against it.']],
+    ['Deafened', ['Can’t hear; automatically fails checks requiring hearing.']],
+    ['Exhaustion', ['Six escalating levels: checks disadvantage → speed halved → attacks/saves disadvantage → HP max halved → speed 0 → death.']],
+    ['Frightened', ['Disadvantage on checks/attacks while source is in line of sight.', 'Can’t willingly move closer to source.']],
+    ['Grappled', ['Speed becomes 0; ends if grappler incapacitated or effect moves target away.']],
+    ['Incapacitated', ['Can’t take actions or reactions.']],
+    ['Invisible', ['Can’t be seen without magic/special sense.', 'Attacks against it have disadvantage; its attacks have advantage.']],
+    ['Paralyzed', ['Incapacitated; can’t move/speak; fails Str/Dex saves.', 'Attacks against it have advantage; hits within 5 ft are critical.']],
+    ['Poisoned', ['Disadvantage on attack rolls and ability checks.']],
+    ['Prone', ['Only movement option is crawl unless standing.', 'Melee attacks within 5 ft have advantage; ranged attacks have disadvantage.']],
+    ['Restrained', ['Speed 0; attacks against it have advantage; its attacks have disadvantage; Dex saves disadvantage.']],
+    ['Stunned', ['Incapacitated; can’t move; can speak falteringly; fails Str/Dex saves; attacks against it have advantage.']],
+    ['Unconscious', ['Incapacitated; drops items/falls prone; fails Str/Dex saves; nearby hits are critical.']]
+  ].forEach(([name, effects]) => phase144DmChip(body, name, effects, 'condition'));
+
+  search.addEventListener('input', () => phase123ApplyDmScreenSearch(screen, search.value));
+  if (!safeArray(plugin.state?.entities?.campaigns).length && typeof phase142FirstRunBanner === 'function') phase142FirstRunBanner(main, plugin);
+};
+
+renderWorld = function phase144RenderWorld(main, plugin) {
+  phase144EnsureState(plugin);
+  header(main, 'World, Lore & Cosmology', 'Worlds, calendars, deities, pantheons, fey powers, archfey, fey domains, cultures, languages, factions, myths, rumours, magic and technology rules.', [
+    { label: 'World Overview', primary: true, onClick: () => new EntityModal(plugin.app, plugin, 'worlds').open() },
+    { label: 'Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
+    { label: 'Deity', onClick: () => phase144OpenDivinity(plugin, 'deities') },
+    { label: 'Pantheon', onClick: () => phase144OpenDivinity(plugin, 'pantheons') },
+    { label: 'Fey / Archfey', onClick: () => phase144OpenDivinity(plugin, 'archfey') },
+    { label: 'Fey Domain', onClick: () => phase144OpenDivinity(plugin, 'feyDomains') }
+  ]);
+  const cal = plugin.state.calendar || {};
+  card(main, 'Current Campaign Calendar', phase144CalendarPreview(cal) || 'No campaign calendar set.', '📅', [{ label: 'Edit Calendar', primary: true, onClick: () => new CalendarModal(plugin.app, plugin).open() }]);
+  const chipGrid = ce(main, 'div', 'ttrpg-world-chip-grid ttrpg-full-width-heading');
+  [
+    ['worlds','🌍','Worlds', () => new EntityModal(plugin.app, plugin, 'worlds').open()],
+    ['factions','⚜️','Factions', () => new EntityModal(plugin.app, plugin, 'factions').open()],
+    ['deities','☀️','Deities', () => phase144OpenDivinity(plugin, 'deities')],
+    ['pantheons','⛩️','Pantheons', () => phase144OpenDivinity(plugin, 'pantheons')],
+    ['archfey','🧚','Fey / Archfey', () => phase144OpenDivinity(plugin, 'archfey')],
+    ['feyDomains','🍄','Fey Domains', () => phase144OpenDivinity(plugin, 'feyDomains')],
+    ['feyCourts','👑','Fey Courts', () => phase144OpenDivinity(plugin, 'feyCourts')],
+    ['languages','🗣️','Languages', () => new EntityModal(plugin.app, plugin, 'languages').open()],
+    ['cultures','🧬','Cultures', () => new EntityModal(plugin.app, plugin, 'cultures').open()],
+    ['myths','📜','Myths & Rumours', () => new EntityModal(plugin.app, plugin, 'myths').open()]
+  ].forEach(([key, icon, label, open]) => { const b = btn(chipGrid, `${icon} ${label} (${phase64Count(plugin, key)})`, 'ttrpg-chip-btn ttrpg-world-chip', open); b.title = `Create or review ${label}`; });
+  ['worlds','factions'].forEach(k => { phase144SectionTitle(main, (ENTITY_LABELS[k] || k) + 's'); itemCards(main, plugin, k, { icon: k === 'factions' ? '⚜️' : '🌌' }); });
+  PHASE144_DIVINITY_KEYS.forEach(k => { phase144SectionTitle(main, (ENTITY_LABELS[k] || k) + 's'); phase144RenderDivinityCards(main, plugin, k); });
+  ['languages','cultures','myths'].forEach(k => { phase144SectionTitle(main, (ENTITY_LABELS[k] || k) + 's'); itemCards(main, plugin, k, { icon: '🌌' }); });
+};
+
+function phase144OpenPlayerBastion(plugin, item, pc) {
+  const active = phase144ActiveCampaign(plugin);
+  const draft = item || {
+    id: uid('bastion'), name: `${pc?.name || 'Player'}'s Bastion`, owner: pc?.name || '', playerCharacterId: pc?.id || '', visibility: 'player-visible', type: 'Bastion', summary: '', upkeepStatus: 'Requires Review', tags: ['player-bastion']
+  };
+  if (active && !draft.campaignId) phase144LinkToActiveCampaign(plugin, draft, 'player-bastion');
+  if (typeof Phase140BastionModal !== 'undefined') new Phase140BastionModal(plugin.app, plugin, draft).open();
+  else new EntityModal(plugin.app, plugin, 'bastions', draft).open();
+}
+function phase144PlayerBastions(plugin, pc) {
+  const active = phase144ActiveCampaign(plugin);
+  return safeArray(plugin.state?.entities?.bastions).filter(b => {
+    const visible = b.visibility === 'player-visible' || b.playerVisible === true || b.owner === pc?.name || b.playerCharacterId === pc?.id;
+    const campaignOk = !active || !b.campaignId || String(b.campaignId) === String(active.id || active.name || active.title || '');
+    return visible && campaignOk;
+  });
+}
+function renderPlayerBastions(main, plugin, pc) {
+  header(main, 'Bastion Builder & Manager', 'Player-facing bastions, rooms, hirelings, storage, upkeep, projects, and notes linked to the active campaign.', [
+    { label: 'New Bastion', primary: true, onClick: () => phase144OpenPlayerBastion(plugin, null, pc) },
+    { label: 'Back to Sheet', onClick: async () => { plugin.state.activePlayerTab = 'sheet'; await plugin.saveState(); } }
+  ]);
+  const items = phase144PlayerBastions(plugin, pc);
+  if (!items.length) {
+    empty(main, 'No player bastions yet.', 'Create a bastion to track rooms, staff, upkeep, crafting, storage, and player-visible base notes.');
+    return;
+  }
+  const g = grid(main, 'ttrpg-grid ttrpg-player-grid');
+  items.forEach(b => {
+    const text = [b.summary, b.location ? `Location: ${b.location}` : '', b.owner ? `Owner: ${b.owner}` : '', b.upkeepStatus ? `Upkeep: ${b.upkeepStatus}` : '', b.nextUpkeep ? `Next Review: ${b.nextUpkeep}` : '', b.rooms ? `Rooms: ${b.rooms}` : '', b.staff ? `Staff: ${b.staff}` : '', b.storage ? `Storage: ${b.storage}` : '', b.playerNotes].filter(Boolean).join('\n');
+    card(g, b.name || b.title || 'Bastion', text, '🏰', [
+      { label: 'Open / Manage', primary: true, onClick: () => phase144OpenPlayerBastion(plugin, b, pc) },
+      { label: 'Note', onClick: () => writeEntityNote(plugin, 'bastions', b) }
+    ]);
+  });
+}
+
+renderPlayerTabs = function phase144RenderPlayerTabs(main, plugin) {
+  const tabs = [
+    ['sheet','📋 Sheet'], ['campaign','🗺️ Campaign'], ['tools','🎲 Tools'], ['journal','📓 Journal'], ['party','👥 Party'], ['bastions','🏰 Bastions'], ['export','📤 Export']
+  ];
+  const wrap = ce(main, 'div', 'ttrpg-player-tabs ttrpg-full-width-heading');
+  tabs.forEach(([id,label]) => btn(wrap, label, `ttrpg-player-tab ${plugin.state.activePlayerTab === id ? 'is-active' : ''}`, async () => { plugin.state.activePlayerTab = id; await plugin.saveState(); }));
+};
+
+renderPlayerView = function phase144RenderPlayerView(main, plugin) {
+  const state = plugin.state; phase144EnsureState(plugin);
+  if (!state.activePlayerTab) state.activePlayerTab = 'sheet';
+  const pc = selectedPc(state);
+  header(main, 'Player Mode', 'Clean player-facing tools: character sheet, known campaign info, safe dice/tools, party journal, bastions, and strict visibility filtering.', [
+    { label: state.settings.readOnlyPlayer ? 'Read-Only: ON' : 'Read-Only: OFF', onClick: async () => { state.settings.readOnlyPlayer = !state.settings.readOnlyPlayer; await plugin.saveState(); } },
+    { label: 'Export Character / Known Info', primary: true, onClick: () => exportPlayerSafePacket(plugin) },
+    { label: 'Back to DM Mode', onClick: async () => { state.mode = 'DM'; state.activeSection = 'dashboard'; await plugin.saveState(); } }
+  ]);
+  renderPlayerTabs(main, plugin);
+  const tab = state.activePlayerTab || 'sheet';
+  if (tab === 'sheet') renderPcSheet(main, plugin, pc);
+  else if (tab === 'campaign') renderPlayerCampaignInfo(main, plugin);
+  else if (tab === 'tools') renderPlayerTools(main, plugin, pc);
+  else if (tab === 'journal') renderPlayerContribution(main, plugin, pc);
+  else if (tab === 'party') renderPartyOverview(main, plugin, pc);
+  else if (tab === 'bastions') renderPlayerBastions(main, plugin, pc);
+  else if (tab === 'export') renderPlayerExport(main, plugin, pc);
+  else { state.activePlayerTab = 'sheet'; renderPcSheet(main, plugin, pc); }
+};
+
+try {
+  const phase144BaseOnload = TTRPGTablePlugin.prototype.onload;
+  TTRPGTablePlugin.prototype.onload = async function phase144Onload() {
+    await phase144BaseOnload.call(this);
+    phase144EnsureState(this);
+    this.state.version = PHASE144_VERSION;
+    await this.saveData(this.state);
+  };
+  const phase144BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase144SaveState() {
+    phase144EnsureState(this);
+    this.state.version = PHASE144_VERSION;
+    await phase144BaseSaveState.call(this);
+    this.state.version = PHASE144_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 145 — Campaign-Root Output Routing + DM Screen Run Action
+ * --------------------------------------------------------------------------
+ * - Adds a red Run / Resume Campaign button to the DM Screen hero actions.
+ * - Forces generated/written vault files into the active campaign-name folder.
+ * - Removes Loose Notes fallback for campaign output; no generated output should
+ *   land in generic TTRPG or Loose Files folders.
+ */
+const PHASE145_VERSION = '1.145.0';
+
+function phase145CleanCampaignFolderName(value) {
+  const clean = String(value || 'Unassigned Campaign')
+    .trim()
+    .replace(/[\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+|\.+$/g, '');
+  return clean || 'Unassigned Campaign';
+}
+function phase145CampaignFromItem(plugin, item) {
+  const campaigns = safeArray(plugin?.state?.entities?.campaigns);
+  if (!campaigns.length) return null;
+  if (item?.campaignId) {
+    const byId = campaigns.find(c => String(c.id || '') === String(item.campaignId || ''));
+    if (byId) return byId;
+  }
+  if (item?.campaign) {
+    const byName = campaigns.find(c => String(c.name || c.title || '').trim().toLowerCase() === String(item.campaign || '').trim().toLowerCase());
+    if (byName) return byName;
+  }
+  const active = activeCampaign(plugin?.state || {});
+  return active || campaigns[0] || null;
+}
+function phase145FallbackCampaign(plugin, campaign, item) {
+  return campaign || phase145CampaignFromItem(plugin, item) || { id: '', name: 'Unassigned Campaign', title: 'Unassigned Campaign' };
+}
+function phase145CampaignRoot(plugin, campaign, item) {
+  const c = phase145FallbackCampaign(plugin, campaign, item);
+  // Intentional: the campaign name is the top-level output folder. Do not use
+  // TTRPG/Campaigns, generic exports, or Loose Notes as generated-output roots.
+  return normalizePath(phase145CleanCampaignFolderName(c?.name || c?.title || 'Unassigned Campaign'));
+}
+function phase145KnownCampaignRoot(plugin, path) {
+  const clean = normalizePath(path || '');
+  const roots = safeArray(plugin?.state?.entities?.campaigns)
+    .map(c => phase145CampaignRoot(plugin, c))
+    .concat(['Unassigned Campaign'])
+    .filter(Boolean);
+  return roots.find(root => clean === root || clean.startsWith(`${root}/`)) || '';
+}
+function phase145TopFolderIndex(parts) {
+  const topFolders = safeArray(typeof PHASE122_CAMPAIGN_TOP_FOLDERS !== 'undefined' ? PHASE122_CAMPAIGN_TOP_FOLDERS : [
+    '00 Dashboard','01 World & Lore','02 Geography & Maps','03 NPCs & Creatures','04 Adventures & Quests','05 Encounters','06 Rules','07 Downtime & Bases','08 Sessions','09 Secrets','10 Player Packet','11 Assets','Library'
+  ]);
+  for (let i = 0; i < parts.length; i++) {
+    for (const folder of topFolders) {
+      const fparts = String(folder).split('/');
+      const slice = parts.slice(i, i + fparts.length).join('/');
+      if (slice === folder) return i;
+    }
+  }
+  return -1;
+}
+function phase145DefaultSubfolderForPath(path) {
+  const lower = String(path || '').toLowerCase();
+  if (/player-safe-packet|character-sheet|handout|packet|export/.test(lower)) return '10 Player Packet/Exports';
+  if (/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(lower)) return '11 Assets/Saved';
+  if (/\.json$/i.test(lower)) return '00 Dashboard/Imports & Exports';
+  return '00 Dashboard/Generated Files';
+}
+function phase145ReroutePath(plugin, path, campaign, item) {
+  const original = normalizePath(path || '');
+  const known = phase145KnownCampaignRoot(plugin, original);
+  if (known) return original;
+  const root = phase145CampaignRoot(plugin, campaign, item);
+  const parts = original.split('/').filter(Boolean);
+
+  // Legacy TTRPG/Campaigns/<Campaign>/... or TTRPG/Exports/... paths are
+  // collapsed back under the active campaign root.
+  const topIndex = phase145TopFolderIndex(parts);
+  if (topIndex >= 0) return normalizePath(`${root}/${parts.slice(topIndex).join('/')}`);
+
+  const filename = parts[parts.length - 1] || 'Generated File.md';
+  return normalizePath(`${root}/${phase145DefaultSubfolderForPath(original)}/${filename}`);
+}
+function phase145AttachCampaign(plugin, item, campaign) {
+  if (!item || typeof item !== 'object') return item;
+  const c = phase145FallbackCampaign(plugin, campaign, item);
+  if (c?.id && !item.campaignId) item.campaignId = c.id;
+  if ((c?.name || c?.title) && !item.campaign) item.campaign = c.name || c.title;
+  return item;
+}
+function phase145ApplyCampaignOutputSettings(plugin, campaign) {
+  if (!plugin?.state) return;
+  const root = phase145CampaignRoot(plugin, campaign);
+  plugin.state.settings = Object.assign({}, plugin.state.settings || {}, {
+    campaignFolder: root,
+    exportFolder: `${root}/10 Player Packet/Exports`,
+    assetRootFolder: `${root}/11 Assets`,
+    mapAssetFolder: `${root}/11 Assets/Maps`,
+    mapBackgroundFolder: `${root}/11 Assets/Backgrounds`,
+    portraitAssetFolder: `${root}/11 Assets/Portraits`,
+    tokenAssetFolder: `${root}/11 Assets/Tokens`,
+    portraitVaultFolder: `${root}/11 Assets/Portraits/Saved`,
+    savedMapFolder: `${root}/11 Assets/Saved`
+  });
+}
+
+// Root helpers: force all generated structures under the campaign-name folder.
+phase78CampaignRoot = function phase145Phase78CampaignRoot(plugin, campaign) {
+  return phase145CampaignRoot(plugin, campaign);
+};
+if (typeof phase122CampaignRoot === 'function') {
+  phase122CampaignRoot = function phase145Phase122CampaignRoot(plugin, campaign) {
+    return phase145CampaignRoot(plugin, campaign);
+  };
+}
+if (typeof phase122AssetRoot === 'function') {
+  phase122AssetRoot = function phase145Phase122AssetRoot(plugin, campaign) {
+    return normalizePath(`${phase145CampaignRoot(plugin, campaign)}/11 Assets`);
+  };
+}
+if (typeof phase122DerivedAssetFolders === 'function') {
+  phase122DerivedAssetFolders = function phase145Phase122DerivedAssetFolders(plugin, campaign) {
+    const root = normalizePath(`${phase145CampaignRoot(plugin, campaign)}/11 Assets`);
+    return {
+      assetRootFolder: root,
+      mapAssetFolder: `${root}/Maps`,
+      mapBackgroundFolder: `${root}/Backgrounds`,
+      portraitAssetFolder: `${root}/Portraits`,
+      tokenAssetFolder: `${root}/Tokens`,
+      portraitVaultFolder: `${root}/Portraits/Saved`,
+      savedMapFolder: `${root}/Saved`
+    };
+  };
+}
+if (typeof phase122ApplyCampaignAssetFolders === 'function') {
+  phase122ApplyCampaignAssetFolders = function phase145ApplyCampaignAssetFolders(plugin, campaign) {
+    phase145ApplyCampaignOutputSettings(plugin, campaign);
+    plugin.state.settings.includeBundledPortraitAssets = plugin.state.settings.includeBundledPortraitAssets !== false;
+    return plugin.state.settings;
+  };
+}
+
+const phase145BaseWriteFile = writeFile;
+writeFile = async function phase145WriteFile(plugin, path, content) {
+  const routed = phase145ReroutePath(plugin, path);
+  return phase145BaseWriteFile(plugin, routed, content);
+};
+
+if (typeof phase80WriteFile === 'function') {
+  phase80WriteFile = async function phase145Phase80WriteFile(plugin, path, content) {
+    const routed = phase145ReroutePath(plugin, path);
+    phase80Suppress(routed);
+    return writeFile(plugin, routed, content);
+  };
+}
+
+const phase145BasePhase78WriteTemplateNote = phase78WriteTemplateNote;
+phase78WriteTemplateNote = async function phase145WriteTemplateNote(plugin, campaign, key, item) {
+  const c = phase145FallbackCampaign(plugin, campaign, item);
+  phase145AttachCampaign(plugin, item, c);
+  const root = phase145CampaignRoot(plugin, c, item);
+  const folder = phase78FolderForKey(key, item);
+  const filename = `${phase78Slug(item?.name || item?.title || ENTITY_LABELS[key] || key)}.md`;
+  const preferred = normalizePath(item?.notePath || item?.filePath || '');
+  const safePreferred = preferred && phase145KnownCampaignRoot(plugin, preferred) ? preferred : '';
+  const path = safePreferred || normalizePath(`${root}/${folder}/${filename}`);
+  const md = phase78TemplateFor(key, item, c);
+  await phase80WriteFile(plugin, path, md);
+  if (item) {
+    item.notePath = path;
+    item.filePath = path;
+    item.lastSyncedToNote = Date.now();
+  }
+  return path;
+};
+
+const phase145BaseUpsert = upsert;
+upsert = function phase145Upsert(state, key, item) {
+  try {
+    if (key !== 'campaigns' && item && typeof item === 'object') {
+      const plugin = window?.app?.plugins?.plugins?.['ttrpg-table'];
+      const campaigns = safeArray(state?.entities?.campaigns);
+      const c = activeCampaign(state || {}) || campaigns[0] || null;
+      if (plugin && c) phase145AttachCampaign(plugin, item, c);
+      else if (c) {
+        if (c.id && !item.campaignId) item.campaignId = c.id;
+        if ((c.name || c.title) && !item.campaign) item.campaign = c.name || c.title;
+      }
+    }
+  } catch (_) {}
+  return phase145BaseUpsert(state, key, item);
+};
+
+if (typeof phase119SavePortraitToVault === 'function') {
+  const phase145BaseSavePortraitToVault = phase119SavePortraitToVault;
+  phase119SavePortraitToVault = async function phase145SavePortraitToVault(plugin, asset, target) {
+    try {
+      const filename = `${slugify(target?.name || target?.title || asset?.name || 'portrait')}-${Date.now()}.${String(asset?.filename || asset?.path || 'portrait.webp').split('.').pop() || 'webp'}`;
+      const folder = `${phase145CampaignRoot(plugin, null, target)}/11 Assets/Portraits/Saved`;
+      const dest = await phase119UniqueVaultPath(plugin, folder, filename);
+      let bytes = null;
+      if (asset?.path) bytes = await plugin.app.vault.adapter.readBinary(asset.path);
+      if (!bytes) return phase145BaseSavePortraitToVault(plugin, asset, target);
+      await plugin.app.vault.adapter.writeBinary(dest, bytes);
+      return dest;
+    } catch (err) {
+      console.warn('Phase 145 portrait routing failed; using previous portrait save path.', err);
+      return phase145BaseSavePortraitToVault(plugin, asset, target);
+    }
+  };
+}
+
+if (typeof phase121ExportTileMapPng === 'function') {
+  const phase145BaseExportTileMapPng = phase121ExportTileMapPng;
+  phase121ExportTileMapPng = async function phase145ExportTileMapPng(plugin, values) {
+    try {
+      phase145ApplyCampaignOutputSettings(plugin);
+      return await phase145BaseExportTileMapPng(plugin, values);
+    } catch (err) {
+      console.warn('Phase 145 tile-map PNG routing failed.', err);
+      throw err;
+    }
+  };
+}
+
+function phase145EnsureRunResumeButton(main, plugin) {
+  const actions = main?.querySelector?.('.ttrpg-dm-screen-actions');
+  if (!actions) return;
+  let run = actions.querySelector('[data-phase145-run-campaign="true"]');
+  if (!run) {
+    run = btn(actions, 'Run / Resume Campaign', 'ttrpg-btn ttrpg-danger ttrpg-phase145-run-campaign', () => {
+      const campaign = phase145FallbackCampaign(plugin, activeCampaign(plugin.state), null);
+      const hasRealCampaign = safeArray(plugin?.state?.entities?.campaigns).some(c => String(c.id || '') === String(campaign?.id || '') || String(c.name || '') === String(campaign?.name || ''));
+      if (!hasRealCampaign) { new Notice('Create or select a campaign before running it.'); return; }
+      return phase135RunCampaign(plugin, campaign);
+    });
+    run.dataset.phase145RunCampaign = 'true';
+  }
+  run.textContent = 'Run / Resume Campaign';
+  run.className = 'ttrpg-btn ttrpg-danger ttrpg-phase145-run-campaign';
+  const buttons = Array.from(actions.querySelectorAll('button'));
+  const newCampaign = buttons.find(b => /new campaign/i.test(String(b.textContent || '')));
+  const rollDice = buttons.find(b => /roll dice/i.test(String(b.textContent || '')));
+  if (newCampaign && newCampaign.nextSibling !== run) actions.insertBefore(run, newCampaign.nextSibling);
+  if (rollDice && run.nextSibling !== rollDice) actions.insertBefore(rollDice, run.nextSibling);
+  if (rollDice && Array.from(actions.children).indexOf(run) > Array.from(actions.children).indexOf(rollDice)) actions.insertBefore(run, rollDice);
+}
+
+const phase145BaseRenderDashboard = renderDashboard;
+renderDashboard = function phase145RenderDashboard(main, plugin) {
+  phase145ApplyCampaignOutputSettings(plugin);
+  phase145BaseRenderDashboard(main, plugin);
+  phase145EnsureRunResumeButton(main, plugin);
+};
+
+try {
+  const Phase145BaseCampaignWizardModal = CampaignWizardModal;
+  CampaignWizardModal = class Phase145CampaignWizardModal extends Phase145BaseCampaignWizardModal {
+    async finalise() {
+      if (this.values?.name) this.values.folderPath = phase145CleanCampaignFolderName(this.values.name);
+      const result = await super.finalise();
+      phase145ApplyCampaignOutputSettings(this.plugin, phase145FallbackCampaign(this.plugin));
+      return result;
+    }
+  };
+} catch (err) { console.warn('Phase 145 Campaign Wizard routing patch failed', err); }
+
+try {
+  const Phase145BaseSettingsModal = SettingsModal;
+  SettingsModal = class Phase145SettingsModal extends Phase145BaseSettingsModal {
+    onOpen() {
+      super.onOpen();
+      try {
+        const note = this.contentEl.createEl('p', { cls: 'ttrpg-muted ttrpg-phase145-routing-note' });
+        note.setText('Output routing is campaign-scoped: generated notes, exports, maps, portraits, and campaign files are forced into the active campaign-name folder. Legacy TTRPG/Loose paths are no longer used for generated output.');
+      } catch (_) {}
+    }
+  };
+} catch (err) { console.warn('Phase 145 Settings routing note failed', err); }
+
+try {
+  const phase145BaseOnload = TTRPGTablePlugin.prototype.onload;
+  TTRPGTablePlugin.prototype.onload = async function phase145Onload() {
+    await phase145BaseOnload.call(this);
+    phase145ApplyCampaignOutputSettings(this);
+    this.state.version = PHASE145_VERSION;
+    await this.saveData(this.state);
+  };
+  const phase145BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase145SaveState() {
+    phase145ApplyCampaignOutputSettings(this);
+    this.state.version = PHASE145_VERSION;
+    await phase145BaseSaveState.call(this);
+    phase145ApplyCampaignOutputSettings(this);
+    this.state.version = PHASE145_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (_) {}
+
+
+/* --------------------------------------------------------------------------
+ * Phase 146 — DM layout polish, Conditions two-column output, and copy pass
+ * -------------------------------------------------------------------------- */
+const PHASE146_VERSION = '1.146.0';
+
+const phase146CopyReplacements = [
+  ['Search the DM Screen:', 'Search the DM screen:'],
+  ['death save, language', 'death saves, language'],
+  ['Filters the dropdown chips below without changing the global plugin search.', 'Filter the dropdown chips below without changing the global plugin search.'],
+  ['local legal data', 'locally stored rules data'],
+  ['vs AC.', 'vs. AC.'],
+  ['ability mod + item bonus', 'ability modifier + item bonus'],
+  ['-5 passive Perception', '−5 passive Perception'],
+  ['20 bright + 20 dim', '20 ft bright + 20 ft dim'],
+  ['sun bright', 'sunlight is bright'],
+  ['fast-at-table layer', 'fast table-reference layer'],
+  ['Actions in Combat', 'Combat Actions'],
+  ['Spell Save / Attack', 'Spell Save DC / Spell Attack']
+];
+
+function phase146CleanVisibleCopy(root) {
+  if (!root || !document?.createTreeWalker) return;
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node?.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = String(parent.tagName || '').toLowerCase();
+        if (['script', 'style', 'textarea', 'input', 'select', 'option'].includes(tag)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(node => {
+      let value = String(node.nodeValue || '');
+      let next = value;
+      phase146CopyReplacements.forEach(([from, to]) => { next = next.split(from).join(to); });
+      if (next !== value) node.nodeValue = next;
+    });
+  } catch (_) {}
+}
+
+function phase146SetSearchPlaceholders(root) {
+  root?.querySelectorAll?.('input.ttrpg-search').forEach(input => {
+    if (!input.placeholder || /Search campaigns|Search this plugin/i.test(input.placeholder)) input.placeholder = 'Search all entries…';
+    if (/Search the DM Screen/i.test(input.placeholder)) input.placeholder = input.placeholder.replace('DM Screen', 'DM screen').replace('death save,', 'death saves,');
+  });
+}
+
+function phase146PolishDmScreen(root) {
+  const panels = Array.from(root?.querySelectorAll?.('.ttrpg-phase144-dm-panel, .ttrpg-dm-panel') || []);
+  panels.forEach(panel => {
+    const heading = panel.querySelector?.('.ttrpg-dm-panel-head h2, h2');
+    if (!heading) return;
+    const title = String(heading.textContent || '').trim().toLowerCase();
+    if (title === 'conditions') {
+      panel.classList.add('ttrpg-phase146-conditions-panel');
+      const body = panel.querySelector('.ttrpg-dm-condition-grid, .ttrpg-phase144-chip-stack');
+      if (body) body.classList.add('ttrpg-phase146-conditions-grid');
+    }
+  });
+  root?.querySelectorAll?.('.ttrpg-main > h1, .ttrpg-main > h2, .ttrpg-main > h3, .ttrpg-page-header, .ttrpg-section-title').forEach(el => el.classList.add('ttrpg-phase146-full-span'));
+}
+
+function phase146PolishLayout(root) {
+  phase146SetSearchPlaceholders(root);
+  phase146PolishDmScreen(root);
+  phase146CleanVisibleCopy(root);
+}
+
+try {
+  const phase146BaseRender = TTRPGMainView.prototype.render;
+  TTRPGMainView.prototype.render = function phase146Render() {
+    phase146BaseRender.call(this);
+    phase146PolishLayout(this.containerEl);
+  };
+} catch (err) { console.warn('Phase 146 render polish patch failed.', err); }
+
+try {
+  const phase146BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase146SaveState() {
+    this.state.version = PHASE146_VERSION;
+    return phase146BaseSaveState.call(this);
+  };
+} catch (err) { console.warn('Phase 146 save-state patch failed.', err); }
+
+/* --------------------------------------------------------------------------
+ * Phase 147 — Full Layout Rationalisation
+ * -------------------------------------------------------------------------- */
+const PHASE147_VERSION = '1.147.0';
+
+function phase147Slug(value) {
+  return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+}
+
+function phase147ActiveLayoutKey(plugin) {
+  const state = plugin?.state || {};
+  if (state.mode === 'PLAYER') return `player-${state.activePlayerTab || 'sheet'}`;
+  return state.activeSection || 'dashboard';
+}
+
+const PHASE147_HELPER_COPY = {
+  dashboard: 'Start here: choose or create a campaign, then jump into prep, running, or export tools.',
+  campaignList: 'Create, select, resume, and organise campaign records before adding world material.',
+  world: 'Build the setting layer: lore, factions, deities, calendars, cultures, myths, and campaign truths.',
+  geography: 'Track the physical world: regions, settlements, points of interest, and usable maps.',
+  party: 'Keep the player-facing party roster, relationships, and shared party state in one place.',
+  npcs: 'Create people and monsters, then connect them back to quests, factions, locations, and secrets.',
+  adventure: 'Plan adventures, quests, encounters, rewards, and branching outcomes for play at the table.',
+  combat: 'Run encounters, add combatants manually, track rounds, and recover combat state after reloads.',
+  generators: 'Generate useful material quickly, then save anything worth keeping into the campaign folder.',
+  rules: 'Store rules, conditions, damage notes, tables, homebrew mechanics, and quick references.',
+  downtime: 'Manage downtime, bastions, bases, projects, hirelings, upkeep, crafting, and long-term clocks.',
+  sessions: 'Log sessions, timeline changes, milestones, player actions, and next-session prep.',
+  secrets: 'Protect unrevealed information, prepare handouts, and export only what players are allowed to see.',
+  library: 'Search, edit, delete, import, and maintain compendium/homebrew entries without leaving the plugin.',
+  homebrewForge: 'Design custom rules objects, subclasses, species, items, spells, and campaign mechanics.',
+  hybridAncestry: 'Build hybrid ancestry options while keeping player-facing choices readable and table-safe.',
+  player: 'Player-safe tools and summaries only: no DM secrets, unrevealed content, or private prep.',
+  'player-sheet': 'Manage the player character sheet and table-facing character state.',
+  'player-campaign': 'Read the player-safe campaign summary and visible campaign context.',
+  'player-tools': 'Use player-safe dice, rules, and utility tools.',
+  'player-journal': 'Track player notes, character thoughts, and personal campaign records.',
+  'player-party': 'Review party members, shared resources, and player-visible group information.',
+  'player-export': 'Export player-safe packets and summaries.'
+};
+
+function phase147PageLabelFromHeader(main, key) {
+  const h = main?.querySelector?.('.ttrpg-page-header h1, h1');
+  return String(h?.textContent || PHASE147_HELPER_COPY[key] || key || 'Page').trim();
+}
+
+function phase147GetHeaderParts(headerEl) {
+  if (!headerEl) return { titleWrap: null, actions: null };
+  const actions = headerEl.querySelector(':scope > .ttrpg-actions') || headerEl.querySelector('.ttrpg-actions');
+  const titleWrap = Array.from(headerEl.children || []).find(child => child !== actions) || null;
+  return { titleWrap, actions };
+}
+
+function phase147HarmoniseHeader(main, plugin, key) {
+  const headerEl = main?.querySelector?.(':scope > .ttrpg-page-header');
+  if (!headerEl) return;
+  headerEl.classList.add('ttrpg-phase147-page-header');
+  const { titleWrap, actions } = phase147GetHeaderParts(headerEl);
+  if (titleWrap) titleWrap.classList.add('ttrpg-phase147-header-copy');
+  if (actions) {
+    actions.classList.add('ttrpg-phase147-action-bar');
+    const primary = actions.querySelector('.ttrpg-primary');
+    if (primary) primary.classList.add('ttrpg-phase147-primary-action');
+    Array.from(actions.querySelectorAll('button')).forEach((button, index) => {
+      button.classList.add(index < 2 ? 'ttrpg-phase147-priority-button' : 'ttrpg-phase147-secondary-button');
+    });
+  }
+  const helper = PHASE147_HELPER_COPY[key] || PHASE147_HELPER_COPY[plugin?.state?.activeSection || ''];
+  if (titleWrap && helper && !titleWrap.querySelector('.ttrpg-phase147-helper')) {
+    const existing = titleWrap.querySelector('p.ttrpg-muted');
+    if (existing && String(existing.textContent || '').trim()) {
+      existing.classList.add('ttrpg-phase147-existing-subtitle');
+    } else {
+      ce(titleWrap, 'p', 'ttrpg-muted ttrpg-phase147-helper', helper);
+    }
+  }
+  const campaign = activeCampaign(plugin.state);
+  if (campaign && titleWrap && !titleWrap.querySelector('.ttrpg-phase147-context-row')) {
+    const row = ce(titleWrap, 'div', 'ttrpg-phase147-context-row');
+    ce(row, 'span', 'ttrpg-tag ttrpg-phase147-context-pill', `Campaign: ${campaign.name || 'Untitled Campaign'}`);
+  }
+}
+
+function phase147MarkMainAndGrids(main, plugin, key) {
+  if (!main) return;
+  main.classList.add('ttrpg-phase147-main');
+  main.dataset.ttrpgSection = key;
+  main.classList.add(`ttrpg-phase147-section-${phase147Slug(key)}`);
+  main.querySelectorAll('.ttrpg-grid').forEach(gridEl => gridEl.classList.add('ttrpg-phase147-card-grid'));
+  main.querySelectorAll('.ttrpg-stat-grid').forEach(gridEl => gridEl.classList.add('ttrpg-phase147-stat-grid'));
+  main.querySelectorAll('.ttrpg-mini-grid').forEach(gridEl => gridEl.classList.add('ttrpg-phase147-mini-grid'));
+  main.querySelectorAll('.ttrpg-card-actions, .ttrpg-live-controls, .ttrpg-dm-screen-actions').forEach(row => row.classList.add('ttrpg-phase147-action-row'));
+  main.querySelectorAll('.ttrpg-card, .ttrpg-stat-card, .ttrpg-empty').forEach(el => el.classList.add('ttrpg-phase147-surface'));
+}
+
+function phase147WrapSectionBlocks(main) {
+  if (!main || main.querySelector('.ttrpg-phase147-section-block')) return;
+  let node = main.firstElementChild;
+  while (node) {
+    if (!(node.matches && node.matches('.ttrpg-section-title'))) { node = node.nextElementSibling; continue; }
+    const wrapper = document.createElement('section');
+    wrapper.className = 'ttrpg-phase147-section-block';
+    main.insertBefore(wrapper, node);
+    while (node) {
+      const next = node.nextElementSibling;
+      wrapper.appendChild(node);
+      node = next;
+      if (node && node.matches && node.matches('.ttrpg-section-title')) break;
+    }
+  }
+}
+
+function phase147AddSectionCounts(main) {
+  main?.querySelectorAll?.('.ttrpg-phase147-section-block').forEach(block => {
+    if (block.querySelector('.ttrpg-phase147-section-count')) return;
+    const title = block.querySelector('.ttrpg-section-title');
+    if (!title) return;
+    const count = block.querySelectorAll('.ttrpg-card, .ttrpg-stat-card, .ttrpg-empty, details').length;
+    if (!count) return;
+    const pill = document.createElement('span');
+    pill.className = 'ttrpg-tag ttrpg-phase147-section-count';
+    pill.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+    title.appendChild(pill);
+  });
+}
+
+function phase147MakeDensePagesScannable(main, key) {
+  if (!main) return;
+  const dense = ['library','rules','world','geography','downtime','sessions','secrets','adventure','npcs'].includes(String(key));
+  if (!dense) return;
+  main.classList.add('ttrpg-phase147-dense-page');
+  main.querySelectorAll('.ttrpg-phase147-section-block').forEach((block, index) => {
+    block.classList.add('ttrpg-phase147-dense-section');
+    const title = block.querySelector('.ttrpg-section-title');
+    if (title) title.classList.add('ttrpg-phase147-section-heading');
+    if (index > 0 && key === 'library') block.classList.add('ttrpg-phase147-library-secondary');
+  });
+}
+
+function phase147ImproveEmptyStates(main, plugin, key) {
+  const empties = Array.from(main?.querySelectorAll?.('.ttrpg-empty') || []);
+  empties.forEach(emptyEl => {
+    emptyEl.classList.add('ttrpg-phase147-empty-state');
+    const text = emptyEl.querySelector('p');
+    if (text && /Use the action buttons above to create one\.?/i.test(String(text.textContent || ''))) {
+      text.textContent = 'Use the primary action at the top of this page, or choose one of the quick actions below.';
+    }
+    if (emptyEl.querySelector('.ttrpg-phase147-empty-actions')) return;
+    const actions = ce(emptyEl, 'div', 'ttrpg-card-actions ttrpg-phase147-empty-actions');
+    const openEntity = (label, entityKey, cls) => btn(actions, label, cls || 'ttrpg-btn', () => new EntityModal(plugin.app, plugin, entityKey).open());
+    const map = {
+      campaignList: () => { btn(actions, 'Launch Campaign Wizard', 'ttrpg-btn ttrpg-primary', () => new CampaignWizardModal(plugin.app, plugin).open()); openEntity('Blank Campaign', 'campaigns'); },
+      world: () => { openEntity('World Overview', 'worlds', 'ttrpg-btn ttrpg-primary'); openEntity('Deity', 'deities'); btn(actions, 'Calendar', 'ttrpg-btn', () => new CalendarModal(plugin.app, plugin).open()); },
+      geography: () => { openEntity('Region', 'regions', 'ttrpg-btn ttrpg-primary'); openEntity('Settlement', 'settlements'); btn(actions, 'Map', 'ttrpg-btn', () => new MapModal(plugin.app, plugin).open()); },
+      npcs: () => { btn(actions, 'NPC Builder', 'ttrpg-btn ttrpg-primary', () => new NPCModal(plugin.app, plugin).open()); btn(actions, 'Creature Builder', 'ttrpg-btn', () => new CreatureModal(plugin.app, plugin).open()); },
+      adventure: () => { openEntity('Adventure', 'adventures', 'ttrpg-btn ttrpg-primary'); btn(actions, 'Quest', 'ttrpg-btn', () => new QuestModal(plugin.app, plugin).open()); btn(actions, 'Encounter', 'ttrpg-btn', () => new EncounterModal(plugin.app, plugin).open()); },
+      generators: () => { btn(actions, 'Open Generator', 'ttrpg-btn ttrpg-primary', () => new GeneratorModal(plugin.app, plugin).open()); btn(actions, 'Roll Dice', 'ttrpg-btn', () => new DiceModal(plugin.app, plugin).open()); },
+      rules: () => { openEntity('Custom Rule', 'rules', 'ttrpg-btn ttrpg-primary'); openEntity('Condition', 'conditions'); btn(actions, 'Damage Calculator', 'ttrpg-btn', () => new DamageModal(plugin.app, plugin).open()); },
+      downtime: () => { openEntity('Downtime Activity', 'downtime', 'ttrpg-btn ttrpg-primary'); btn(actions, 'Project', 'ttrpg-btn', () => new ProjectModal(plugin.app, plugin).open()); openEntity('Bastion', 'bastions'); },
+      sessions: () => { btn(actions, 'Session Log', 'ttrpg-btn ttrpg-primary', () => new SessionModal(plugin.app, plugin).open()); openEntity('Milestone', 'milestones'); },
+      secrets: () => { btn(actions, 'New Secret', 'ttrpg-btn ttrpg-primary', () => new SecretModal(plugin.app, plugin).open()); openEntity('Handout', 'handouts'); },
+      library: () => { openEntity('Homebrew Entry', 'homebrew', 'ttrpg-btn ttrpg-primary'); openEntity('Compendium Entry', 'compendium'); btn(actions, 'Import JSON', 'ttrpg-btn', () => new ImportModal(plugin.app, plugin).open()); }
+    };
+    try { (map[key] || map[plugin?.state?.activeSection || ''] || (() => {}))(); } catch (_) {}
+    if (!actions.children.length) actions.remove();
+  });
+}
+
+function phase147CleanCopy(root) {
+  if (!root || !document?.createTreeWalker) return;
+  const replacements = [
+    ['finalise folder structures', 'finalise campaign folders'],
+    ['Multi-step modal:', 'Guided setup:'],
+    ['Campaign Creation & Wizard', 'Campaigns'],
+    ['Compendium & Library Management', 'Library & Compendium'],
+    ['NPC, Creature & Monster Management', 'NPCs, Creatures & Monsters'],
+    ['Secrecy, Visibility & Collaboration', 'Secrets & Reveals'],
+    ['Session, Time & Campaign Tracking', 'Sessions & Timeline'],
+    ['Downtime, Crafting & Base Management', 'Downtime, Bastions & Base Management'],
+    ['Generators & Random Tools', 'Generators & DM Calculators'],
+    ['World overview, planes, timelines, calendars, deities, cultures, languages, factions, magic/tech rules, legends, myths, and rumours.', 'World overview, planes, timelines, calendars, deities, cultures, languages, factions, magic and technology rules, legends, myths, and rumours.'],
+    ['NPC names, encounters, loot, taverns, shops, travel events, rumours, plot hooks, weighted rollable tables, and local AI prompt packs.', 'NPC names, encounters, loot, taverns, shops, travel events, rumours, plot hooks, weighted roll tables, and local prompt packs.'],
+    ['Rule compendium, custom/optional rules', 'Rule compendium, custom rules, optional rules'],
+    ['auto-linking hooks', 'auto-linking tools'],
+    ['user-supplied local data', 'user-supplied data'],
+    ['Open Generator', 'Open Generator'],
+    ['No generated results yet.', 'No generated results yet.'],
+    ['No active campaign selected yet.', 'No active campaign selected.']
+  ];
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node?.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = String(parent.tagName || '').toLowerCase();
+        if (['script', 'style', 'textarea', 'input', 'select', 'option'].includes(tag)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(node => {
+      let next = String(node.nodeValue || '');
+      replacements.forEach(([from, to]) => { next = next.split(from).join(to); });
+      if (next !== node.nodeValue) node.nodeValue = next;
+    });
+  } catch (_) {}
+}
+
+function phase147RationaliseLayout(root, plugin) {
+  if (!root || !plugin) return;
+  const shell = root.querySelector?.('.ttrpg-shell') || root.closest?.('.ttrpg-shell') || root;
+  const main = root.querySelector?.('.ttrpg-main') || shell?.querySelector?.('.ttrpg-main');
+  if (!main) return;
+  const key = phase147ActiveLayoutKey(plugin);
+  shell?.classList?.add('ttrpg-phase147-shell');
+  if (shell) shell.dataset.ttrpgMode = plugin.state?.mode || 'DM';
+  phase147MarkMainAndGrids(main, plugin, key);
+  phase147HarmoniseHeader(main, plugin, key);
+  phase147WrapSectionBlocks(main);
+  phase147AddSectionCounts(main);
+  phase147MakeDensePagesScannable(main, key);
+  phase147ImproveEmptyStates(main, plugin, key);
+  phase147CleanCopy(main);
+  try { if (typeof phase146PolishLayout === 'function') phase146PolishLayout(root); } catch (_) {}
+}
+
+try {
+  const phase147BaseRender = TTRPGMainView.prototype.render;
+  TTRPGMainView.prototype.render = function phase147Render() {
+    phase147BaseRender.call(this);
+    phase147RationaliseLayout(this.containerEl, this.plugin);
+  };
+} catch (err) { console.warn('Phase 147 render rationalisation patch failed.', err); }
+
+try {
+  const phase147BaseAttachStableSearch = attachStableSearch;
+  attachStableSearch = function phase147AttachStableSearch(search, view, main) {
+    phase147BaseAttachStableSearch(search, view, main);
+    search.addEventListener('input', () => window.setTimeout(() => phase147RationaliseLayout(view.containerEl, view.plugin), 0));
+  };
+} catch (err) { console.warn('Phase 147 search layout patch failed.', err); }
+
+try {
+  const phase147BaseOnload = TTRPGTablePlugin.prototype.onload;
+  TTRPGTablePlugin.prototype.onload = async function phase147Onload() {
+    await phase147BaseOnload.call(this);
+    this.state.version = PHASE147_VERSION;
+    await this.saveData(this.state);
+  };
+  const phase147BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase147SaveState() {
+    this.state.version = PHASE147_VERSION;
+    await phase147BaseSaveState.call(this);
+    this.state.version = PHASE147_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (err) { console.warn('Phase 147 version patch failed.', err); }
+
+
+/* --------------------------------------------------------------------------
+ * Phase 148 — Layout Rationalisation & Card UX Cleanup
+ * --------------------------------------------------------------------------
+ * 1.  Type/Category chips beside card titles (deduped, not rows).
+ * 2.  Campaign card actions collapsed: Open · Run/Resume · More · Delete.
+ * 3.  Typo / copy fixes ("Downtime Activitys" etc).
+ * 4.  DM Screen rows labelled: QUICK FILTER / JUMP TO SECTION.
+ * 5.  System tags hidden from card list view (not deleted from data).
+ * 6.  Raw compendium source-code tags hidden from default tag cloud.
+ * 7.  NPC card previews: Role, Attitude, Status, Summary.
+ * 8.  Homebrew Forge: description ≠ summary; use full body for description.
+ * 9.  DM Screen "Campaign Quick Actions" → "Quick Navigation" + helper text.
+ * 10. Hybrid Ancestry Builder empty state with copy + example card.
+ */
+
+const PHASE148_VERSION = '1.148.0';
+
+// ─── 1. Type/Category chip helpers ──────────────────────────────────────────
+
+function phase148TypeChips(item) {
+  if (!item) return [];
+  const type = String(item.type || '').trim();
+  const category = String(item.category || '').trim();
+  if (!type && !category) return [];
+  if (type && category && type.toLowerCase() !== category.toLowerCase()) return [type, category];
+  return [type || category];
+}
+
+function phase148AddTypeChips(cardEl, item) {
+  if (!cardEl || !item) return;
+  if (cardEl.querySelector('.ttrpg-phase148-type-chips')) return;
+  const chips = phase148TypeChips(item);
+  if (!chips.length) return;
+  const head = cardEl.querySelector('.ttrpg-card-head');
+  if (!head) return;
+  const row = ce(head, 'div', 'ttrpg-phase148-type-chips');
+  chips.forEach(c => ce(row, 'span', 'ttrpg-tag ttrpg-phase148-type-chip', c));
+}
+
+// ─── 5. System tag constants and filter ─────────────────────────────────────
+
+const PHASE148_SYSTEM_TAGS = new Set([
+  'ttrpg','campaign-builder','note-linked','npc','quest','encounter','campaign',
+  'session','secret','world','lore','compendium','generated','auto-generated',
+  'campaign-linked','from-compendium','imported','import',
+  'created-from-campaign-builder-wizard','campaign-adventure','campaign-quest',
+  'campaign-encounter','player-bastion','campaign-downtime','campaign-project',
+  'campaign-hireling','campaign-record','party-member','homebrew'
+]);
+
+function phase148IsSystemTag(tag) {
+  const t = String(tag || '').toLowerCase().trim();
+  if (!t) return true;
+  if (PHASE148_SYSTEM_TAGS.has(t)) return true;
+  if (/^phase\d+$/.test(t)) return true;
+  if (/^(player|dm)-only$/.test(t)) return true;
+  return false;
+}
+
+function phase148HideSystemTagsOnCard(cardEl) {
+  if (!cardEl) return;
+  const tagEl = cardEl.querySelector('.ttrpg-tags');
+  if (!tagEl) return;
+  Array.from(tagEl.querySelectorAll('.ttrpg-tag')).forEach(chip => {
+    if (phase148IsSystemTag(chip.textContent)) chip.classList.add('ttrpg-phase148-hidden-tag');
+  });
+}
+
+// ─── 6. Source-code tag filter for compendium cloud ─────────────────────────
+
+const PHASE148_SOURCE_TAG_RX = /^[A-Za-z]{1,5}\|[a-z0-9]+$/;
+
+function phase148IsSourceCodeTag(tag) {
+  return PHASE148_SOURCE_TAG_RX.test(String(tag || '').trim());
+}
+
+try {
+  if (typeof phase93ItemCategories === 'function') {
+    const phase148BasePhase93ItemCategories = phase93ItemCategories;
+    phase93ItemCategories = function phase148ItemCategories(item) {
+      return safeArray(phase148BasePhase93ItemCategories(item)).filter(c => !phase148IsSourceCodeTag(c));
+    };
+  }
+} catch (_) {}
+
+try {
+  if (typeof phase90StoreTags === 'function') {
+    const phase148BasePhase90StoreTags = phase90StoreTags;
+    phase90StoreTags = function phase148StoreTags(item) {
+      return safeArray(phase148BasePhase90StoreTags(item)).filter(t => !phase148IsSourceCodeTag(t));
+    };
+  }
+} catch (_) {}
+
+// ─── 7. NPC card preview enrichment ─────────────────────────────────────────
+
+function phase148NpcPreviewFields(item) {
+  if (!item) return [];
+  const fields = [];
+  if (item.role) fields.push({ label: 'Role', value: String(item.role) });
+  if (item.attitude) fields.push({ label: 'Attitude', value: String(item.attitude) });
+  if (item.status) fields.push({ label: 'Status', value: String(item.status) });
+  const desc = item.summary || item.description;
+  if (desc) {
+    const text = String(desc).replace(/\*\*[^*]+\*\*:\s*/g, '').replace(/\n/g, ' ').trim();
+    fields.push({ label: 'Summary', value: text.slice(0, 120) + (text.length > 120 ? '…' : '') });
+  }
+  return fields;
+}
+
+function phase148EnrichNpcCard(cardEl, item) {
+  if (!cardEl || !item) return;
+  if (cardEl.querySelector('.ttrpg-phase148-npc-fields')) return;
+  const fields = phase148NpcPreviewFields(item);
+  if (!fields.length) return;
+  const wrap = ce(cardEl, 'div', 'ttrpg-phase148-npc-fields');
+  fields.forEach(f => {
+    const row = ce(wrap, 'div', 'ttrpg-phase148-npc-row');
+    ce(row, 'span', 'ttrpg-phase148-npc-label', f.label);
+    ce(row, 'span', 'ttrpg-phase148-npc-value', f.value);
+  });
+  // Insert before actions row
+  const actionsRow = cardEl.querySelector('.ttrpg-card-actions');
+  if (actionsRow) cardEl.insertBefore(wrap, actionsRow);
+}
+
+// ─── 2. Campaign card action collapse ────────────────────────────────────────
+
+const PHASE148_SECONDARY_PATTERNS = [
+  /^note$/i,
+  /^resolve references?$/i,
+  /^export json$/i,
+  /^full edit campaign$/i,
+  /^import( 04)? adventure( notes)?$/i,
+  /^add adventure\b/i,
+  /^add( \/\s*)?scene$/i,
+  /^add quest$/i,
+  /^add encounter$/i,
+  /^write module summary note$/i,
+  /^session prep note$/i,
+];
+
+function phase148IsSecondaryAction(text) {
+  return PHASE148_SECONDARY_PATTERNS.some(rx => rx.test(String(text || '').trim()));
+}
+
+if (!window.__phase148MoreClose) {
+  window.__phase148MoreClose = true;
+  document.addEventListener('click', function phase148GlobalClose(e) {
+    if (!e.target || !e.target.closest) return;
+    if (!e.target.closest('.ttrpg-phase148-more-wrap')) {
+      document.querySelectorAll('.ttrpg-phase148-more-menu').forEach(m => { m.hidden = true; });
+    }
+  }, true);
+}
+
+function phase148CollapseCampaignActions(cardEl) {
+  if (!cardEl || cardEl.dataset.phase148Collapsed === 'true') return;
+  const actions = cardEl.querySelector('.ttrpg-card-actions');
+  if (!actions) return;
+  const buttons = Array.from(actions.querySelectorAll('button'));
+  const secondary = buttons.filter(b => phase148IsSecondaryAction(b.textContent));
+  if (!secondary.length) return;
+
+  const moreWrap = ce(actions, 'div', 'ttrpg-phase148-more-wrap');
+  const moreBtn = ce(moreWrap, 'button', 'ttrpg-btn ttrpg-phase148-more-btn', 'More ▾');
+  moreBtn.type = 'button';
+  const moreMenu = ce(moreWrap, 'div', 'ttrpg-phase148-more-menu');
+  moreMenu.hidden = true;
+
+  secondary.forEach(b => {
+    const item = ce(moreMenu, 'button', 'ttrpg-phase148-more-item', b.textContent.trim());
+    item.type = 'button';
+    item.addEventListener('click', e => { e.stopPropagation(); moreMenu.hidden = true; b.click(); });
+    b.classList.add('ttrpg-phase148-hidden-action');
+  });
+
+  moreBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const wasHidden = moreMenu.hidden;
+    document.querySelectorAll('.ttrpg-phase148-more-menu').forEach(m => { m.hidden = true; });
+    moreMenu.hidden = !wasHidden;
+  });
+
+  // Place More before Delete
+  const deleteBtn = Array.from(actions.querySelectorAll('button')).find(
+    b => /delete/i.test(b.textContent) && b.classList.contains('ttrpg-danger')
+  );
+  if (deleteBtn && deleteBtn.parentNode === actions) {
+    actions.insertBefore(moreWrap, deleteBtn);
+  } else {
+    actions.appendChild(moreWrap);
+  }
+
+  cardEl.dataset.phase148Collapsed = 'true';
+}
+
+// ─── 3. Typo / copy fixes ────────────────────────────────────────────────────
+
+const PHASE148_COPY_FIXES = [
+  ['Downtime Activitys', 'Downtime Activities'],
+  ['downtime activitys', 'downtime activities'],
+  ['Acitivites', 'Activities'],
+  ['Acitivities', 'Activities'],
+  ['Create on by choosing', 'Create one by choosing'],
+];
+
+function phase148FixCopy(root) {
+  if (!root || !document.createTreeWalker) return;
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node && node.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        const tag = String(p.tagName || '').toLowerCase();
+        if (['script','style','textarea','input','select','option'].includes(tag)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(node => {
+      let next = String(node.nodeValue || '');
+      PHASE148_COPY_FIXES.forEach(([from, to]) => { next = next.split(from).join(to); });
+      if (next !== node.nodeValue) node.nodeValue = next;
+    });
+  } catch (_) {}
+}
+
+// ─── 4 & 9. DM Screen row labels + Quick Navigation rename ──────────────────
+
+function phase148LabelDmScreenRows(main) {
+  if (!main || main.dataset.phase148DmLabelled === 'true') return;
+
+  // JUMP TO SECTION / Quick Navigation — campaign quick actions or tool strip
+  const quickCard = main.querySelector('.ttrpg-phase144-quick-actions');
+  if (quickCard) {
+    const heading = quickCard.querySelector('h2');
+    if (heading && /campaign quick actions/i.test(String(heading.textContent || ''))) {
+      heading.textContent = 'Quick Navigation';
+    }
+    if (!quickCard.querySelector('.ttrpg-phase148-quick-nav-help')) {
+      const help = document.createElement('p');
+      help.className = 'ttrpg-muted ttrpg-phase148-quick-nav-help';
+      help.textContent = 'Use these shortcuts when the sidebar is collapsed or when running from the DM Screen.';
+      const actionGrid = quickCard.querySelector('.ttrpg-dm-action-grid, .ttrpg-phase144-action-grid');
+      if (actionGrid) quickCard.insertBefore(help, actionGrid);
+      else quickCard.appendChild(help);
+    }
+    if (!quickCard.querySelector('.ttrpg-phase148-jump-label')) {
+      const label = document.createElement('span');
+      label.className = 'ttrpg-phase148-row-label ttrpg-phase148-jump-label';
+      label.textContent = 'JUMP TO SECTION:';
+      const actionGrid = quickCard.querySelector('.ttrpg-dm-action-grid, .ttrpg-phase144-action-grid');
+      if (actionGrid) quickCard.insertBefore(label, actionGrid);
+    }
+  }
+
+  // Old DM screen tool strip
+  const toolStrip = main.querySelector('.ttrpg-dm-tool-strip');
+  if (toolStrip && !main.querySelector('.ttrpg-phase148-jump-label')) {
+    const label = document.createElement('span');
+    label.className = 'ttrpg-phase148-row-label ttrpg-phase148-jump-label';
+    label.textContent = 'JUMP TO SECTION:';
+    main.insertBefore(label, toolStrip);
+  }
+
+  // QUICK FILTER — search wrap
+  const searchWrap = main.querySelector('.ttrpg-dm-screen-search-wrap');
+  if (searchWrap && !searchWrap.querySelector('.ttrpg-phase148-filter-label')) {
+    const label = document.createElement('span');
+    label.className = 'ttrpg-phase148-row-label ttrpg-phase148-filter-label';
+    label.textContent = 'QUICK FILTER:';
+    searchWrap.insertBefore(label, searchWrap.firstChild);
+  }
+
+  // Ensure Conditions panel has two-column class (supplement phase146)
+  main.querySelectorAll('.ttrpg-phase144-dm-panel, .ttrpg-dm-panel').forEach(panel => {
+    const h = panel.querySelector('h2');
+    if (h && /conditions/i.test(String(h.textContent || ''))) {
+      const body = panel.querySelector('.ttrpg-dm-condition-grid, .ttrpg-phase144-chip-stack');
+      if (body) body.classList.add('ttrpg-phase146-conditions-grid', 'ttrpg-phase148-conditions-two-col');
+    }
+  });
+
+  main.dataset.phase148DmLabelled = 'true';
+}
+
+// ─── 8. Homebrew Forge: fix summary/description duplication ─────────────────
+
+try {
+  if (typeof phase82BuildDraft === 'function') {
+    const phase148BasePhase82BuildDraft = phase82BuildDraft;
+    phase82BuildDraft = function phase148BuildDraft(values) {
+      const result = phase148BasePhase82BuildDraft(values);
+      if (!result) return result;
+      // Prevent summary and description from being identical blocks of text.
+      // summary → short concept; description → full mechanics body.
+      if (result.summary && result.description === result.summary) {
+        result.summary = result.concept || String(result.summary).split('\n')[0] || result.summary;
+        const bodyParts = [result.mechanics, result.limits, result.crafting].filter(Boolean);
+        if (bodyParts.length) result.description = bodyParts.join('\n\n');
+      }
+      return result;
+    };
+  }
+} catch (_) {}
+
+// ─── 10. Hybrid Ancestry Builder empty state ─────────────────────────────────
+
+function phase148EnrichHybridEmptyState(main, plugin) {
+  if (!main) return;
+  const emptyEl = main.querySelector('.ttrpg-empty');
+  if (!emptyEl || emptyEl.dataset.phase148Enriched === 'true') return;
+
+  // Update the empty state body copy
+  const bodyEl = emptyEl.querySelector('p');
+  if (bodyEl) {
+    bodyEl.textContent = 'Mix two ancestries to create a balanced hybrid. Choose a dominant ancestry for primary traits and ASI, and a recessive ancestry for 1–2 minor traits. The builder enforces +3 ASI and a maximum of 4 traits, then generates Markdown output ready for your vault.';
+  }
+  emptyEl.dataset.phase148Enriched = 'true';
+
+  // Add a static example card into the grid (or create a grid sibling)
+  let gridEl = main.querySelector('.ttrpg-grid');
+  if (!gridEl) gridEl = ce(main, 'div', 'ttrpg-grid');
+  if (gridEl.querySelector('.ttrpg-phase148-example-hybrid')) return;
+
+  const ex = ce(gridEl, 'section', 'ttrpg-card ttrpg-phase148-example-hybrid');
+  ex.title = 'Static example — not saved to your data';
+  const head = ce(ex, 'div', 'ttrpg-card-head');
+  ce(head, 'div', 'ttrpg-card-icon', '🧬');
+  ce(head, 'h3', '', 'Half-Elf / Drow (Example)');
+  const chips = ce(head, 'div', 'ttrpg-phase148-type-chips');
+  ce(chips, 'span', 'ttrpg-tag ttrpg-phase148-type-chip', 'Hybrid Ancestry');
+
+  const fields = ce(ex, 'div', 'ttrpg-phase148-npc-fields');
+  [
+    ['Dominant', 'Half-Elf — +2 Cha, Fey Ancestry, skill versatility'],
+    ['Recessive', 'Drow — Darkvision, Drow Magic (1 cantrip)'],
+    ['ASI', '+2 Cha, +1 Dex (within +3 limit)'],
+    ['Traits', '3 of 4 maximum — Darkvision, Fey Ancestry, Drow Magic'],
+  ].forEach(([l, v]) => {
+    const row = ce(fields, 'div', 'ttrpg-phase148-npc-row');
+    ce(row, 'span', 'ttrpg-phase148-npc-label', l);
+    ce(row, 'span', 'ttrpg-phase148-npc-value', v);
+  });
+
+  const note = ce(ex, 'p', 'ttrpg-muted ttrpg-phase148-example-note', 'Example only — use Create Hybrid to build your own.');
+  const row = ce(ex, 'div', 'ttrpg-card-actions');
+  btn(row, 'Create Hybrid', 'ttrpg-btn ttrpg-primary', () => new HybridAncestryModal(plugin.app, plugin).open());
+}
+
+// ─── itemCards patch — covers npcs, campaigns, compendium, homebrew ──────────
+
+const phase148BaseItemCards = itemCards;
+itemCards = function phase148ItemCards(parent, plugin, key, opts) {
+  phase148BaseItemCards(parent, plugin, key, opts);
+  if (!['npcs','campaigns','compendium','homebrew','quests','encounters'].includes(key)) return;
+  try {
+    const items = safeArray(getStore(plugin.state, key)).filter(x => matchesSearch(x, plugin.state.search));
+    const cards = Array.from(parent.querySelectorAll('.ttrpg-card')).slice(-items.length);
+    cards.forEach((cardEl, idx) => {
+      const item = items[idx];
+      if (!item) return;
+      phase148AddTypeChips(cardEl, item);
+      phase148HideSystemTagsOnCard(cardEl);
+      if (key === 'npcs') phase148EnrichNpcCard(cardEl, item);
+      if (key === 'campaigns') phase148CollapseCampaignActions(cardEl);
+    });
+  } catch (err) { console.warn('Phase 148 itemCards patch failed', err); }
+};
+
+// ─── renderCampaignList patch ────────────────────────────────────────────────
+
+const phase148BaseRenderCampaignList = renderCampaignList;
+renderCampaignList = function phase148RenderCampaignList(main, plugin) {
+  phase148BaseRenderCampaignList(main, plugin);
+  try {
+    const campaigns = safeArray(getStore(plugin.state, 'campaigns')).filter(x => matchesSearch(x, plugin.state.search));
+    Array.from(main.querySelectorAll('.ttrpg-card')).slice(-campaigns.length).forEach((cardEl, idx) => {
+      const campaign = campaigns[idx];
+      if (!campaign) return;
+      phase148AddTypeChips(cardEl, campaign);
+      phase148HideSystemTagsOnCard(cardEl);
+      phase148CollapseCampaignActions(cardEl);
+    });
+    phase148FixCopy(main);
+  } catch (err) { console.warn('Phase 148 renderCampaignList patch failed', err); }
+};
+
+// ─── renderDashboard patch — DM screen labels ───────────────────────────────
+
+const phase148BaseRenderDashboard = renderDashboard;
+renderDashboard = function phase148RenderDashboard(main, plugin) {
+  phase148BaseRenderDashboard(main, plugin);
+  try {
+    phase148LabelDmScreenRows(main);
+    phase148FixCopy(main);
+  } catch (_) {}
+};
+
+// ─── renderHybridAncestry patch ──────────────────────────────────────────────
+
+if (typeof renderHybridAncestry === 'function') {
+  const phase148BaseRenderHybridAncestry = renderHybridAncestry;
+  renderHybridAncestry = function phase148RenderHybridAncestry(main, plugin) {
+    phase148BaseRenderHybridAncestry(main, plugin);
+    try { phase148EnrichHybridEmptyState(main, plugin); } catch (_) {}
+  };
+}
+
+// ─── Global post-render hook ─────────────────────────────────────────────────
+
+try {
+  const phase148BaseRender = TTRPGMainView.prototype.render;
+  TTRPGMainView.prototype.render = function phase148Render() {
+    phase148BaseRender.call(this);
+    try {
+      const containerEl = this.containerEl;
+      const plugin = this.plugin;
+      const main = containerEl && (containerEl.querySelector('.ttrpg-main') || containerEl);
+      if (!main) return;
+      const section = (plugin && plugin.state && plugin.state.activeSection) || '';
+      phase148FixCopy(main);
+      if (/dashboard/.test(section) || main.querySelector('.ttrpg-dm-screen, .ttrpg-phase144-dm-screen')) {
+        phase148LabelDmScreenRows(main);
+      }
+      if (section === 'hybridAncestry') {
+        phase148EnrichHybridEmptyState(main, plugin);
+      }
+    } catch (err) { console.warn('Phase 148 post-render failed', err); }
+  };
+} catch (err) { console.warn('Phase 148 render hook failed', err); }
+
+// ─── Version stamp ───────────────────────────────────────────────────────────
+
+try {
+  const phase148BaseOnload = TTRPGTablePlugin.prototype.onload;
+  TTRPGTablePlugin.prototype.onload = async function phase148Onload() {
+    await phase148BaseOnload.call(this);
+    this.state.version = PHASE148_VERSION;
+    await this.saveData(this.state);
+  };
+  const phase148BaseSaveState = TTRPGTablePlugin.prototype.saveState;
+  TTRPGTablePlugin.prototype.saveState = async function phase148SaveState() {
+    this.state.version = PHASE148_VERSION;
+    await phase148BaseSaveState.call(this);
+    this.state.version = PHASE148_VERSION;
+    await this.saveData(this.state);
+  };
+} catch (err) { console.warn('Phase 148 version stamp failed', err); }
