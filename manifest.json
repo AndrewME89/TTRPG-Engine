@@ -1,9 +1,9 @@
 {
-  "id": "ttrpg-table",
-  "name": "TTRPG Table",
-  "version": "1.148.0",
+  "id": "ttrpg-engine",
+  "name": "TTRPG Engine",
+  "version": "1.169.0",
   "minAppVersion": "1.5.0",
-  "description": "TTRPG campaign, combat, calendar, compendium, bastion, campaign routing, DM screen layout, and worldbuilding toolkit for Obsidian.",
+  "description": "TTRPG campaign, combat, calendar, compendium, bastion, campaign routing, DM screen layout, and worldbuilding engine for Obsidian.",
   "author": "Andrew Edwards",
   "authorUrl": "",
   "isDesktopOnly": false
