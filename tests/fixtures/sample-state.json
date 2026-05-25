@@ -1,0 +1,12 @@
+{
+  "version": "2.1.0",
+  "entities": {
+    "campaigns": [],
+    "npcs": [],
+    "quests": [],
+    "encounters": [],
+    "sessions": [],
+    "secrets": [],
+    "maps": []
+  }
+}

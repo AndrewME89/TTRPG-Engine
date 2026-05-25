@@ -1,86 +1,101 @@
-# Obsidian TTRPG Table
+# TTRPG Engine
 
-**Obsidian TTRPG Table** is an Obsidian plugin for running, organising, and recovering tabletop RPG campaign content directly inside your vault.
+TTRPG Engine is an Obsidian plugin for running and maintaining tabletop RPG campaigns. It includes campaign management, worldbuilding tools, NPC and creature tracking, quests, encounters, sessions, secrets, a compendium/library, generators, a tile map builder, and a player-facing companion mode.
 
-It is designed as a practical campaign command centre for Dungeon Masters, players, worldbuilders, and TTRPG note-hoarders who want their campaign data to live where their notes already live: inside Obsidian.
+Current plugin version: **2.1.0**  
+Minimum Obsidian version: **1.5.0**
 
----
+## Current repo status
 
-## Current Status
+This repo is a clean repository wrapper around the current working plugin build.
 
-> **Version:** 1.141.0 (Phase 141)
->
-> **Development status:** Active early development
->
-> **Stability:** Experimental / work-in-progress
->
-> **Recommended use:** Testing, development vaults, and controlled campaign notes
->
-> **Production use:** Not yet recommended without backups
+The current runtime is still a single JavaScript plugin file at:
 
-Phase 141 is a cleaned release aligned to the same repository/package standard as the Claude-cleaned `TTRPG-Engine-main` build.
+```txt
+src/main.js
+```
 
-This release keeps the plugin package lean: plugin entry files, metadata, styles, licence/git hygiene files, and the shared `data/` compendium JSON files only. Large bundled asset packs and stale release notes have been removed from this ZIP.
+The installable Obsidian release files are copied to the repo root:
 
----
-
-## New in Phase 141
-
-- Cleaned the release package to match the `TTRPG-Engine-main` standard.
-- Added missing `.gitignore` and `LICENSE` files.
-- Removed the bundled `assets/portrait-tokens/bewby/` asset pack from the release ZIP.
-- Removed the stale `adventure-module-template.json` file from the release ZIP.
-- Replaced the old Phase 111 README with current Phase 141 release documentation.
-- Aligned `PLUGIN_VERSION` in `main.js` with `manifest.json`.
-- Added a Phase 141 save-state version marker so saved data reports `1.141.0`.
-- Preserved the Phase 141 live-combat theme cleanup code and all shared data files.
-
----
-
-## Package Contents
-
-This cleaned ZIP contains:
-
-```text
-.gitignore
-LICENSE
-README.md
-manifest.json
+```txt
 main.js
+manifest.json
 styles.css
-data/
 ```
 
-The `data/` folder contains the shared compendium/reference JSON files used by the plugin.
+That is deliberate. The first priority is preserving the current working plugin before splitting the codebase into smaller TypeScript modules. No ghost refactor, no “oops, the Campaigns tab is the only thing left” nonsense.
 
----
+## Manual installation
 
-## Install
+Copy these files/folders into your vault:
 
-Copy this plugin folder into:
-
-```text
-<vault>/.obsidian/plugins/ttrpg-table/
+```txt
+Vault/.obsidian/plugins/ttrpg-engine/
+├─ main.js
+├─ manifest.json
+├─ styles.css
+└─ assets/          optional, for bundled tile-map assets
 ```
 
-Then reload Obsidian and enable **TTRPG Table** from Community Plugins.
+Then reload Obsidian and enable **TTRPG Engine** in Community Plugins.
 
----
+## Development commands
 
-## Testing Checklist
+```bash
+npm ci
+npm run check
+npm run build
+npm run package
+```
 
-After installing this build, check:
+### What each command does
 
-- Plugin enables without console errors.
-- Main TTRPG Table view opens.
-- Campaign dashboard still loads.
-- Live Combat cards use Obsidian theme colours instead of hard-coded parchment/red/gold styling.
-- Saved campaigns, characters, NPCs, encounters, quests, journals, and compendium entries still appear.
-- Data survives reload/restart/plugin toggle.
-- No bundled portrait-token asset pack is expected in this release ZIP.
+- `npm run check` checks JavaScript syntax, validates the manifest, and confirms release files exist.
+- `npm run build` copies `src/main.js` and `src/styles.css` into root release position, then runs checks.
+- `npm run package` builds and creates a manual-install ZIP in `release/`.
+- `npm run clean` removes generated release/build folders.
 
----
+## Safe mode / crash protection
 
-## Notes
+The plugin includes kill-switch and crash-lock file checks. See:
 
-This build is intentionally lean. Optional visual assets should be handled as user-provided folders or separate asset packs rather than bundled into the core plugin ZIP.
+```txt
+docs/SAFETY_AND_KILLSWITCH.md
+```
+
+## Tile map assets
+
+The plugin scans this folder inside the installed plugin directory:
+
+```txt
+.obsidian/plugins/ttrpg-engine/assets/
+```
+
+This repo includes a starter folder structure under:
+
+```txt
+assets/tile-map/
+```
+
+Add image assets into those folders, then package/reinstall the plugin or copy the assets folder into the installed plugin folder.
+
+## Repo philosophy
+
+1. Keep the current working plugin installable.
+2. Keep root release files boring and predictable.
+3. Do not silently delete legacy campaign data paths.
+4. Keep the Tile Map Builder; do not resurrect the old random SVG map generator.
+5. Refactor gradually from the monolith into `src/core`, `src/state`, `src/ui`, `src/tabs`, `src/modals`, and `src/maps`.
+
+## Important docs
+
+```txt
+docs/ROADMAP.md
+docs/TESTING.md
+docs/DATA_MODEL.md
+docs/IMPORT_FORMAT.md
+docs/SAFETY_AND_KILLSWITCH.md
+docs/DEVELOPER_NOTES.md
+docs/REFACTOR_MAP.md
+docs/LEGACY_REMOVAL.md
+```
