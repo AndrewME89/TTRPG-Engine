@@ -66,7 +66,95 @@ async function disableSafeMode(app) { await adapterRemove(app, SAFE_MODE_FILE); 
 async function clearCrashLock(app) { await adapterRemove(app, LOAD_FAILED); }
 async function readCrashReport(app) { return (await adapterExists(app, CRASH_REPORT)) ? adapterRead(app, CRASH_REPORT) : ''; }
 
-// ── Tile assets ───────────────────────────────────────────────────────────────
+// ── Tile asset constants & helpers ────────────────────────────────────────────
+const TILE_ASSET_ROOT = `${PLUGIN_DIR}/assets`;
+const TILE_IMAGE_EXTENSIONS = new Set(['png','jpg','jpeg','webp','gif','svg']);
+
+function prettifyAssetName(filename) {
+  return String(filename || '')
+    .replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
+    .replace(/\b\d+x\d+\b/gi, '').replace(/\s+/g, ' ').trim()
+    .replace(/\b\w/g, c => c.toUpperCase()) || 'Unnamed Tile';
+}
+function inferAssetTags(path) {
+  return String(path || '').toLowerCase().split(/[\/\\_\-\s.]+/).filter(Boolean);
+}
+function inferTileKind(path) {
+  const p = String(path || '').toLowerCase();
+  if (p.includes('background') || p.includes('base') || p.includes('floor')) return 'background';
+  if (p.includes('wall')) return 'wall';
+  if (p.includes('door')) return 'door';
+  if (p.includes('room')) return 'room';
+  if (p.includes('corridor') || p.includes('hall')) return 'corridor';
+  if (p.includes('furniture') || p.includes('table') || p.includes('chair') || p.includes('bed')) return 'furniture';
+  if (p.includes('prop') || p.includes('crate') || p.includes('barrel') || p.includes('clutter')) return 'prop';
+  if (p.includes('token') || p.includes('creature') || p.includes('npc')) return 'token';
+  if (p.includes('terrain') || p.includes('forest') || p.includes('mountain') || p.includes('water')) return 'terrain';
+  return 'tile';
+}
+function inferTileFootprint(path) {
+  const p = String(path || '').toLowerCase();
+  const explicit = p.match(/(?:^|[^0-9])(\d{1,2})x(\d{1,2})(?:[^0-9]|$)/);
+  if (explicit) return { widthCells: Math.max(1, Math.min(20, Number(explicit[1]))), heightCells: Math.max(1, Math.min(20, Number(explicit[2]))) };
+  const kind = inferTileKind(p);
+  if (kind === 'background') return { widthCells: 8, heightCells: 8 };
+  if (kind === 'room')       return { widthCells: 4, heightCells: 4 };
+  if (kind === 'corridor')   return { widthCells: 3, heightCells: 1 };
+  if (kind === 'wall')       return { widthCells: 2, heightCells: 1 };
+  if (kind === 'terrain')    return { widthCells: 2, heightCells: 2 };
+  if (kind === 'furniture')  return { widthCells: 2, heightCells: 1 };
+  return { widthCells: 1, heightCells: 1 };
+}
+function assetMatches(asset, query, category) {
+  const q = String(query || '').toLowerCase();
+  const haystack = [asset.label, asset.filename, asset.category, asset.kind, ...(asset.tags || [])].join(' ').toLowerCase();
+  return (!q || haystack.includes(q)) && (!category || category === 'All' || asset.category === category);
+}
+function fallbackEmojiTileAssets() {
+  // Full emoji set for when no image assets are installed — enriched with footprint data
+  return TILE_ASSETS.map(a => ({
+    ...a, assetId: a.id, src: null, filename: a.id, category: 'Emoji',
+    kind: inferTileKind(a.id), tags: [a.id, a.label.toLowerCase()],
+    ...inferTileFootprint(a.id),
+  }));
+}
+async function scanPluginTileAssets(plugin) {
+  const adapter = plugin.app.vault.adapter;
+  const root = normalizePath(TILE_ASSET_ROOT);
+  const assets = [];
+  async function walk(folder) {
+    let listed;
+    try { listed = await adapter.list(folder); } catch { return; }
+    for (const subfolder of (listed.folders || [])) await walk(subfolder);
+    for (const file of (listed.files || [])) {
+      const ext = file.split('.').pop().toLowerCase();
+      if (!TILE_IMAGE_EXTENSIONS.has(ext)) continue;
+      const rel = file.slice(root.length).replace(/^\/+/, '');
+      const parts = rel.split('/');
+      const filename = parts[parts.length - 1];
+      const category = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Uncategorised';
+      const footprint = inferTileFootprint(file);
+      assets.push({
+        id: file, path: file,
+        src: adapter.getResourcePath ? adapter.getResourcePath(file) : file,
+        label: prettifyAssetName(filename), filename, category,
+        extension: ext, kind: inferTileKind(file),
+        widthCells: footprint.widthCells, heightCells: footprint.heightCells,
+        tags: inferAssetTags(file),
+      });
+    }
+  }
+  await walk(root);
+  return assets.sort((a, b) => String(a.category).localeCompare(String(b.category)) || String(a.label).localeCompare(String(b.label)));
+}
+async function loadTileAssets(plugin) {
+  try {
+    const assets = await scanPluginTileAssets(plugin);
+    return assets.length ? assets : fallbackEmojiTileAssets();
+  } catch { return fallbackEmojiTileAssets(); }
+}
+
+// ── Tile asset list (legacy emoji — kept for backward compat tile lookup) ─────
 const TILE_ASSETS = [
   { id:'grass',    icon:'🌿', label:'Grass' },
   { id:'water',    icon:'🌊', label:'Water' },
@@ -250,7 +338,7 @@ function createDefaultState() {
     calendar: { name: '', year: 1, month: '', day: 1, moons: '', seasons: '', holidays: '' },
     settings: { compact: false },
     initiativeTracker: { combatants: [], currentIndex: 0, round: 1, active: false },
-    tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map' },
+    tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map', gridSize: 60, width: 1800, height: 1200, assetRoot: TILE_ASSET_ROOT, selectedMapId: '', mapId: '' },
     playerTab: 'overview',
     entities: {
       campaigns: [],
@@ -314,6 +402,19 @@ function migrateState(state) {
   if (!state.tileMap || typeof state.tileMap !== 'object') state.tileMap = def.tileMap;
   if (!Array.isArray(state.tileMap.tiles)) state.tileMap.tiles = [];
   if (!state.tileMap.nextId) state.tileMap.nextId = 1;
+  if (!state.tileMap.gridSize) state.tileMap.gridSize = 60;
+  if (!state.tileMap.width)   state.tileMap.width   = 1800;
+  if (!state.tileMap.height)  state.tileMap.height  = 1200;
+  if (!state.tileMap.assetRoot) state.tileMap.assetRoot = TILE_ASSET_ROOT;
+  if (!('mapId' in state.tileMap)) state.tileMap.mapId = '';
+  // Migrate old tiles: type→assetId, add widthCells/heightCells
+  state.tileMap.tiles.forEach(tile => {
+    if (!tile.assetId && tile.type) tile.assetId = tile.type;
+    if (!tile.widthCells) tile.widthCells = Math.max(1, Math.round((tile.w || state.tileMap.gridSize) / state.tileMap.gridSize));
+    if (!tile.heightCells) tile.heightCells = Math.max(1, Math.round((tile.h || state.tileMap.gridSize) / state.tileMap.gridSize));
+    if (!('layer' in tile)) tile.layer = 0;
+    if (!('rotation' in tile)) tile.rotation = 0;
+  });
   // Ensure relationships array
   if (!Array.isArray(state.relationships)) state.relationships = [];
   // Stamp missing entity IDs / timestamps (Phase 3 schema)
@@ -464,6 +565,39 @@ async function runDiagnostics(plugin) {
     issues.push({ sev: 'warn', msg: 'Safe mode is active — plugin will not load on next startup until disabled.' });
   if (await adapterExists(plugin.app, LOAD_FAILED))
     issues.push({ sev: 'error', msg: 'Crash lock present — plugin blocked itself from loading. Use "Clear Crash Lock" to re-enable.' });
+
+  // Tile asset health
+  try {
+    const assetFolderExists = await adapterExists(plugin.app, TILE_ASSET_ROOT);
+    if (!assetFolderExists) {
+      issues.push({ sev: 'warn', msg: `Tile asset folder "${TILE_ASSET_ROOT}" not found — palette will use emoji fallbacks. Create the folder and add images for real tiles.` });
+    } else {
+      const assets = await scanPluginTileAssets(plugin);
+      const categories = new Set(assets.map(a => a.category).filter(Boolean));
+      info.push(`Tile assets: ${assets.length} images in ${categories.size} categories (${TILE_ASSET_ROOT})`);
+      if (!assets.length) {
+        issues.push({ sev: 'warn', msg: 'Asset folder exists but contains no image files — add .png/.jpg/.webp files to enable image tiles.' });
+      }
+      // Check saved map tiles for broken paths
+      let missingAssetCount = 0;
+      const assetPaths = new Set(assets.map(a => a.path));
+      safeArr(e.maps).forEach(mapRecord => {
+        const tiles = safeArr((mapRecord.tileLayout || {}).tiles);
+        tiles.forEach(tile => {
+          if (tile.assetPath && !assetPaths.has(tile.assetPath)) missingAssetCount++;
+        });
+      });
+      if (missingAssetCount > 0)
+        issues.push({ sev: 'warn', msg: `${missingAssetCount} placed tile(s) reference asset paths that no longer exist — they will show ⚠️ on the canvas.` });
+    }
+    // Legacy emoji-only tiles
+    const allPlacedTiles = safeArr(e.maps).flatMap(m => safeArr((m.tileLayout || {}).tiles));
+    const legacyTiles = allPlacedTiles.filter(t => !t.assetPath && t.type);
+    if (legacyTiles.length > 0)
+      info.push(`Tile legacy compat: ${legacyTiles.length} emoji-only tile(s) across saved maps (will still render via TILE_ASSETS fallback)`);
+  } catch (tileErr) {
+    issues.push({ sev: 'warn', msg: `Tile asset scan failed: ${tileErr.message}` });
+  }
 
   return { issues, info, counts };
 }
@@ -1458,6 +1592,48 @@ function renderGeography(main, plugin) {
     { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
   ]);
 
+  // Saved Maps
+  sectionHead(main, 'Saved Maps');
+  const savedMaps = safeArr(plugin.state.entities.maps);
+  if (!savedMaps.length) {
+    emptyState(main, 'No maps saved yet.', 'Build a map below then click "💾 Save Map".');
+  } else {
+    const mg = ce(main, 'div', 'te-grid');
+    savedMaps.forEach(mapRecord => {
+      const c = ce(mg, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head');
+      ce(hd, 'span', 'te-card-icon', '🗺️');
+      ce(hd, 'h3', 'te-card-title', mapRecord.name || 'Untitled Map');
+      const meta = ce(c, 'div', 'te-card-meta');
+      const layout = mapRecord.tileLayout || {};
+      const tileCount = (layout.tiles || []).length;
+      const row1 = ce(meta, 'div', 'te-card-meta-row');
+      ce(row1, 'span', 'te-card-meta-label', 'tiles');
+      ce(row1, 'span', '', String(tileCount));
+      if (mapRecord.updatedAt) {
+        const row2 = ce(meta, 'div', 'te-card-meta-row');
+        ce(row2, 'span', 'te-card-meta-label', 'saved');
+        ce(row2, 'span', '', new Date(mapRecord.updatedAt).toLocaleDateString());
+      }
+      const acts = ce(c, 'div', 'te-card-actions');
+      btn(acts, '📂 Open in Builder', 'te-btn is-primary is-sm', async () => {
+        if (mapRecord.tileLayout) {
+          Object.assign(plugin.state.tileMap, mapRecord.tileLayout);
+          plugin.state.tileMap.mapId = mapRecord.id;
+        }
+        await plugin.saveState();
+        new Notice(`Map "${mapRecord.name}" loaded into builder.`);
+        plugin.view.render();
+      });
+      btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => {
+        removeItem(plugin.state, 'maps', mapRecord.id);
+        await plugin.saveState();
+        new Notice('Map deleted.');
+        plugin.view.render();
+      });
+    });
+  }
+
   // Tile Map Builder (inline)
   sectionHead(main, 'Tile Map Builder');
   renderTileMapBuilder(main, plugin);
@@ -1520,151 +1696,307 @@ const routeFields = [
 // ── TILE MAP BUILDER ──────────────────────────────────────────────────────────
 function renderTileMapBuilder(parent, plugin) {
   const tmState = plugin.state.tileMap;
+  const GRID = tmState.gridSize || 60;
   const wrap = ce(parent, 'div', 'te-map-builder');
+  let tileAssets = fallbackEmojiTileAssets();
   let selectedTileType = null;
   let selectedTileId = null;
   let dragging = null;
   let resizing = null;
+  let selectedCategory = 'All';
 
-  // Toolbar
+  // ── Toolbar ───────────────────────────────────────────────────────────────
   const toolbar = ce(wrap, 'div', 'te-map-toolbar');
   const mapNameInp = ce(toolbar, 'input');
   mapNameInp.type = 'text'; mapNameInp.value = tmState.mapName || 'Untitled Map';
-  mapNameInp.placeholder = 'Map name…'; mapNameInp.style.cssText = 'flex:1;max-width:220px;padding:5px 8px;border:1px solid var(--te-border);border-radius:var(--te-r-sm);background:var(--te-bg);color:var(--te-text);font-size:.88rem';
+  mapNameInp.placeholder = 'Map name…';
+  mapNameInp.style.cssText = 'flex:1;max-width:220px;padding:5px 8px;border:1px solid var(--te-border);border-radius:var(--te-r-sm);background:var(--te-bg);color:var(--te-text);font-size:.88rem';
   mapNameInp.addEventListener('input', () => { tmState.mapName = mapNameInp.value; });
+
+  const assetCountLabel = ce(toolbar, 'span', 'te-map-asset-count', '…');
 
   btn(toolbar, '💾 Save Map', 'te-btn is-primary', async () => {
     tmState.mapName = mapNameInp.value;
+    const mapRecord = {
+      id: tmState.mapId || uid('map'),
+      name: tmState.mapName,
+      type: 'Tile Map',
+      summary: `${tmState.tiles.length} tiles`,
+      tileMap: true,
+      tileLayout: JSON.parse(JSON.stringify(tmState)),
+      assetRoot: TILE_ASSET_ROOT,
+      campaignId: plugin.state.activeCampaignId || '',
+      updatedAt: new Date().toISOString(),
+    };
+    if (!tmState.mapId) tmState.mapId = mapRecord.id;
+    upsert(plugin.state, 'maps', mapRecord);
     await plugin.saveState();
-    // Also write a note
     const folder = campaignFolder(plugin);
     await ensureFolder(plugin.app, `${folder}/Maps`);
-    const mapMd = `# Map: ${tmState.mapName}\n\n*Tiles: ${tmState.tiles.length}*\n\n\`\`\`json\n${JSON.stringify(tmState.tiles, null, 2)}\n\`\`\`\n`;
+    const mapMd = `# Map: ${tmState.mapName}\n\n*Tiles: ${tmState.tiles.length} | Saved: ${new Date().toLocaleDateString()} | Asset root: ${TILE_ASSET_ROOT}*\n\n\`\`\`json\n${JSON.stringify(tmState.tiles, null, 2)}\n\`\`\`\n`;
     await writeNote(plugin.app, `${folder}/Maps/${slugify(tmState.mapName)}.md`, mapMd);
-    new Notice(`Map saved to ${folder}/Maps/`);
-  });
-  btn(toolbar, '🗑️ Clear', 'te-btn is-danger', async () => {
-    if (confirm('Clear all tiles from the map?')) { tmState.tiles = []; await plugin.saveState(); renderCanvas(); }
-  });
-  btn(toolbar, 'Delete Selected', 'te-btn is-sm', async () => {
-    if (selectedTileId) { tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId); selectedTileId = null; await plugin.saveState(); renderCanvas(); }
+    new Notice(`Map "${tmState.mapName}" saved (${tmState.tiles.length} tiles)`);
   });
 
+  btn(toolbar, '🔄 Reload Assets', 'te-btn', async () => {
+    assetCountLabel.textContent = '⟳ Scanning…';
+    tileAssets = await loadTileAssets(plugin);
+    assetCountLabel.textContent = `${tileAssets.length} asset${tileAssets.length !== 1 ? 's' : ''}`;
+    renderCategoryFilter();
+    renderPalette();
+    renderCanvas();
+    new Notice(`${tileAssets.length} tile asset${tileAssets.length !== 1 ? 's' : ''} loaded.`);
+  });
+
+  btn(toolbar, '🗑️ Clear Map', 'te-btn is-danger', async () => {
+    if (confirm('Clear all tiles from the map?')) {
+      tmState.tiles = []; selectedTileId = null;
+      await plugin.saveState(); renderCanvas(); renderInspector();
+    }
+  });
+
+  btn(toolbar, '+ New Map', 'te-btn', async () => {
+    tmState.tiles = []; tmState.mapName = 'Untitled Map'; tmState.mapId = '';
+    tmState.nextId = 1; selectedTileId = null; selectedTileType = null;
+    mapNameInp.value = tmState.mapName;
+    await plugin.saveState(); renderCanvas(); renderInspector();
+    new Notice('New blank map started.');
+  });
+
+  // ── Inspector ─────────────────────────────────────────────────────────────
+  const inspector = ce(toolbar, 'div', 'te-map-inspector');
+  const renderInspector = () => {
+    clear(inspector);
+    if (!selectedTileId) { ce(inspector, 'span', 'te-map-inspector-label', 'No tile selected'); return; }
+    const tile = tmState.tiles.find(t => t.id === selectedTileId);
+    if (!tile) return;
+    ce(inspector, 'span', 'te-map-inspector-label', tile.assetLabel || tile.type || 'Tile');
+
+    // W/H cell controls
+    const addCellControl = (axis, getV, setV) => {
+      ce(inspector, 'span', 'te-map-inspector-stat', `${axis}:${getV()}`);
+      btn(inspector, '−', 'te-btn is-sm', async () => { setV(Math.max(1, getV() - 1)); await plugin.saveState(); renderCanvas(); renderInspector(); });
+      btn(inspector, '+', 'te-btn is-sm', async () => { setV(getV() + 1); await plugin.saveState(); renderCanvas(); renderInspector(); });
+    };
+    addCellControl('W',
+      () => tile.widthCells  || 1,
+      v  => { tile.widthCells  = v; tile.w = v * GRID; }
+    );
+    addCellControl('H',
+      () => tile.heightCells || 1,
+      v  => { tile.heightCells = v; tile.h = v * GRID; }
+    );
+
+    btn(inspector, '↑ Layer', 'te-btn is-sm', async () => {
+      tile.layer = (tile.layer || 0) + 1;
+      tmState.tiles.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+      await plugin.saveState(); renderCanvas();
+    });
+    btn(inspector, '↓ Layer', 'te-btn is-sm', async () => {
+      tile.layer = Math.max(0, (tile.layer || 0) - 1);
+      tmState.tiles.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+      await plugin.saveState(); renderCanvas();
+    });
+
+    const asset = tileAssets.find(a => a.id === (tile.assetId || tile.type));
+    if (asset) {
+      btn(inspector, '⟳ Reset Size', 'te-btn is-sm', async () => {
+        tile.widthCells = asset.widthCells || 1; tile.heightCells = asset.heightCells || 1;
+        tile.w = tile.widthCells * GRID; tile.h = tile.heightCells * GRID;
+        await plugin.saveState(); renderCanvas(); renderInspector();
+      });
+    }
+
+    btn(inspector, '× Delete', 'te-btn is-sm is-danger', async () => {
+      tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId);
+      selectedTileId = null;
+      await plugin.saveState(); renderCanvas(); renderInspector();
+    });
+  };
+  renderInspector();
+
+  // ── Workspace ─────────────────────────────────────────────────────────────
   const workspace = ce(wrap, 'div', 'te-map-workspace');
 
-  // Palette
+  // ── Palette ───────────────────────────────────────────────────────────────
   const palette = ce(workspace, 'div', 'te-map-palette');
-  const palSearch = ce(palette, 'input', 'te-map-palette-search');
+  const palControls = ce(palette, 'div', 'te-palette-controls');
+  const palSearch = ce(palControls, 'input', 'te-map-palette-search');
   palSearch.type = 'text'; palSearch.placeholder = '🔍 Search tiles…';
+  const categorySelect = ce(palControls, 'select', 'te-map-category-filter');
+  categorySelect.style.cssText = 'width:100%;padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.8rem;margin-top:4px';
 
-  let filteredAssets = [...TILE_ASSETS];
+  const renderCategoryFilter = () => {
+    clear(categorySelect);
+    const cats = ['All', ...new Set(tileAssets.map(a => a.category || 'Uncategorised').filter(Boolean))].sort();
+    cats.forEach(c => { const o = ce(categorySelect, 'option', '', c); o.value = c; if (c === selectedCategory) o.selected = true; });
+  };
+
   const renderPalette = () => {
-    // Remove all tile buttons (not the search)
-    Array.from(palette.children).forEach(el => { if (el !== palSearch) el.remove(); });
-    filteredAssets.forEach(asset => {
+    Array.from(palette.children).forEach(el => { if (el !== palControls) el.remove(); });
+    const q = palSearch.value;
+    const visible = tileAssets.filter(a => assetMatches(a, q, selectedCategory));
+    if (!visible.length) {
+      const empty = ce(palette, 'p', '');
+      empty.style.cssText = 'padding:12px;font-size:.8rem;color:var(--te-muted);text-align:center;white-space:pre-line';
+      empty.textContent = tileAssets.length === 0
+        ? `No assets found.\nPlace images in:\n${TILE_ASSET_ROOT}`
+        : 'No tiles match this filter.';
+      return;
+    }
+    visible.forEach(asset => {
       const tileBtn = ce(palette, 'div', 'te-palette-tile' + (selectedTileType === asset.id ? ' is-selected' : ''));
-      ce(tileBtn, 'span', 'te-palette-icon', asset.icon);
-      ce(tileBtn, 'span', '', asset.label);
+      if (asset.src) {
+        const img = ce(tileBtn, 'img', 'te-palette-thumb');
+        img.src = asset.src; img.alt = asset.label; img.loading = 'lazy';
+      } else {
+        ce(tileBtn, 'span', 'te-palette-icon', asset.icon || '🧱');
+      }
+      const labelWrap = ce(tileBtn, 'div', 'te-palette-label-wrap');
+      ce(labelWrap, 'span', 'te-palette-label', asset.label);
+      ce(labelWrap, 'span', 'te-palette-meta', `${asset.category ? asset.category + ' ' : ''}${asset.widthCells || 1}×${asset.heightCells || 1}`);
       tileBtn.addEventListener('click', () => { selectedTileType = asset.id; renderPalette(); });
     });
   };
 
-  // Search that does NOT lose focus — filter in-place
-  palSearch.addEventListener('input', () => {
-    const q = palSearch.value.toLowerCase();
-    filteredAssets = q ? TILE_ASSETS.filter(a => a.label.toLowerCase().includes(q) || a.id.includes(q)) : [...TILE_ASSETS];
-    renderPalette();
-    // Restore focus
-    palSearch.focus();
-  });
-  renderPalette();
+  palSearch.addEventListener('input', () => { renderPalette(); palSearch.focus(); });
+  categorySelect.addEventListener('change', () => { selectedCategory = categorySelect.value; renderPalette(); });
 
-  // Canvas
+  // ── Canvas ────────────────────────────────────────────────────────────────
   const canvasWrap = ce(workspace, 'div', 'te-map-canvas-wrap');
   const canvas = ce(canvasWrap, 'div', 'te-map-canvas');
-  canvas.style.minHeight = '460px';
+  canvas.style.cssText = `width:${tmState.width || 1800}px;height:${tmState.height || 1200}px;`;
 
-  const GRID = 60;
   const renderCanvas = () => {
     clear(canvas);
-    tmState.tiles.forEach(tile => {
-      const asset = TILE_ASSETS.find(a => a.id === tile.type) || { icon: '?', label: tile.type };
-      const el = ce(canvas, 'div', 'te-tile' + (tile.id === selectedTileId ? ' is-selected' : ''));
-      el.style.cssText = `left:${tile.x}px;top:${tile.y}px;width:${tile.w || GRID}px;height:${tile.h || GRID}px;font-size:${Math.min(tile.w || GRID, tile.h || GRID) * 0.55}px;`;
-      el.textContent = asset.icon;
-      el.title = asset.label;
+    const sorted = [...tmState.tiles].sort((a, b) => (a.layer || 0) - (b.layer || 0));
+    sorted.forEach(tile => {
+      const asset = tileAssets.find(a => a.id === (tile.assetId || tile.type));
+      const assetMissing = (tile.assetPath || tile.assetId) && !asset;
+      const el = ce(canvas, 'div',
+        'te-tile' +
+        (tile.id === selectedTileId ? ' is-selected' : '') +
+        (assetMissing ? ' is-missing-asset' : '')
+      );
+      el.style.cssText = `left:${tile.x}px;top:${tile.y}px;width:${tile.w || GRID}px;height:${tile.h || GRID}px;z-index:${(tile.layer || 0) + 1}`;
+      el.title = tile.assetLabel || asset?.label || tile.type || 'Tile';
 
-      // Select on click
-      el.addEventListener('mousedown', e => {
-        e.stopPropagation();
-        selectedTileId = tile.id;
-        renderCanvas();
-        // Start drag
-        const startX = e.clientX - tile.x;
-        const startY = e.clientY - tile.y;
-        dragging = { tile, startX, startY };
-      });
+      if (assetMissing) {
+        el.textContent = '⚠️';
+        el.title = `Missing asset: ${tile.assetPath || tile.assetId}`;
+      } else if (asset?.src) {
+        const img = ce(el, 'img', 'te-tile-img');
+        img.src = asset.src; img.alt = asset.label;
+      } else {
+        el.textContent = asset?.icon || tile.icon || '🧱';
+        el.style.fontSize = `${Math.min(tile.w || GRID, tile.h || GRID) * 0.55}px`;
+      }
+
+      // Delete button when selected
+      if (tile.id === selectedTileId) {
+        const del = ce(el, 'button', 'te-tile-delete', '×');
+        del.title = 'Delete tile';
+        del.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          tmState.tiles = tmState.tiles.filter(t => t.id !== tile.id);
+          selectedTileId = null;
+          await plugin.saveState(); renderCanvas(); renderInspector();
+        });
+      }
 
       // Resize handle
       const handle = ce(el, 'div', 'te-tile-resize');
-      handle.addEventListener('mousedown', e => {
-        e.stopPropagation();
+      handle.title = 'Resize';
+      handle.addEventListener('mousedown', ev => {
+        ev.stopPropagation();
         selectedTileId = tile.id;
-        const startW = tile.w || GRID;
-        const startH = tile.h || GRID;
-        const startX = e.clientX;
-        const startY = e.clientY;
+        const startW = tile.w || GRID, startH = tile.h || GRID;
+        const startX = ev.clientX, startY = ev.clientY;
         resizing = { tile, startW, startH, startX, startY };
+      });
+
+      // Select + drag
+      el.addEventListener('mousedown', ev => {
+        if (ev.target.classList.contains('te-tile-delete') || ev.target.classList.contains('te-tile-resize')) return;
+        ev.stopPropagation();
+        selectedTileId = tile.id;
+        renderCanvas(); renderInspector();
+        dragging = { tile, startX: ev.clientX - tile.x, startY: ev.clientY - tile.y };
       });
     });
   };
 
-  // Click canvas to place tile
-  canvas.addEventListener('click', async e => {
+  // Place tile
+  canvas.addEventListener('click', async ev => {
     if (dragging || resizing) return;
-    if (!selectedTileType) { new Notice('Select a tile from the palette first.'); return; }
+    if (!selectedTileType) { selectedTileId = null; renderCanvas(); renderInspector(); return; }
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / GRID) * GRID;
-    const y = Math.floor((e.clientY - rect.top) / GRID) * GRID;
-    const newTile = { id: tmState.nextId++, type: selectedTileType, x, y, w: GRID, h: GRID };
+    const x = Math.floor((ev.clientX - rect.left) / GRID) * GRID;
+    const y = Math.floor((ev.clientY - rect.top) / GRID) * GRID;
+    const asset = tileAssets.find(a => a.id === selectedTileType);
+    const widthCells  = asset?.widthCells  || 1;
+    const heightCells = asset?.heightCells || 1;
+    const newTile = {
+      id: tmState.nextId++,
+      assetId: asset?.id || selectedTileType,
+      assetPath: asset?.path || '',
+      assetSrc: asset?.src || '',
+      assetLabel: asset?.label || selectedTileType,
+      assetCategory: asset?.category || '',
+      kind: asset?.kind || 'tile',
+      icon: asset?.icon || '',
+      x, y,
+      widthCells, heightCells,
+      w: widthCells * GRID,
+      h: heightCells * GRID,
+      layer: tmState.tiles.length,
+      rotation: 0,
+      type: asset?.id || selectedTileType, // backward compat
+    };
     tmState.tiles.push(newTile);
     selectedTileId = newTile.id;
-    await plugin.saveState();
-    renderCanvas();
+    await plugin.saveState(); renderCanvas(); renderInspector();
   });
 
-  // Mouse move / up for drag and resize
-  const onMouseMove = e => {
+  // Mouse move / up
+  const onMouseMove = ev => {
     if (dragging) {
       const { tile, startX, startY } = dragging;
-      tile.x = Math.max(0, Math.floor((e.clientX - startX) / GRID) * GRID);
-      tile.y = Math.max(0, Math.floor((e.clientY - startY) / GRID) * GRID);
+      tile.x = Math.max(0, Math.floor((ev.clientX - startX) / GRID) * GRID);
+      tile.y = Math.max(0, Math.floor((ev.clientY - startY) / GRID) * GRID);
       renderCanvas();
     }
     if (resizing) {
       const { tile, startW, startH, startX, startY } = resizing;
-      tile.w = Math.max(GRID, Math.round((startW + e.clientX - startX) / GRID) * GRID);
-      tile.h = Math.max(GRID, Math.round((startH + e.clientY - startY) / GRID) * GRID);
+      const newW = Math.max(GRID, Math.round((startW + ev.clientX - startX) / GRID) * GRID);
+      const newH = Math.max(GRID, Math.round((startH + ev.clientY - startY) / GRID) * GRID);
+      tile.w = newW; tile.h = newH;
+      tile.widthCells  = Math.max(1, Math.round(newW / GRID));
+      tile.heightCells = Math.max(1, Math.round(newH / GRID));
       renderCanvas();
     }
   };
   const onMouseUp = async () => {
-    if (dragging || resizing) { dragging = null; resizing = null; await plugin.saveState(); }
+    if (dragging || resizing) {
+      dragging = null; resizing = null;
+      await plugin.saveState(); renderInspector();
+    }
   };
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
 
-  // Delete key
-  const onKeyDown = async e => {
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTileId && document.activeElement === document.body) {
-      tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId);
-      selectedTileId = null;
-      await plugin.saveState(); renderCanvas();
-    }
+  const onKeyDown = async ev => {
+    if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+    if (!selectedTileId) return;
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId);
+    selectedTileId = null;
+    await plugin.saveState(); renderCanvas(); renderInspector();
   };
   document.addEventListener('keydown', onKeyDown);
 
-  // Cleanup listeners when canvas is removed from DOM
+  // Cleanup on DOM removal
   const observer = new MutationObserver(() => {
     if (!canvas.isConnected) {
       document.removeEventListener('mousemove', onMouseMove);
@@ -1675,7 +2007,20 @@ function renderTileMapBuilder(parent, plugin) {
   });
   observer.observe(canvas.parentElement || document.body, { childList: true });
 
+  // Initial render with emoji fallback, then async scan real assets
+  renderCategoryFilter();
+  renderPalette();
   renderCanvas();
+  loadTileAssets(plugin).then(assets => {
+    tileAssets = assets;
+    assetCountLabel.textContent = `${assets.length} asset${assets.length !== 1 ? 's' : ''}`;
+    renderCategoryFilter();
+    renderPalette();
+    renderCanvas();
+  }).catch(() => {
+    assetCountLabel.textContent = 'emoji mode';
+    renderCategoryFilter(); renderPalette();
+  });
 }
 
 
