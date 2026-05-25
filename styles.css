@@ -181,6 +181,22 @@
 .te-wizard-step.is-active { background:var(--te-accent); color:var(--te-on-accent); border-color:var(--te-accent); }
 .te-wizard-step.is-done { border-color:var(--te-success); color:var(--te-success); }
 
+/* ── Progress bars (Phase 11/14) ─────────────────────────────────────────── */
+.te-progress-bar { width:100%; height:8px; background:var(--te-bg-alt); border-radius:999px; overflow:hidden; margin:6px 0 2px; }
+.te-progress-fill { height:100%; background:var(--te-accent); border-radius:999px; transition:width 300ms ease; }
+.te-progress-label { font-size:.78rem; color:var(--te-muted); margin:0 0 8px; }
+
+/* ── Session live badge (Phase 13) ──────────────────────────────────────── */
+.te-session-live-badge { display:inline-block; padding:6px 14px; background:color-mix(in srgb,var(--te-danger) 15%,transparent); border:1px solid var(--te-danger); border-radius:var(--te-r-md); font-weight:700; font-size:.88rem; color:var(--te-danger); margin-bottom:var(--te-gap-md); animation:te-badge-pulse 2s ease-in-out infinite; }
+
+/* ── PC Companion stat bar ───────────────────────────────────────────────── */
+.te-stat-big { font-size:1.8rem; font-weight:900; line-height:1; color:var(--te-text); }
+
+/* ── Field row (entity picker) ───────────────────────────────────────────── */
+.te-field-row { display:flex; gap:var(--te-gap-sm); align-items:center; margin-bottom:var(--te-gap-sm); }
+.te-field-label { font-size:.82rem; font-weight:600; color:var(--te-muted); min-width:140px; flex-shrink:0; }
+.te-field-select { flex:1; padding:6px 8px; background:var(--te-bg); color:var(--te-text); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-size:.88rem; }
+
 /* ── Safe-mode badge ─────────────────────────────────────────────────────── */
 .te-safe-mode-badge { background:var(--te-danger); color:#fff; font-size:.72rem; font-weight:800; padding:3px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.06em; flex-shrink:0; animation:te-badge-pulse 2s ease-in-out infinite; }
 @keyframes te-badge-pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
