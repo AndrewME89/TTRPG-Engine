@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build / release output
+dist/
+build/
+release/
+coverage/
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+
+# Local Obsidian vault/plugin installs
+.obsidian/
+.vault/
+test-vault/
+Device Cache/
+
+# Local plugin/runtime data
+data.json
+*.bak
+*.backup.json
+*.log
+npm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
