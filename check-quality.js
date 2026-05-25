@@ -127,8 +127,10 @@ const manifestVersion = require('./manifest.json').version;
 const pluginVersion = versionMatch ? versionMatch[1] : '';
 check(pluginVersion === manifestVersion, `PLUGIN_VERSION (${pluginVersion}) matches manifest.json (${manifestVersion})`, `Version mismatch: PLUGIN_VERSION=${pluginVersion} but manifest.json=${manifestVersion}`);
 
-// ── Expanded map markdown ────────────────────────────────────────────────
-check(tileFnBody.includes('distanceScale') && tileFnBody.includes('gridSize') && tileFnBody.includes('Campaign'), 'Map markdown includes extended metadata (scale, grid, campaign)', 'Map markdown is missing extended metadata');
+// ── PNG export ───────────────────────────────────────────────────────────
+check(src.includes('exportMapToPng'), 'exportMapToPng() function defined', 'exportMapToPng() missing — Save Map will not produce a PNG');
+check(src.includes('createBinary') || src.includes('modifyBinary'), 'PNG written to vault via createBinary/modifyBinary', 'No vault binary write — PNG will not be persisted');
+check(!tileFnBody.includes('writeNote'), 'Save Map does not write a Markdown note (PNG only)', 'Save Map still calls writeNote — should write PNG instead');
 
 // ── Summary ───────────────────────────────────────────────────────────────
 console.log('');

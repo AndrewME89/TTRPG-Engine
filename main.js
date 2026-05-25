@@ -1717,6 +1717,67 @@ const routeFields = [
 ];
 
 // ── TILE MAP BUILDER ──────────────────────────────────────────────────────────
+
+// Render all placed tiles onto an offscreen canvas and return a PNG Blob.
+async function exportMapToPng(tmState, tileAssets) {
+  const W    = tmState.width    || 1800;
+  const H    = tmState.height   || 1200;
+  const GRID = tmState.gridSize || 60;
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = W; offscreen.height = H;
+  const ctx = offscreen.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += GRID) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke(); }
+
+  // Pre-load all image assets in parallel
+  const imgCache = {};
+  const sorted = [...tmState.tiles].sort((a, b) => (a.layer || 0) - (b.layer || 0));
+  await Promise.all(
+    sorted
+      .map(tile => tileAssets.find(a => a.id === (tile.assetId || tile.type)))
+      .filter(asset => asset?.src && !imgCache[asset.src])
+      .map(asset => new Promise(resolve => {
+        const img = new Image();
+        img.onload  = () => { imgCache[asset.src] = img; resolve(); };
+        img.onerror = () => resolve();
+        img.src = asset.src;
+      }))
+  );
+
+  // Draw each tile
+  for (const tile of sorted) {
+    const asset = tileAssets.find(a => a.id === (tile.assetId || tile.type));
+    const tw  = tile.w || GRID;
+    const th  = tile.h || GRID;
+    const rad = ((tile.rotation || 0) * Math.PI) / 180;
+    ctx.save();
+    ctx.translate(tile.x + tw / 2, tile.y + th / 2);
+    if (rad) ctx.rotate(rad);
+    if (asset?.src && imgCache[asset.src]) {
+      ctx.drawImage(imgCache[asset.src], -tw / 2, -th / 2, tw, th);
+    } else {
+      const icon = asset?.icon || tile.icon || '🧱';
+      ctx.font = `${Math.min(tw, th) * 0.6}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#333333';
+      ctx.fillText(icon, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  return new Promise((resolve, reject) =>
+    offscreen.toBlob(b => b ? resolve(b) : reject(new Error('Canvas toBlob returned null')), 'image/png')
+  );
+}
 function renderTileMapBuilder(parent, plugin) {
   const tmState = plugin.state.tileMap;
   let GRID = tmState.gridSize || 60;
@@ -1781,28 +1842,18 @@ function renderTileMapBuilder(parent, plugin) {
     await saveStatePreserveScroll(plugin);
     const folder = campaignFolder(plugin);
     await ensureFolder(plugin.app, `${folder}/Maps`);
-    const mapMd = [
-      `# Map: ${tmState.mapName}`,
-      ``,
-      `| Field | Value |`,
-      `|---|---|`,
-      `| Campaign | ${camp?.name || 'None'} |`,
-      `| Grid Size | ${tmState.gridSize || 60}px (${tmState.distanceScale || '5 ft'} / square) |`,
-      `| Canvas | ${tmState.width || 1800}×${tmState.height || 1200}px |`,
-      `| Tiles | ${tmState.tiles.length} |`,
-      `| Missing Assets | ${missingCount} |`,
-      `| Asset Root | ${TILE_ASSET_ROOT} |`,
-      `| Saved | ${new Date().toLocaleDateString()} |`,
-      linked.length ? `| Links | ${linked.join(', ')} |` : '',
-      ``,
-      `## Tile Layout`,
-      ``,
-      `\`\`\`json`,
-      JSON.stringify(tmState.tiles, null, 2),
-      `\`\`\``,
-    ].filter(l => l !== undefined).join('\n');
-    await writeNote(plugin.app, `${folder}/Maps/${slugify(tmState.mapName)}.md`, mapMd);
-    new Notice(`Map "${tmState.mapName}" saved (${tmState.tiles.length} tiles)`);
+    // Export PNG
+    try {
+      const blob = await exportMapToPng(tmState, tileAssets);
+      const buf  = await blob.arrayBuffer();
+      const pngPath = normalizePath(`${folder}/Maps/${slugify(tmState.mapName)}.png`);
+      const existing = plugin.app.vault.getAbstractFileByPath(pngPath);
+      if (existing) await plugin.app.vault.modifyBinary(existing, buf);
+      else          await plugin.app.vault.createBinary(pngPath, buf);
+      new Notice(`Map "${tmState.mapName}" saved as PNG (${tmState.tiles.length} tiles) → ${pngPath}`);
+    } catch (pngErr) {
+      new Notice(`PNG export failed: ${pngErr.message}`, 8000);
+    }
   });
 
   btn(toolbar, '🔄 Reload Assets', 'te-btn', async () => {
