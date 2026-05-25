@@ -93,6 +93,43 @@ const diagSection = src.slice(diagStart, src.indexOf('// ── Entity picker he
 check(diagSection.includes('TILE_ASSET_ROOT') || diagSection.includes('tile asset'), 'runDiagnostics checks tile asset health', 'runDiagnostics does not check tile assets');
 check(diagSection.includes('scanPluginTileAssets') || diagSection.includes('assetFolderExists'), 'runDiagnostics scans for tile assets', 'runDiagnostics does not scan for tile assets');
 
+// ── Scroll-safe saves ─────────────────────────────────────────────────────
+check(src.includes('saveStateQuiet'), 'saveStateQuiet() helper defined', 'saveStateQuiet() missing — tile map interactions will trigger full re-render / scroll jump');
+check(src.includes('saveStatePreserveScroll'), 'saveStatePreserveScroll() helper defined', 'saveStatePreserveScroll() missing — full rerenders will lose scroll position');
+// Tile-local interactions must NOT call plugin.saveState() directly
+const tileFnBody = src.slice(src.indexOf('function renderTileMapBuilder'), src.indexOf('\n// ── NPCs & CREATURES'));
+const directSaveCalls = (tileFnBody.match(/\bplugin\.saveState\(\)/g) || []).length;
+check(directSaveCalls === 0, 'renderTileMapBuilder uses saveStateQuiet/saveStatePreserveScroll (no direct plugin.saveState() calls)', `renderTileMapBuilder has ${directSaveCalls} direct plugin.saveState() call(s) — replace with saveStateQuiet or saveStatePreserveScroll`);
+
+// ── Rotation support ──────────────────────────────────────────────────────
+check(tileFnBody.includes('rotation'), 'Rotation support exists in renderTileMapBuilder', 'rotation not found in renderTileMapBuilder');
+check(tileFnBody.includes('rotate('), 'CSS rotation applied to tile elements', 'rotate() transform not applied — rotation has no visual effect');
+
+// ── Grid size control ─────────────────────────────────────────────────────
+check(tileFnBody.includes('gridSel') || tileFnBody.includes('gridSize'), 'Grid size control present in tile map builder', 'No grid size control — GRID is always hardcoded to 60');
+
+// ── Canvas size presets ───────────────────────────────────────────────────
+check(tileFnBody.includes('CANVAS_PRESETS') || tileFnBody.includes('Canvas:'), 'Canvas size presets present', 'No canvas size presets or controls');
+
+// ── Distance scale ────────────────────────────────────────────────────────
+check(tileFnBody.includes('distanceScale'), 'Distance scale field present', 'distanceScale missing from tile map builder');
+
+// ── Bring to Front / Send to Back ─────────────────────────────────────────
+check(tileFnBody.includes('maxLayer') || tileFnBody.includes('To Front') || tileFnBody.includes('⏫'), 'Bring to Front control present', 'No "Bring to Front" control in inspector');
+check(tileFnBody.includes('minLayer') || tileFnBody.includes('To Back')  || tileFnBody.includes('⏬'), 'Send to Back control present', 'No "Send to Back" control in inspector');
+
+// ── Geography links ───────────────────────────────────────────────────────
+check(tileFnBody.includes('linkedRegionId') || tileFnBody.includes('linksRow'), 'Geography links row present in tile map builder', 'No geography link controls in tile map builder');
+
+// ── Version alignment ────────────────────────────────────────────────────
+const versionMatch = src.match(/PLUGIN_VERSION\s*=\s*'([^']+)'/);
+const manifestVersion = require('./manifest.json').version;
+const pluginVersion = versionMatch ? versionMatch[1] : '';
+check(pluginVersion === manifestVersion, `PLUGIN_VERSION (${pluginVersion}) matches manifest.json (${manifestVersion})`, `Version mismatch: PLUGIN_VERSION=${pluginVersion} but manifest.json=${manifestVersion}`);
+
+// ── Expanded map markdown ────────────────────────────────────────────────
+check(tileFnBody.includes('distanceScale') && tileFnBody.includes('gridSize') && tileFnBody.includes('Campaign'), 'Map markdown includes extended metadata (scale, grid, campaign)', 'Map markdown is missing extended metadata');
+
 // ── Summary ───────────────────────────────────────────────────────────────
 console.log('');
 if (failures === 0) {

@@ -3,7 +3,7 @@ const { Plugin, ItemView, Modal, Notice, Setting, normalizePath } = require('obs
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const VIEW_TYPE = 'ttrpg-engine-view';
-const PLUGIN_VERSION = '2.0.0';
+const PLUGIN_VERSION = '2.1.0';
 const PLUGIN_DIR = '.obsidian/plugins/ttrpg-engine';
 const KILL_SWITCH_FILES = [
   `${PLUGIN_DIR}/DISABLE_TTRPG_ENGINE.txt`,
@@ -338,7 +338,7 @@ function createDefaultState() {
     calendar: { name: '', year: 1, month: '', day: 1, moons: '', seasons: '', holidays: '' },
     settings: { compact: false },
     initiativeTracker: { combatants: [], currentIndex: 0, round: 1, active: false },
-    tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map', gridSize: 60, width: 1800, height: 1200, assetRoot: TILE_ASSET_ROOT, selectedMapId: '', mapId: '' },
+    tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map', gridSize: 60, width: 1800, height: 1200, assetRoot: TILE_ASSET_ROOT, selectedMapId: '', mapId: '', distanceScale: '5 ft', linkedRegionId: '', linkedSettlementId: '', linkedLocationId: '', linkedDungeonId: '', linkedPoiId: '', linkedEncounterId: '', linkedSessionId: '' },
     playerTab: 'overview',
     entities: {
       campaigns: [],
@@ -407,6 +407,14 @@ function migrateState(state) {
   if (!state.tileMap.height)  state.tileMap.height  = 1200;
   if (!state.tileMap.assetRoot) state.tileMap.assetRoot = TILE_ASSET_ROOT;
   if (!('mapId' in state.tileMap)) state.tileMap.mapId = '';
+  if (!state.tileMap.distanceScale) state.tileMap.distanceScale = '5 ft';
+  if (!('linkedRegionId' in state.tileMap)) state.tileMap.linkedRegionId = '';
+  if (!('linkedSettlementId' in state.tileMap)) state.tileMap.linkedSettlementId = '';
+  if (!('linkedLocationId' in state.tileMap)) state.tileMap.linkedLocationId = '';
+  if (!('linkedDungeonId' in state.tileMap)) state.tileMap.linkedDungeonId = '';
+  if (!('linkedPoiId' in state.tileMap)) state.tileMap.linkedPoiId = '';
+  if (!('linkedEncounterId' in state.tileMap)) state.tileMap.linkedEncounterId = '';
+  if (!('linkedSessionId' in state.tileMap)) state.tileMap.linkedSessionId = '';
   // Migrate old tiles: type→assetId, add widthCells/heightCells
   state.tileMap.tiles.forEach(tile => {
     if (!tile.assetId && tile.type) tile.assetId = tile.type;
@@ -1077,6 +1085,23 @@ class TTRPGEnginePlugin extends Plugin {
   }
 }
 
+// Persist state without triggering a full view re-render (avoids scroll jump in tile map).
+async function saveStateQuiet(plugin) {
+  plugin.state.version = PLUGIN_VERSION;
+  await plugin.saveData(plugin.state);
+}
+
+// Full saveState but restore the .te-main scroll position afterwards.
+async function saveStatePreserveScroll(plugin) {
+  const main = plugin.view?.containerEl?.querySelector('.te-main');
+  const top = main?.scrollTop || 0;
+  await plugin.saveState();
+  requestAnimationFrame(() => {
+    const el = plugin.view?.containerEl?.querySelector('.te-main');
+    if (el) el.scrollTop = top;
+  });
+}
+
 // ── MAIN VIEW ─────────────────────────────────────────────────────────────────
 class TTRPGMainView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; }
@@ -1621,15 +1646,13 @@ function renderGeography(main, plugin) {
           Object.assign(plugin.state.tileMap, mapRecord.tileLayout);
           plugin.state.tileMap.mapId = mapRecord.id;
         }
-        await plugin.saveState();
         new Notice(`Map "${mapRecord.name}" loaded into builder.`);
-        plugin.view.render();
+        await saveStatePreserveScroll(plugin);
       });
       btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => {
         removeItem(plugin.state, 'maps', mapRecord.id);
-        await plugin.saveState();
         new Notice('Map deleted.');
-        plugin.view.render();
+        await saveStatePreserveScroll(plugin);
       });
     });
   }
@@ -1696,7 +1719,7 @@ const routeFields = [
 // ── TILE MAP BUILDER ──────────────────────────────────────────────────────────
 function renderTileMapBuilder(parent, plugin) {
   const tmState = plugin.state.tileMap;
-  const GRID = tmState.gridSize || 60;
+  let GRID = tmState.gridSize || 60;
   const wrap = ce(parent, 'div', 'te-map-builder');
   let tileAssets = fallbackEmojiTileAssets();
   let selectedTileType = null;
@@ -1705,18 +1728,32 @@ function renderTileMapBuilder(parent, plugin) {
   let resizing = null;
   let selectedCategory = 'All';
 
-  // ── Toolbar ───────────────────────────────────────────────────────────────
+  // ── Toolbar row 1: name + actions ─────────────────────────────────────────
   const toolbar = ce(wrap, 'div', 'te-map-toolbar');
+
   const mapNameInp = ce(toolbar, 'input');
   mapNameInp.type = 'text'; mapNameInp.value = tmState.mapName || 'Untitled Map';
   mapNameInp.placeholder = 'Map name…';
-  mapNameInp.style.cssText = 'flex:1;max-width:220px;padding:5px 8px;border:1px solid var(--te-border);border-radius:var(--te-r-sm);background:var(--te-bg);color:var(--te-text);font-size:.88rem';
   mapNameInp.addEventListener('input', () => { tmState.mapName = mapNameInp.value; });
 
   const assetCountLabel = ce(toolbar, 'span', 'te-map-asset-count', '…');
 
   btn(toolbar, '💾 Save Map', 'te-btn is-primary', async () => {
     tmState.mapName = mapNameInp.value;
+    const camp = activeCampaign(plugin.state);
+    const missingCount = tmState.tiles.filter(t => {
+      const a = tileAssets.find(x => x.id === (t.assetId || t.type));
+      return (t.assetPath || t.assetId) && !a;
+    }).length;
+    const linked = [
+      tmState.linkedRegionId && `Region: ${tmState.linkedRegionId}`,
+      tmState.linkedSettlementId && `Settlement: ${tmState.linkedSettlementId}`,
+      tmState.linkedLocationId && `Location: ${tmState.linkedLocationId}`,
+      tmState.linkedDungeonId && `Dungeon: ${tmState.linkedDungeonId}`,
+      tmState.linkedPoiId && `POI: ${tmState.linkedPoiId}`,
+      tmState.linkedEncounterId && `Encounter: ${tmState.linkedEncounterId}`,
+      tmState.linkedSessionId && `Session: ${tmState.linkedSessionId}`,
+    ].filter(Boolean);
     const mapRecord = {
       id: tmState.mapId || uid('map'),
       name: tmState.mapName,
@@ -1725,15 +1762,45 @@ function renderTileMapBuilder(parent, plugin) {
       tileMap: true,
       tileLayout: JSON.parse(JSON.stringify(tmState)),
       assetRoot: TILE_ASSET_ROOT,
+      gridSize: tmState.gridSize || 60,
+      distanceScale: tmState.distanceScale || '5 ft',
+      width: tmState.width || 1800,
+      height: tmState.height || 1200,
       campaignId: plugin.state.activeCampaignId || '',
+      linkedRegionId: tmState.linkedRegionId || '',
+      linkedSettlementId: tmState.linkedSettlementId || '',
+      linkedLocationId: tmState.linkedLocationId || '',
+      linkedDungeonId: tmState.linkedDungeonId || '',
+      linkedPoiId: tmState.linkedPoiId || '',
+      linkedEncounterId: tmState.linkedEncounterId || '',
+      linkedSessionId: tmState.linkedSessionId || '',
       updatedAt: new Date().toISOString(),
     };
     if (!tmState.mapId) tmState.mapId = mapRecord.id;
     upsert(plugin.state, 'maps', mapRecord);
-    await plugin.saveState();
+    await saveStatePreserveScroll(plugin);
     const folder = campaignFolder(plugin);
     await ensureFolder(plugin.app, `${folder}/Maps`);
-    const mapMd = `# Map: ${tmState.mapName}\n\n*Tiles: ${tmState.tiles.length} | Saved: ${new Date().toLocaleDateString()} | Asset root: ${TILE_ASSET_ROOT}*\n\n\`\`\`json\n${JSON.stringify(tmState.tiles, null, 2)}\n\`\`\`\n`;
+    const mapMd = [
+      `# Map: ${tmState.mapName}`,
+      ``,
+      `| Field | Value |`,
+      `|---|---|`,
+      `| Campaign | ${camp?.name || 'None'} |`,
+      `| Grid Size | ${tmState.gridSize || 60}px (${tmState.distanceScale || '5 ft'} / square) |`,
+      `| Canvas | ${tmState.width || 1800}×${tmState.height || 1200}px |`,
+      `| Tiles | ${tmState.tiles.length} |`,
+      `| Missing Assets | ${missingCount} |`,
+      `| Asset Root | ${TILE_ASSET_ROOT} |`,
+      `| Saved | ${new Date().toLocaleDateString()} |`,
+      linked.length ? `| Links | ${linked.join(', ')} |` : '',
+      ``,
+      `## Tile Layout`,
+      ``,
+      `\`\`\`json`,
+      JSON.stringify(tmState.tiles, null, 2),
+      `\`\`\``,
+    ].filter(l => l !== undefined).join('\n');
     await writeNote(plugin.app, `${folder}/Maps/${slugify(tmState.mapName)}.md`, mapMd);
     new Notice(`Map "${tmState.mapName}" saved (${tmState.tiles.length} tiles)`);
   });
@@ -1751,17 +1818,86 @@ function renderTileMapBuilder(parent, plugin) {
   btn(toolbar, '🗑️ Clear Map', 'te-btn is-danger', async () => {
     if (confirm('Clear all tiles from the map?')) {
       tmState.tiles = []; selectedTileId = null;
-      await plugin.saveState(); renderCanvas(); renderInspector();
+      await saveStateQuiet(plugin); renderCanvas(); renderInspector();
     }
   });
 
   btn(toolbar, '+ New Map', 'te-btn', async () => {
     tmState.tiles = []; tmState.mapName = 'Untitled Map'; tmState.mapId = '';
-    tmState.nextId = 1; selectedTileId = null; selectedTileType = null;
+    tmState.nextId = 1; tmState.linkedRegionId = ''; tmState.linkedSettlementId = '';
+    tmState.linkedLocationId = ''; tmState.linkedDungeonId = '';
+    selectedTileId = null; selectedTileType = null;
     mapNameInp.value = tmState.mapName;
-    await plugin.saveState(); renderCanvas(); renderInspector();
+    renderLinksRow();
+    await saveStateQuiet(plugin); renderCanvas(); renderInspector();
     new Notice('New blank map started.');
   });
+
+  // ── Toolbar row 2: grid / canvas / scale controls ─────────────────────────
+  const metaRow = ce(wrap, 'div', 'te-map-meta-row');
+
+  // Grid size
+  const gridLabel = ce(metaRow, 'span', 'te-map-meta-label', 'Grid:');
+  gridLabel.style.cssText = 'font-size:.8rem;color:var(--te-muted);white-space:nowrap';
+  const gridSel = ce(metaRow, 'select', 'te-map-meta-select');
+  [30, 40, 50, 60, 80, 100].forEach(v => {
+    const o = ce(gridSel, 'option', '', `${v}px`); o.value = v;
+    if (v === (tmState.gridSize || 60)) o.selected = true;
+  });
+  gridSel.addEventListener('change', async () => {
+    GRID = parseInt(gridSel.value, 10);
+    tmState.gridSize = GRID;
+    canvas.style.backgroundSize = `${GRID}px ${GRID}px`;
+    await saveStateQuiet(plugin); renderCanvas();
+  });
+
+  // Canvas size presets
+  const sizeLabel = ce(metaRow, 'span', 'te-map-meta-label', 'Canvas:');
+  sizeLabel.style.cssText = 'font-size:.8rem;color:var(--te-muted);white-space:nowrap;margin-left:8px';
+  const sizeSel = ce(metaRow, 'select', 'te-map-meta-select');
+  const CANVAS_PRESETS = [
+    { label: 'Small Battlemap',  w: 1200, h: 900 },
+    { label: 'Standard Map',     w: 1800, h: 1200 },
+    { label: 'Large Dungeon',    w: 2400, h: 1800 },
+    { label: 'Region Map',       w: 3000, h: 2000 },
+    { label: 'Custom…',          w: 0,    h: 0 },
+  ];
+  CANVAS_PRESETS.forEach(p => {
+    const o = ce(sizeSel, 'option', '', p.label); o.value = p.label;
+    if (p.w === (tmState.width || 1800) && p.h === (tmState.height || 1200)) o.selected = true;
+  });
+  const customWInp = ce(metaRow, 'input', 'te-map-meta-input');
+  customWInp.type = 'number'; customWInp.min = 600; customWInp.value = tmState.width || 1800;
+  customWInp.style.cssText = 'width:70px;display:none';
+  customWInp.title = 'Canvas width (px)';
+  const customHInp = ce(metaRow, 'input', 'te-map-meta-input');
+  customHInp.type = 'number'; customHInp.min = 400; customHInp.value = tmState.height || 1200;
+  customHInp.style.cssText = 'width:70px;display:none';
+  customHInp.title = 'Canvas height (px)';
+  const applyCanvasSize = async (w, h) => {
+    tmState.width = w; tmState.height = h;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    await saveStateQuiet(plugin);
+  };
+  sizeSel.addEventListener('change', async () => {
+    const preset = CANVAS_PRESETS.find(p => p.label === sizeSel.value);
+    if (preset && preset.w) {
+      customWInp.style.display = 'none'; customHInp.style.display = 'none';
+      await applyCanvasSize(preset.w, preset.h);
+    } else {
+      customWInp.style.display = ''; customHInp.style.display = '';
+    }
+  });
+  customWInp.addEventListener('change', () => applyCanvasSize(Math.max(600, parseInt(customWInp.value, 10) || 1800), tmState.height));
+  customHInp.addEventListener('change', () => applyCanvasSize(tmState.width, Math.max(400, parseInt(customHInp.value, 10) || 1200)));
+
+  // Distance scale
+  const scaleLabel = ce(metaRow, 'span', 'te-map-meta-label', '1 sq =');
+  scaleLabel.style.cssText = 'font-size:.8rem;color:var(--te-muted);white-space:nowrap;margin-left:8px';
+  const scaleInp = ce(metaRow, 'input', 'te-map-meta-input');
+  scaleInp.type = 'text'; scaleInp.value = tmState.distanceScale || '5 ft';
+  scaleInp.placeholder = '5 ft'; scaleInp.style.cssText = 'width:70px';
+  scaleInp.addEventListener('input', async () => { tmState.distanceScale = scaleInp.value; await saveStateQuiet(plugin); });
 
   // ── Inspector ─────────────────────────────────────────────────────────────
   const inspector = ce(toolbar, 'div', 'te-map-inspector');
@@ -1775,8 +1911,8 @@ function renderTileMapBuilder(parent, plugin) {
     // W/H cell controls
     const addCellControl = (axis, getV, setV) => {
       ce(inspector, 'span', 'te-map-inspector-stat', `${axis}:${getV()}`);
-      btn(inspector, '−', 'te-btn is-sm', async () => { setV(Math.max(1, getV() - 1)); await plugin.saveState(); renderCanvas(); renderInspector(); });
-      btn(inspector, '+', 'te-btn is-sm', async () => { setV(getV() + 1); await plugin.saveState(); renderCanvas(); renderInspector(); });
+      btn(inspector, '−', 'te-btn is-sm', async () => { setV(Math.max(1, getV() - 1)); await saveStateQuiet(plugin); renderCanvas(); renderInspector(); });
+      btn(inspector, '+', 'te-btn is-sm', async () => { setV(getV() + 1); await saveStateQuiet(plugin); renderCanvas(); renderInspector(); });
     };
     addCellControl('W',
       () => tile.widthCells  || 1,
@@ -1787,33 +1923,84 @@ function renderTileMapBuilder(parent, plugin) {
       v  => { tile.heightCells = v; tile.h = v * GRID; }
     );
 
-    btn(inspector, '↑ Layer', 'te-btn is-sm', async () => {
+    // Layer controls
+    const maxLayer = tmState.tiles.length > 0 ? Math.max(...tmState.tiles.map(t => t.layer || 0)) : 0;
+    const minLayer = tmState.tiles.length > 0 ? Math.min(...tmState.tiles.map(t => t.layer || 0)) : 0;
+    btn(inspector, '↑', 'te-btn is-sm', async () => {
       tile.layer = (tile.layer || 0) + 1;
-      tmState.tiles.sort((a, b) => (a.layer || 0) - (b.layer || 0));
-      await plugin.saveState(); renderCanvas();
+      await saveStateQuiet(plugin); renderCanvas();
     });
-    btn(inspector, '↓ Layer', 'te-btn is-sm', async () => {
+    btn(inspector, '↓', 'te-btn is-sm', async () => {
       tile.layer = Math.max(0, (tile.layer || 0) - 1);
-      tmState.tiles.sort((a, b) => (a.layer || 0) - (b.layer || 0));
-      await plugin.saveState(); renderCanvas();
+      await saveStateQuiet(plugin); renderCanvas();
+    });
+    btn(inspector, '⏫', 'te-btn is-sm', async () => {
+      tile.layer = maxLayer + 1;
+      await saveStateQuiet(plugin); renderCanvas();
+    });
+    btn(inspector, '⏬', 'te-btn is-sm', async () => {
+      tile.layer = minLayer > 0 ? minLayer - 1 : 0;
+      tmState.tiles.forEach(t => { if (t !== tile) t.layer = Math.max(tile.layer + 1, (t.layer || 0) + 1); });
+      await saveStateQuiet(plugin); renderCanvas();
+    });
+
+    // Rotation controls
+    btn(inspector, '↻90°', 'te-btn is-sm', async () => {
+      tile.rotation = ((tile.rotation || 0) + 90) % 360;
+      await saveStateQuiet(plugin); renderCanvas();
+    });
+    btn(inspector, '↺90°', 'te-btn is-sm', async () => {
+      tile.rotation = ((tile.rotation || 0) + 270) % 360;
+      await saveStateQuiet(plugin); renderCanvas();
+    });
+    btn(inspector, '⟳0°', 'te-btn is-sm', async () => {
+      tile.rotation = 0;
+      await saveStateQuiet(plugin); renderCanvas();
     });
 
     const asset = tileAssets.find(a => a.id === (tile.assetId || tile.type));
     if (asset) {
-      btn(inspector, '⟳ Reset Size', 'te-btn is-sm', async () => {
+      btn(inspector, '⟳ Size', 'te-btn is-sm', async () => {
         tile.widthCells = asset.widthCells || 1; tile.heightCells = asset.heightCells || 1;
         tile.w = tile.widthCells * GRID; tile.h = tile.heightCells * GRID;
-        await plugin.saveState(); renderCanvas(); renderInspector();
+        await saveStateQuiet(plugin); renderCanvas(); renderInspector();
       });
     }
 
-    btn(inspector, '× Delete', 'te-btn is-sm is-danger', async () => {
+    btn(inspector, '× Del', 'te-btn is-sm is-danger', async () => {
       tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId);
       selectedTileId = null;
-      await plugin.saveState(); renderCanvas(); renderInspector();
+      await saveStateQuiet(plugin); renderCanvas(); renderInspector();
     });
   };
   renderInspector();
+
+  // ── Geography links row ───────────────────────────────────────────────────
+  const linksRow = ce(wrap, 'div', 'te-map-links-row');
+  const renderLinksRow = () => {
+    clear(linksRow);
+    const addLink = (label, field, entityKey) => {
+      const items = safeArr(plugin.state.entities[entityKey]);
+      if (!items.length) return;
+      const lbl = ce(linksRow, 'span', 'te-map-meta-label', label + ':');
+      lbl.style.cssText = 'font-size:.78rem;color:var(--te-muted);white-space:nowrap';
+      const sel = ce(linksRow, 'select', 'te-map-meta-select');
+      sel.style.maxWidth = '130px';
+      const none = ce(sel, 'option', '', '— none —'); none.value = '';
+      items.forEach(item => {
+        const o = ce(sel, 'option', '', (item.name || item.id).slice(0, 24));
+        o.value = item.id;
+        if (tmState[field] === item.id) o.selected = true;
+      });
+      sel.addEventListener('change', async () => { tmState[field] = sel.value; await saveStateQuiet(plugin); });
+    };
+    addLink('Region',     'linkedRegionId',     'regions');
+    addLink('Settlement', 'linkedSettlementId', 'settlements');
+    addLink('Location',   'linkedLocationId',   'locations');
+    addLink('Encounter',  'linkedEncounterId',  'encounters');
+    addLink('Session',    'linkedSessionId',    'sessions');
+  };
+  renderLinksRow();
 
   // ── Workspace ─────────────────────────────────────────────────────────────
   const workspace = ce(wrap, 'div', 'te-map-workspace');
@@ -1824,7 +2011,6 @@ function renderTileMapBuilder(parent, plugin) {
   const palSearch = ce(palControls, 'input', 'te-map-palette-search');
   palSearch.type = 'text'; palSearch.placeholder = '🔍 Search tiles…';
   const categorySelect = ce(palControls, 'select', 'te-map-category-filter');
-  categorySelect.style.cssText = 'width:100%;padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.8rem;margin-top:4px';
 
   const renderCategoryFilter = () => {
     clear(categorySelect);
@@ -1832,12 +2018,13 @@ function renderTileMapBuilder(parent, plugin) {
     cats.forEach(c => { const o = ce(categorySelect, 'option', '', c); o.value = c; if (c === selectedCategory) o.selected = true; });
   };
 
+  const palList = ce(palette, 'div', 'te-palette-list');
   const renderPalette = () => {
-    Array.from(palette.children).forEach(el => { if (el !== palControls) el.remove(); });
+    clear(palList);
     const q = palSearch.value;
     const visible = tileAssets.filter(a => assetMatches(a, q, selectedCategory));
     if (!visible.length) {
-      const empty = ce(palette, 'p', '');
+      const empty = ce(palList, 'p', '');
       empty.style.cssText = 'padding:12px;font-size:.8rem;color:var(--te-muted);text-align:center;white-space:pre-line';
       empty.textContent = tileAssets.length === 0
         ? `No assets found.\nPlace images in:\n${TILE_ASSET_ROOT}`
@@ -1845,7 +2032,7 @@ function renderTileMapBuilder(parent, plugin) {
       return;
     }
     visible.forEach(asset => {
-      const tileBtn = ce(palette, 'div', 'te-palette-tile' + (selectedTileType === asset.id ? ' is-selected' : ''));
+      const tileBtn = ce(palList, 'div', 'te-palette-tile' + (selectedTileType === asset.id ? ' is-selected' : ''));
       if (asset.src) {
         const img = ce(tileBtn, 'img', 'te-palette-thumb');
         img.src = asset.src; img.alt = asset.label; img.loading = 'lazy';
@@ -1865,7 +2052,7 @@ function renderTileMapBuilder(parent, plugin) {
   // ── Canvas ────────────────────────────────────────────────────────────────
   const canvasWrap = ce(workspace, 'div', 'te-map-canvas-wrap');
   const canvas = ce(canvasWrap, 'div', 'te-map-canvas');
-  canvas.style.cssText = `width:${tmState.width || 1800}px;height:${tmState.height || 1200}px;`;
+  canvas.style.cssText = `width:${tmState.width || 1800}px;height:${tmState.height || 1200}px;background-size:${GRID}px ${GRID}px`;
 
   const renderCanvas = () => {
     clear(canvas);
@@ -1878,7 +2065,8 @@ function renderTileMapBuilder(parent, plugin) {
         (tile.id === selectedTileId ? ' is-selected' : '') +
         (assetMissing ? ' is-missing-asset' : '')
       );
-      el.style.cssText = `left:${tile.x}px;top:${tile.y}px;width:${tile.w || GRID}px;height:${tile.h || GRID}px;z-index:${(tile.layer || 0) + 1}`;
+      const rot = tile.rotation || 0;
+      el.style.cssText = `left:${tile.x}px;top:${tile.y}px;width:${tile.w || GRID}px;height:${tile.h || GRID}px;z-index:${(tile.layer || 0) + 1};${rot ? `transform:rotate(${rot}deg);` : ''}`;
       el.title = tile.assetLabel || asset?.label || tile.type || 'Tile';
 
       if (assetMissing) {
@@ -1886,7 +2074,7 @@ function renderTileMapBuilder(parent, plugin) {
         el.title = `Missing asset: ${tile.assetPath || tile.assetId}`;
       } else if (asset?.src) {
         const img = ce(el, 'img', 'te-tile-img');
-        img.src = asset.src; img.alt = asset.label;
+        img.src = asset.src; img.alt = asset.label || '';
       } else {
         el.textContent = asset?.icon || tile.icon || '🧱';
         el.style.fontSize = `${Math.min(tile.w || GRID, tile.h || GRID) * 0.55}px`;
@@ -1900,7 +2088,7 @@ function renderTileMapBuilder(parent, plugin) {
           ev.stopPropagation();
           tmState.tiles = tmState.tiles.filter(t => t.id !== tile.id);
           selectedTileId = null;
-          await plugin.saveState(); renderCanvas(); renderInspector();
+          await saveStateQuiet(plugin); renderCanvas(); renderInspector();
         });
       }
 
@@ -1926,39 +2114,41 @@ function renderTileMapBuilder(parent, plugin) {
     });
   };
 
-  // Place tile
+  // Place tile on click
   canvas.addEventListener('click', async ev => {
     if (dragging || resizing) return;
     if (!selectedTileType) { selectedTileId = null; renderCanvas(); renderInspector(); return; }
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((ev.clientX - rect.left) / GRID) * GRID;
-    const y = Math.floor((ev.clientY - rect.top) / GRID) * GRID;
+    const scrollLeft = canvasWrap.scrollLeft || 0;
+    const scrollTop  = canvasWrap.scrollTop  || 0;
+    const x = Math.floor((ev.clientX - rect.left + scrollLeft) / GRID) * GRID;
+    const y = Math.floor((ev.clientY - rect.top  + scrollTop)  / GRID) * GRID;
     const asset = tileAssets.find(a => a.id === selectedTileType);
     const widthCells  = asset?.widthCells  || 1;
     const heightCells = asset?.heightCells || 1;
     const newTile = {
       id: tmState.nextId++,
-      assetId: asset?.id || selectedTileType,
-      assetPath: asset?.path || '',
-      assetSrc: asset?.src || '',
-      assetLabel: asset?.label || selectedTileType,
+      assetId:       asset?.id       || selectedTileType,
+      assetPath:     asset?.path     || '',
+      assetSrc:      asset?.src      || '',
+      assetLabel:    asset?.label    || selectedTileType,
       assetCategory: asset?.category || '',
-      kind: asset?.kind || 'tile',
-      icon: asset?.icon || '',
+      kind:          asset?.kind     || 'tile',
+      icon:          asset?.icon     || '',
       x, y,
       widthCells, heightCells,
-      w: widthCells * GRID,
+      w: widthCells  * GRID,
       h: heightCells * GRID,
-      layer: tmState.tiles.length,
+      layer:    tmState.tiles.length,
       rotation: 0,
-      type: asset?.id || selectedTileType, // backward compat
+      type:     asset?.id || selectedTileType,
     };
     tmState.tiles.push(newTile);
     selectedTileId = newTile.id;
-    await plugin.saveState(); renderCanvas(); renderInspector();
+    await saveStateQuiet(plugin); renderCanvas(); renderInspector();
   });
 
-  // Mouse move / up
+  // Mouse move / up for drag + resize
   const onMouseMove = ev => {
     if (dragging) {
       const { tile, startX, startY } = dragging;
@@ -1979,7 +2169,7 @@ function renderTileMapBuilder(parent, plugin) {
   const onMouseUp = async () => {
     if (dragging || resizing) {
       dragging = null; resizing = null;
-      await plugin.saveState(); renderInspector();
+      await saveStateQuiet(plugin); renderInspector();
     }
   };
   document.addEventListener('mousemove', onMouseMove);
@@ -1992,7 +2182,7 @@ function renderTileMapBuilder(parent, plugin) {
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
     tmState.tiles = tmState.tiles.filter(t => t.id !== selectedTileId);
     selectedTileId = null;
-    await plugin.saveState(); renderCanvas(); renderInspector();
+    await saveStateQuiet(plugin); renderCanvas(); renderInspector();
   };
   document.addEventListener('keydown', onKeyDown);
 
