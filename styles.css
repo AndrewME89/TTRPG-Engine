@@ -148,19 +148,44 @@
 /* ── Tile Map Builder ────────────────────────────────────────────────────── */
 .te-map-builder { display:flex; flex-direction:column; gap:var(--te-gap-md); border:1px solid var(--te-border); border-radius:var(--te-r-lg); padding:var(--te-gap-md); background:var(--te-bg-alt); margin-bottom:var(--te-gap-lg); }
 .te-map-toolbar { display:flex; flex-wrap:wrap; gap:var(--te-gap-sm); align-items:center; padding-bottom:var(--te-gap-sm); border-bottom:1px solid var(--te-border); }
-.te-map-workspace { display:flex; gap:var(--te-gap-md); min-height:480px; flex-wrap:wrap; }
-.te-map-palette { flex:0 0 150px; display:flex; flex-direction:column; gap:var(--te-gap-xs); background:var(--te-bg); border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-sm); overflow-y:auto; max-height:480px; }
-.te-map-palette-search { width:100%; padding:4px 8px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); background:var(--te-bg-alt); color:var(--te-text); font-size:.82rem; }
-.te-palette-tile { display:flex; align-items:center; gap:6px; padding:5px 6px; border:1px solid transparent; border-radius:var(--te-r-sm); cursor:pointer; font-size:.8rem; color:var(--te-text); background:transparent; }
+.te-map-toolbar input[type="text"] { padding:5px 8px; background:var(--te-bg); color:var(--te-text); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-size:.88rem; min-width:160px; }
+.te-map-meta-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--te-gap-xs); padding:6px 0 var(--te-gap-xs); border-bottom:1px solid var(--te-border); font-size:.82rem; }
+.te-map-meta-label { color:var(--te-muted); font-size:.78rem; flex-shrink:0; }
+.te-map-meta-select { padding:3px 6px; background:var(--te-bg); color:var(--te-text); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-size:.8rem; }
+.te-map-meta-input { padding:3px 6px; background:var(--te-bg); color:var(--te-text); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-size:.8rem; }
+.te-map-links-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--te-gap-xs) var(--te-gap-sm); padding:4px 0 var(--te-gap-sm); border-bottom:1px solid var(--te-border); min-height:30px; }
+.te-map-asset-count { font-size:.78rem; color:var(--te-muted); padding:3px 8px; background:var(--te-bg); border:1px solid var(--te-border); border-radius:999px; white-space:nowrap; }
+.te-map-inspector { display:flex; align-items:center; gap:var(--te-gap-xs); flex-wrap:wrap; margin-left:auto; padding:4px 10px; background:var(--te-bg); border:1px solid var(--te-border); border-radius:var(--te-r-md); }
+.te-map-inspector-label { font-size:.82rem; font-weight:600; color:var(--te-text); white-space:nowrap; }
+.te-map-inspector-stat { font-size:.78rem; color:var(--te-muted); padding:2px 6px; background:var(--te-bg-alt); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-family:var(--font-monospace,monospace); }
+.te-map-workspace { display:grid; grid-template-columns:minmax(240px,300px) minmax(480px,1fr); gap:var(--te-gap-md); min-height:520px; }
+@media(max-width:900px){ .te-map-workspace { grid-template-columns:1fr; } }
+.te-map-palette { display:flex; flex-direction:column; gap:0; background:var(--te-bg); border:1px solid var(--te-border); border-radius:var(--te-r-md); overflow:hidden; }
+.te-palette-controls { display:flex; flex-direction:column; gap:var(--te-gap-xs); padding:var(--te-gap-sm); border-bottom:1px solid var(--te-border); flex-shrink:0; }
+.te-map-palette-search { width:100%; padding:5px 8px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); background:var(--te-bg-alt); color:var(--te-text); font-size:.82rem; }
+.te-map-palette-search:focus { outline:2px solid var(--te-accent); border-color:transparent; }
+.te-map-category-filter { width:100%; padding:4px 6px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); background:var(--te-bg-alt); color:var(--te-text); font-size:.8rem; }
+.te-palette-list { flex:1; overflow-y:auto; padding:var(--te-gap-xs); display:flex; flex-direction:column; gap:2px; }
+.te-palette-tile { display:grid; grid-template-columns:44px 1fr; align-items:center; gap:var(--te-gap-xs); padding:4px 6px; border:1px solid transparent; border-radius:var(--te-r-sm); cursor:pointer; color:var(--te-text); background:transparent; }
 .te-palette-tile:hover { border-color:var(--te-border); background:var(--te-bg-alt); }
 .te-palette-tile.is-selected { border-color:var(--te-accent); background:color-mix(in srgb,var(--te-accent) 12%,transparent); }
-.te-palette-icon { font-size:1.2rem; }
-.te-map-canvas-wrap { flex:1; min-width:300px; position:relative; border:1px solid var(--te-border); border-radius:var(--te-r-md); background:var(--background-modifier-form-field,var(--te-bg)); overflow:hidden; }
-.te-map-canvas { width:100%; min-height:460px; position:relative; background-image:repeating-linear-gradient(var(--te-border) 0 1px,transparent 1px 60px),repeating-linear-gradient(90deg,var(--te-border) 0 1px,transparent 1px 60px); background-size:60px 60px; }
-.te-tile { position:absolute; display:flex; align-items:center; justify-content:center; font-size:2rem; cursor:move; user-select:none; border:1px dashed transparent; border-radius:4px; }
+.te-palette-thumb { width:40px; height:40px; object-fit:contain; border-radius:var(--te-r-sm); background:var(--te-bg-alt); display:block; pointer-events:none; }
+.te-palette-icon { font-size:1.6rem; width:40px; height:40px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.te-palette-label-wrap { display:flex; flex-direction:column; gap:2px; min-width:0; overflow:hidden; }
+.te-palette-label { font-size:.8rem; font-weight:600; color:var(--te-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.te-palette-meta { font-size:.72rem; color:var(--te-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.te-map-canvas-wrap { position:relative; border:1px solid var(--te-border); border-radius:var(--te-r-md); background:var(--background-modifier-form-field,var(--te-bg)); overflow:auto; max-height:600px; }
+.te-map-canvas { position:relative; width:1800px; height:1200px; background-image:repeating-linear-gradient(var(--te-border) 0 1px,transparent 1px 60px),repeating-linear-gradient(90deg,var(--te-border) 0 1px,transparent 1px 60px); background-size:60px 60px; }
+.te-tile { position:absolute; overflow:visible; cursor:grab; user-select:none; border:1px dashed transparent; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:2rem; }
 .te-tile:hover { border-color:var(--te-accent); }
-.te-tile.is-selected { border-color:var(--te-accent); outline:2px solid var(--te-accent); }
-.te-tile-resize { position:absolute; bottom:1px; right:1px; width:10px; height:10px; background:var(--te-accent); border-radius:2px; cursor:se-resize; opacity:.8; }
+.te-tile:active { cursor:grabbing; }
+.te-tile.is-selected { border-color:var(--te-accent); outline:2px solid var(--te-accent); z-index:10; }
+.te-tile.is-missing-asset { background:color-mix(in srgb,var(--te-danger) 8%,transparent); border-color:var(--te-danger) !important; border-style:solid; }
+.te-tile-img { width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none; display:block; border-radius:3px; }
+.te-tile-delete { position:absolute; top:-10px; right:-10px; width:20px; height:20px; background:var(--te-danger); color:#fff; border:none; border-radius:50%; cursor:pointer; font-size:.9rem; font-weight:900; line-height:1; display:flex; align-items:center; justify-content:center; z-index:20; padding:0; opacity:.9; }
+.te-tile-delete:hover { opacity:1; transform:scale(1.15); }
+.te-tile-resize { position:absolute; bottom:-4px; right:-4px; width:12px; height:12px; background:var(--te-accent); border:2px solid var(--te-bg); border-radius:3px; cursor:se-resize; z-index:15; opacity:.85; }
+.te-tile-resize:hover { opacity:1; transform:scale(1.2); }
 
 /* ── Player view ─────────────────────────────────────────────────────────── */
 .te-player-tabs { display:flex; gap:var(--te-gap-sm); flex-wrap:wrap; margin-bottom:var(--te-gap-lg); padding-bottom:var(--te-gap-sm); border-bottom:1px solid var(--te-border); }
@@ -180,6 +205,22 @@
 .te-wizard-step { padding:4px 10px; border-radius:999px; font-size:.78rem; font-weight:700; background:var(--te-bg-alt); border:1px solid var(--te-border); color:var(--te-muted); }
 .te-wizard-step.is-active { background:var(--te-accent); color:var(--te-on-accent); border-color:var(--te-accent); }
 .te-wizard-step.is-done { border-color:var(--te-success); color:var(--te-success); }
+
+/* ── Progress bars (Phase 11/14) ─────────────────────────────────────────── */
+.te-progress-bar { width:100%; height:8px; background:var(--te-bg-alt); border-radius:999px; overflow:hidden; margin:6px 0 2px; }
+.te-progress-fill { height:100%; background:var(--te-accent); border-radius:999px; transition:width 300ms ease; }
+.te-progress-label { font-size:.78rem; color:var(--te-muted); margin:0 0 8px; }
+
+/* ── Session live badge (Phase 13) ──────────────────────────────────────── */
+.te-session-live-badge { display:inline-block; padding:6px 14px; background:color-mix(in srgb,var(--te-danger) 15%,transparent); border:1px solid var(--te-danger); border-radius:var(--te-r-md); font-weight:700; font-size:.88rem; color:var(--te-danger); margin-bottom:var(--te-gap-md); animation:te-badge-pulse 2s ease-in-out infinite; }
+
+/* ── PC Companion stat bar ───────────────────────────────────────────────── */
+.te-stat-big { font-size:1.8rem; font-weight:900; line-height:1; color:var(--te-text); }
+
+/* ── Field row (entity picker) ───────────────────────────────────────────── */
+.te-field-row { display:flex; gap:var(--te-gap-sm); align-items:center; margin-bottom:var(--te-gap-sm); }
+.te-field-label { font-size:.82rem; font-weight:600; color:var(--te-muted); min-width:140px; flex-shrink:0; }
+.te-field-select { flex:1; padding:6px 8px; background:var(--te-bg); color:var(--te-text); border:1px solid var(--te-border); border-radius:var(--te-r-sm); font-size:.88rem; }
 
 /* ── Safe-mode badge ─────────────────────────────────────────────────────── */
 .te-safe-mode-badge { background:var(--te-danger); color:#fff; font-size:.72rem; font-weight:800; padding:3px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.06em; flex-shrink:0; animation:te-badge-pulse 2s ease-in-out infinite; }
