@@ -1617,11 +1617,15 @@ function renderGeography(main, plugin) {
     { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
   ]);
 
+  // Tile Map Builder (inline)
+  sectionHead(main, 'Tile Map Builder');
+  renderTileMapBuilder(main, plugin);
+
   // Saved Maps
   sectionHead(main, 'Saved Maps');
   const savedMaps = safeArr(plugin.state.entities.maps);
   if (!savedMaps.length) {
-    emptyState(main, 'No maps saved yet.', 'Build a map below then click "💾 Save Map".');
+    emptyState(main, 'No maps saved yet.', 'Build a map above then click "💾 Save Map".');
   } else {
     const mg = ce(main, 'div', 'te-grid');
     savedMaps.forEach(mapRecord => {
@@ -1656,10 +1660,6 @@ function renderGeography(main, plugin) {
       });
     });
   }
-
-  // Tile Map Builder (inline)
-  sectionHead(main, 'Tile Map Builder');
-  renderTileMapBuilder(main, plugin);
 
   sectionHead(main, 'Regions');
   itemCards(main, plugin, 'regions', { meta: ['terrain', 'climate', 'population'] });
