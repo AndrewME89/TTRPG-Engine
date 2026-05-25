@@ -58,6 +58,14 @@ async function endBoot(plugin) {
   await adapterRemove(plugin.app, BOOT_MARKER);
 }
 
+// ── Safe-mode & crash-lock helpers ────────────────────────────────────────────
+const SAFE_MODE_FILE = `${PLUGIN_DIR}/SAFE_MODE.txt`;
+async function safeModeActive(app) { return adapterExists(app, SAFE_MODE_FILE); }
+async function enableSafeMode(app) { await adapterWrite(app, SAFE_MODE_FILE, `Safe mode enabled ${new Date().toISOString()}`); }
+async function disableSafeMode(app) { await adapterRemove(app, SAFE_MODE_FILE); }
+async function clearCrashLock(app) { await adapterRemove(app, LOAD_FAILED); }
+async function readCrashReport(app) { return (await adapterExists(app, CRASH_REPORT)) ? adapterRead(app, CRASH_REPORT) : ''; }
+
 // ── Tile assets ───────────────────────────────────────────────────────────────
 const TILE_ASSETS = [
   { id:'grass',    icon:'🌿', label:'Grass' },
@@ -270,6 +278,88 @@ function matchesSearch(item, q) {
   return fields.includes(needle);
 }
 
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+async function runDiagnostics(plugin) {
+  const state = plugin.state;
+  const e = state.entities || {};
+  const issues = [];
+  const info = [];
+
+  // System info
+  const counts = {};
+  for (const [k, arr] of Object.entries(e)) counts[k] = Array.isArray(arr) ? arr.length : 0;
+  info.push(`Plugin version: ${PLUGIN_VERSION}`);
+  info.push(`State version: ${state.version || 'unknown'}`);
+
+  // Active campaign
+  const camp = activeCampaign(state);
+  if (!camp) {
+    if (!safeArr(e.campaigns).length) issues.push({ sev: 'warn', msg: 'No campaigns exist. Create one to get started.' });
+    else issues.push({ sev: 'warn', msg: 'No active campaign set — open Campaigns and activate one.' });
+  } else {
+    info.push(`Active campaign: "${camp.name}" (${camp.id})`);
+  }
+
+  // Duplicate IDs
+  for (const [key, arr] of Object.entries(e)) {
+    if (!Array.isArray(arr)) continue;
+    const seen = new Set();
+    arr.forEach(item => {
+      if (!item.id) { issues.push({ sev: 'error', msg: `${key}: item "${item.name || '?'}" has no ID.` }); }
+      else if (seen.has(item.id)) { issues.push({ sev: 'error', msg: `${key}: duplicate ID "${item.id}" (${item.name || '?'}).` }); }
+      else seen.add(item.id);
+    });
+  }
+
+  // Orphaned campaign references
+  const campaignIds = new Set(safeArr(e.campaigns).map(c => c.id));
+  const needsCampaign = ['npcs','creatures','bbegs','factions','quests','adventures','encounters','sessions','secrets','handouts','regions','settlements','locations'];
+  needsCampaign.forEach(key => safeArr(e[key]).forEach(item => {
+    if (item.campaignId && !campaignIds.has(item.campaignId))
+      issues.push({ sev: 'warn', msg: `${key} "${item.name || item.id}": references missing campaign "${item.campaignId}".` });
+  }));
+
+  // Broken parent references
+  const factionIds = new Set(safeArr(e.factions).map(x => x.id));
+  const adventureIds = new Set(safeArr(e.adventures).map(x => x.id));
+  const regionIds = new Set(safeArr(e.regions).map(x => x.id));
+  safeArr(e.npcs).forEach(npc => {
+    if (npc.factionId && !factionIds.has(npc.factionId))
+      issues.push({ sev: 'warn', msg: `NPC "${npc.name || npc.id}": references missing faction "${npc.factionId}".` });
+  });
+  safeArr(e.quests).forEach(q => {
+    if (q.adventureId && !adventureIds.has(q.adventureId))
+      issues.push({ sev: 'warn', msg: `Quest "${q.name || q.id}": references missing adventure "${q.adventureId}".` });
+  });
+  safeArr(e.settlements).forEach(s => {
+    if (s.regionId && !regionIds.has(s.regionId))
+      issues.push({ sev: 'warn', msg: `Settlement "${s.name || s.id}": references missing region "${s.regionId}".` });
+  });
+
+  // Invalid visibility states
+  const validVis = new Set(['dm-only', 'player-visible', 'revealed']);
+  ['secrets','handouts','quests','npcs'].forEach(key => safeArr(e[key]).forEach(item => {
+    if (item.visibility && !validVis.has(item.visibility))
+      issues.push({ sev: 'warn', msg: `${key} "${item.name || item.id}": invalid visibility "${item.visibility}".` });
+  }));
+
+  // Broken relationships
+  const allIds = new Set();
+  Object.values(e).forEach(arr => { if (Array.isArray(arr)) arr.forEach(item => { if (item.id) allIds.add(item.id); }); });
+  safeArr(state.relationships).forEach(rel => {
+    if (!allIds.has(rel.fromId)) issues.push({ sev: 'warn', msg: `Relationship: source entity "${rel.fromId}" no longer exists.` });
+    if (!allIds.has(rel.toId))   issues.push({ sev: 'warn', msg: `Relationship: target entity "${rel.toId}" no longer exists.` });
+  });
+
+  // Safe mode / crash lock
+  if (await safeModeActive(plugin.app))
+    issues.push({ sev: 'warn', msg: 'Safe mode is active — plugin will not load on next startup until disabled.' });
+  if (await adapterExists(plugin.app, LOAD_FAILED))
+    issues.push({ sev: 'error', msg: 'Crash lock present — plugin blocked itself from loading. Use "Clear Crash Lock" to re-enable.' });
+
+  return { issues, info, counts };
+}
+
 // ── Vault helpers ─────────────────────────────────────────────────────────────
 async function ensureFolder(app, path) {
   try {
@@ -329,10 +419,15 @@ async function exportBackup(plugin) {
   const dir = `${folder}/Backups`;
   await ensureFolder(plugin.app, folder);
   await ensureFolder(plugin.app, dir);
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const path = `${dir}/backup-${stamp}.json`;
-  await writeNote(plugin.app, path, JSON.stringify(plugin.state, null, 2));
-  new Notice(`Backup saved to ${path}`);
+  const counts = {};
+  const ents = plugin.state.entities || {};
+  for (const [k, arr] of Object.entries(ents)) counts[k] = Array.isArray(arr) ? arr.length : 0;
+  const total = Object.values(counts).reduce((s, v) => s + v, 0);
+  const backup = { version: PLUGIN_VERSION, timestamp: new Date().toISOString(), entityCounts: counts, state: plugin.state };
+  await writeNote(plugin.app, path, JSON.stringify(backup, null, 2));
+  new Notice(`Backup saved to ${path} (${total} entities)`);
 }
 
 // ── Dice & generators ─────────────────────────────────────────────────────────
@@ -620,6 +715,34 @@ class TTRPGEnginePlugin extends Plugin {
       });
       cmd('backup', 'Backup Data', () => exportBackup(this));
       cmd('my-content', 'Open My Content / Saved Items', async () => { this.state.activeSection = 'dashboard'; await this.saveState(); this.activateView(); });
+      // Phase 1 — safety commands
+      cmd('open-diagnostics',  'TTRPG Engine: Open Diagnostics Report', () => new DiagnosticsModal(this.app, this).open());
+      cmd('enable-safe-mode',  'TTRPG Engine: Enable Safe Mode', async () => {
+        await enableSafeMode(this.app);
+        new Notice('Safe mode enabled. The plugin will not load on next startup.', 8000);
+        this.refreshViews();
+      });
+      cmd('disable-safe-mode', 'TTRPG Engine: Disable Safe Mode', async () => {
+        await disableSafeMode(this.app);
+        new Notice('Safe mode disabled.');
+        this.refreshViews();
+      });
+      cmd('clear-crash-lock',  'TTRPG Engine: Clear Crash Lock', async () => {
+        await clearCrashLock(this.app);
+        new Notice('Crash lock cleared — plugin will load normally on next startup.');
+      });
+      cmd('open-crash-report', 'TTRPG Engine: View Last Crash Report', async () => {
+        const report = await readCrashReport(this.app);
+        if (!report) { new Notice('No crash report found.'); return; }
+        new DiagnosticsModal(this.app, this, report).open();
+      });
+      // Additional creation commands
+      cmd('create-world',    'Create World',    () => new GenericModal(this.app, this, 'worlds').open());
+      cmd('create-faction',  'Create Faction',  () => new FactionModal(this.app, this).open());
+      cmd('create-location', 'Create Location', () => new GenericModal(this.app, this, 'locations').open());
+      cmd('create-creature', 'Create Creature', () => new CreatureModal(this.app, this).open());
+      cmd('create-bbeg',     'Create BBEG',     () => new BBEGModal(this.app, this).open());
+      cmd('create-character','Create Character Sheet', () => new CharacterModal(this.app, this).open());
 
       await endBoot(this);
     } catch (e) {
@@ -684,7 +807,11 @@ class TTRPGMainView extends ItemView {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(async () => { state.search = srch.value; await this.plugin.saveState(); }, 200);
     });
+    const safeBadge = ce(top, 'span', 'te-safe-mode-badge');
+    safeBadge.textContent = '⚠️ Safe Mode'; safeBadge.style.display = 'none';
+    safeModeActive(this.plugin.app).then(active => { if (active) safeBadge.style.display = ''; });
     btn(top, '⚙️ Settings', 'te-btn is-sm', () => new SettingsModal(this.app, this.plugin).open());
+    btn(top, '🔧 Diagnostics', 'te-btn is-sm', () => new DiagnosticsModal(this.app, this.plugin).open());
 
     // ── Body
     const body = ce(root, 'div', 'te-body');
@@ -2906,6 +3033,101 @@ class CharacterModal extends Modal {
       new Notice(`Character "${this.values.name}" saved.`);
       this.close();
     }, 'Save Character');
+  }
+}
+
+// ── DiagnosticsModal ──────────────────────────────────────────────────────────
+class DiagnosticsModal extends Modal {
+  constructor(app, plugin, crashReport) { super(app); this.plugin = plugin; this._crashReport = crashReport || null; }
+
+  async onOpen() {
+    this.titleEl.setText(this._crashReport ? 'Last Crash Report' : 'Diagnostics & Integrity Report');
+    const { contentEl } = this;
+    clear(contentEl);
+
+    // Crash report view
+    if (this._crashReport) {
+      const pre = ce(contentEl, 'pre', 'te-diag-info');
+      pre.style.cssText = 'white-space:pre-wrap;max-height:60vh;overflow-y:auto;padding:12px;border:1px solid var(--te-border);border-radius:var(--te-r-md)';
+      pre.textContent = this._crashReport;
+      btn(contentEl, 'Clear Crash Lock', 'te-btn is-danger', async () => {
+        await clearCrashLock(this.plugin.app);
+        new Notice('Crash lock cleared.');
+        this.close();
+      });
+      btn(contentEl, 'Close', 'te-btn is-primary', () => this.close());
+      return;
+    }
+
+    ce(contentEl, 'p', 'te-diag-info', 'Running diagnostics…');
+    const { issues, info, counts } = await runDiagnostics(this.plugin);
+    clear(contentEl);
+
+    // System info
+    const infoSec = ce(contentEl, 'div', 'te-modal-section');
+    infoSec.createEl('h3', { text: 'System Info' });
+    info.forEach(line => ce(infoSec, 'p', 'te-diag-info', line));
+
+    // Entity counts
+    const nonEmpty = Object.entries(counts).filter(([, v]) => v > 0);
+    if (nonEmpty.length) {
+      const countSec = ce(contentEl, 'div', 'te-modal-section');
+      countSec.createEl('h3', { text: 'Entity Counts' });
+      const grid = ce(countSec, 'div', 'te-stat-grid');
+      nonEmpty.forEach(([k, v]) => {
+        const card = ce(grid, 'div', 'te-stat-card');
+        ce(card, 'div', 'te-stat-value', String(v));
+        ce(card, 'div', 'te-stat-label', ENTITY_LABELS[k] || k);
+      });
+    }
+
+    // Issues
+    const issuesSec = ce(contentEl, 'div', 'te-modal-section');
+    issuesSec.createEl('h3', { text: `Issues (${issues.length})` });
+    if (!issues.length) {
+      ce(issuesSec, 'p', 'te-diag-ok', '✅ No issues found — data looks healthy.');
+    } else {
+      issues.forEach(({ sev, msg }) => {
+        const row = ce(issuesSec, 'div', `te-diag-issue is-${sev}`);
+        ce(row, 'span', 'te-diag-badge', sev === 'error' ? '❌' : '⚠️');
+        ce(row, 'span', '', msg);
+      });
+    }
+
+    // Actions
+    const actSec = ce(contentEl, 'div', 'te-modal-section');
+    actSec.createEl('h3', { text: 'Actions' });
+    const actRow = ce(actSec, 'div', 'te-modal-actions');
+    btn(actRow, '🔧 Repair & Reindex', 'te-btn', async () => {
+      migrateState(this.plugin.state);
+      await this.plugin.saveState();
+      new Notice('Data repaired and reindexed.');
+      this.onOpen();
+    });
+    btn(actRow, '💾 Backup Now', 'te-btn', () => exportBackup(this.plugin));
+    btn(actRow, '🔓 Clear Crash Lock', 'te-btn', async () => {
+      await clearCrashLock(this.plugin.app);
+      new Notice('Crash lock cleared.');
+      this.onOpen();
+    });
+    btn(actRow, '📋 View Crash Report', 'te-btn', async () => {
+      const report = await readCrashReport(this.plugin.app);
+      if (!report) { new Notice('No crash report found.'); return; }
+      new DiagnosticsModal(this.app, this.plugin, report).open();
+    });
+    btn(actRow, '⚠️ Enable Safe Mode', 'te-btn is-danger', async () => {
+      await enableSafeMode(this.plugin.app);
+      new Notice('Safe mode enabled — plugin will not load on next startup.', 7000);
+      this.plugin.refreshViews();
+      this.onOpen();
+    });
+    btn(actRow, '✅ Disable Safe Mode', 'te-btn', async () => {
+      await disableSafeMode(this.plugin.app);
+      new Notice('Safe mode disabled.');
+      this.plugin.refreshViews();
+      this.onOpen();
+    });
+    btn(contentEl, 'Close', 'te-btn is-primary', () => this.close());
   }
 }
 
