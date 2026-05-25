@@ -970,17 +970,17 @@ class TTRPGEnginePlugin extends Plugin {
       this.addRibbonIcon('castle', 'TTRPG Engine', () => this.activateView());
 
       const cmd = (id, name, fn) => this.addCommand({ id, name, callback: fn });
-      cmd('open', 'Open TTRPG Engine', () => this.activateView());
-      cmd('create-campaign', 'Create Campaign', () => { this.activateView(); new CampaignModal(this.app, this).open(); });
-      cmd('run-campaign', 'Run / Resume Campaign', () => { this.activateView(); new SessionModal(this.app, this).open(); });
-      cmd('roll-dice', 'Roll Dice', () => new DiceModal(this.app, this).open());
+      cmd('open', 'Open', () => this.activateView());
+      cmd('create-campaign', 'Create campaign', () => { this.activateView(); new CampaignModal(this.app, this).open(); });
+      cmd('run-campaign', 'Run / resume campaign', () => { this.activateView(); new SessionModal(this.app, this).open(); });
+      cmd('roll-dice', 'Roll dice', () => new DiceModal(this.app, this).open());
       cmd('create-npc', 'Create NPC', () => new NPCModal(this.app, this).open());
-      cmd('create-encounter', 'Create Encounter', () => new EncounterModal(this.app, this).open());
-      cmd('create-quest', 'Create Quest', () => new QuestModal(this.app, this).open());
-      cmd('create-session', 'Create Session Log', () => new SessionModal(this.app, this).open());
-      cmd('create-homebrew', 'Create Homebrew Entry', () => new HomebrewModal(this.app, this).open());
-      cmd('tile-map', 'Open Tile Map Builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
-      cmd('repair', 'Repair / Reindex Data', async () => {
+      cmd('create-encounter', 'Create encounter', () => new EncounterModal(this.app, this).open());
+      cmd('create-quest', 'Create quest', () => new QuestModal(this.app, this).open());
+      cmd('create-session', 'Create session log', () => new SessionModal(this.app, this).open());
+      cmd('create-homebrew', 'Create homebrew entry', () => new HomebrewModal(this.app, this).open());
+      cmd('tile-map', 'Open tile map builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
+      cmd('repair', 'Repair / reindex data', async () => {
         migrateState(this.state);
         await this.saveState();
         const e = this.state.entities;
@@ -989,70 +989,70 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('backup', 'Backup Data', () => exportBackup(this));
       cmd('my-content', 'Open My Content / Saved Items', async () => { this.state.activeSection = 'dashboard'; await this.saveState(); this.activateView(); });
       // Phase 1 — safety commands
-      cmd('open-diagnostics',  'TTRPG Engine: Open Diagnostics Report', () => new DiagnosticsModal(this.app, this).open());
-      cmd('enable-safe-mode',  'TTRPG Engine: Enable Safe Mode', async () => {
+      cmd('open-diagnostics',  'Open diagnostics report', () => new DiagnosticsModal(this.app, this).open());
+      cmd('enable-safe-mode',  'Enable safe mode', async () => {
         await enableSafeMode(this.app);
         new Notice('Safe mode enabled. The plugin will not load on next startup.', 8000);
         this.refreshViews();
       });
-      cmd('disable-safe-mode', 'TTRPG Engine: Disable Safe Mode', async () => {
+      cmd('disable-safe-mode', 'Disable safe mode', async () => {
         await disableSafeMode(this.app);
         new Notice('Safe mode disabled.');
         this.refreshViews();
       });
-      cmd('clear-crash-lock',  'TTRPG Engine: Clear Crash Lock', async () => {
+      cmd('clear-crash-lock',  'Clear crash lock', async () => {
         await clearCrashLock(this.app);
         new Notice('Crash lock cleared — plugin will load normally on next startup.');
       });
-      cmd('open-crash-report', 'TTRPG Engine: View Last Crash Report', async () => {
+      cmd('open-crash-report', 'View last crash report', async () => {
         const report = await readCrashReport(this.app);
         if (!report) { new Notice('No crash report found.'); return; }
         new DiagnosticsModal(this.app, this, report).open();
       });
       // Additional creation commands
-      cmd('create-world',    'Create World',    () => new GenericModal(this.app, this, 'worlds').open());
-      cmd('create-faction',  'Create Faction',  () => new FactionModal(this.app, this).open());
-      cmd('create-location', 'Create Location', () => new GenericModal(this.app, this, 'locations').open());
-      cmd('create-creature', 'Create Creature', () => new CreatureModal(this.app, this).open());
+      cmd('create-world',    'Create world',    () => new GenericModal(this.app, this, 'worlds').open());
+      cmd('create-faction',  'Create faction',  () => new FactionModal(this.app, this).open());
+      cmd('create-location', 'Create location', () => new GenericModal(this.app, this, 'locations').open());
+      cmd('create-creature', 'Create creature', () => new CreatureModal(this.app, this).open());
       cmd('create-bbeg',     'Create BBEG',     () => new BBEGModal(this.app, this).open());
-      cmd('create-character','Create Character Sheet', () => new CharacterModal(this.app, this).open());
+      cmd('create-character','Create character sheet', () => new CharacterModal(this.app, this).open());
       // Phase 6 - Campaign Wizard
-      cmd('campaign-wizard', 'TTRPG Engine: Campaign Creation Wizard', () => new CampaignWizardModal(this.app, this).open());
+      cmd('campaign-wizard', 'Open campaign creation wizard', () => new CampaignWizardModal(this.app, this).open());
       // Phase 7 - Campaign Bible
-      cmd('campaign-bible', 'TTRPG Engine: Open Campaign Bible', async () => { this.state.activeSection = 'bible'; await this.saveState(); this.activateView(); });
+      cmd('campaign-bible', 'Open campaign bible', async () => { this.state.activeSection = 'bible'; await this.saveState(); this.activateView(); });
       // Phase 9 - Dungeons
-      cmd('create-dungeon', 'Create Dungeon / Location', () => new DungeonModal(this.app, this).open());
+      cmd('create-dungeon', 'Create dungeon / location', () => new DungeonModal(this.app, this).open());
       // Phase 11 - War Machine
-      cmd('create-timer', 'Create Escalation Timer', () => new TimerModal(this.app, this).open());
-      cmd('create-enemy-template', 'Create Enemy Template', () => new EnemyTemplateModal(this.app, this).open());
-      cmd('war-machine', 'TTRPG Engine: Open War Machine', async () => { this.state.activeSection = 'war-machine'; await this.saveState(); this.activateView(); });
+      cmd('create-timer', 'Create escalation timer', () => new TimerModal(this.app, this).open());
+      cmd('create-enemy-template', 'Create enemy template', () => new EnemyTemplateModal(this.app, this).open());
+      cmd('war-machine', 'Open war machine', async () => { this.state.activeSection = 'war-machine'; await this.saveState(); this.activateView(); });
       // Phase 12 - Faction Matrix
-      cmd('faction-matrix', 'TTRPG Engine: Open Faction Relationship Matrix', async () => { this.state.activeSection = 'faction-matrix'; await this.saveState(); this.activateView(); });
+      cmd('faction-matrix', 'Open faction relationship matrix', async () => { this.state.activeSection = 'faction-matrix'; await this.saveState(); this.activateView(); });
       // Phase 13 - Run Session
-      cmd('run-session', 'TTRPG Engine: Run / Resume Session (Live Mode)', async () => { this.state.activeSection = 'run-session'; await this.saveState(); this.activateView(); });
-      cmd('end-session', 'TTRPG Engine: End Current Session', async () => { this.state.sessionRunMode = false; this.state.activeSessionId = ''; await this.saveState(); new Notice('Session ended.'); });
+      cmd('run-session', 'Run / resume session', async () => { this.state.activeSection = 'run-session'; await this.saveState(); this.activateView(); });
+      cmd('end-session', 'End current session', async () => { this.state.sessionRunMode = false; this.state.activeSessionId = ''; await this.saveState(); new Notice('Session ended.'); });
       // Phase 14 - PC Companion
-      cmd('pc-companion', 'TTRPG Engine: Open PC Companion', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-overview'; await this.saveState(); this.activateView(); });
-      cmd('open-inventory', 'TTRPG Engine: Open PC Inventory', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-inventory'; await this.saveState(); this.activateView(); });
-      cmd('open-spellbook', 'TTRPG Engine: Open Spellbook', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-spellbook'; await this.saveState(); this.activateView(); });
-      cmd('long-rest', 'TTRPG Engine: Long Rest', async () => {
+      cmd('pc-companion', 'Open PC companion', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-overview'; await this.saveState(); this.activateView(); });
+      cmd('open-inventory', 'Open PC inventory', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-inventory'; await this.saveState(); this.activateView(); });
+      cmd('open-spellbook', 'Open spellbook', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-spellbook'; await this.saveState(); this.activateView(); });
+      cmd('long-rest', 'Long rest', async () => {
         const chars = safeArr(this.state.entities.characters);
         if (!chars.length) { new Notice('No characters found.'); return; }
         chars.forEach(c => { c.hp = c.maxHp || c.hp; c.deathSaves = { successes: 0, failures: 0 }; c.updatedAt = new Date().toISOString(); });
         await this.saveState();
-        new Notice(`Long Rest complete — HP restored for ${chars.length} character(s).`);
+        new Notice(`Long rest complete — HP restored for ${chars.length} character(s).`);
       });
-      cmd('short-rest', 'TTRPG Engine: Short Rest', async () => {
+      cmd('short-rest', 'Short rest', async () => {
         const chars = safeArr(this.state.entities.characters);
         if (!chars.length) { new Notice('No characters found.'); return; }
-        new Notice(`Short Rest taken for ${chars.length} character(s). Use Hit Dice to recover HP.`);
+        new Notice(`Short rest taken for ${chars.length} character(s). Use Hit Dice to recover HP.`);
       });
       // Phase 18 - Export
-      cmd('export-campaign', 'TTRPG Engine: Export Campaign', () => new ExportModal(this.app, this).open());
-      cmd('export-player-packet', 'TTRPG Engine: Export Player Packet', () => exportPlayerSafePacket(this));
-      cmd('import-campaign', 'TTRPG Engine: Import Campaign', () => new ImportModal(this.app, this).open());
+      cmd('export-campaign', 'Export campaign', () => new ExportModal(this.app, this).open());
+      cmd('export-player-packet', 'Export player packet', () => exportPlayerSafePacket(this));
+      cmd('import-campaign', 'Import campaign', () => new ImportModal(this.app, this).open());
       // Phase 19 - Endgame
-      cmd('endgame', 'TTRPG Engine: Open Endgame Tracker', async () => { this.state.activeSection = 'endgame'; await this.saveState(); this.activateView(); });
+      cmd('endgame', 'Open endgame tracker', async () => { this.state.activeSection = 'endgame'; await this.saveState(); this.activateView(); });
 
       await endBoot(this);
     } catch (e) {
@@ -1062,7 +1062,6 @@ class TTRPGEnginePlugin extends Plugin {
   }
 
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
     adapterRemove(this.app, BOOT_MARKER);
   }
 
