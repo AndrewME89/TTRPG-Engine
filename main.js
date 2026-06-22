@@ -588,28 +588,39 @@ async function runDiagnostics(plugin) {
       issues.push({ sev: 'warn', msg: `Tile asset folder "${TILE_ASSET_ROOT}" not found — palette will use emoji fallbacks. Create the folder and add images for real tiles.` });
     } else {
       const assets = await scanPluginTileAssets(plugin);
-      const categories = new Set(assets.map(a => a.category).filter(Boolean));
-      info.push(`Tile assets: ${assets.length} images in ${categories.size} categories (${TILE_ASSET_ROOT})`);
       if (!assets.length) {
-        issues.push({ sev: 'warn', msg: 'Asset folder exists but contains no image files — add .png/.jpg/.webp files to enable image tiles.' });
+        issues.push({ sev: 'warn', msg: 'Asset folder exists but contains no image files — add .png/.jpg/.webp files to enable image tiles. See assets/tile-map/README.md for setup instructions.' });
+        info.push(`Tile assets: 0 images in ${TILE_ASSET_ROOT} (emoji fallbacks active)`);
+      } else {
+        // Per-category breakdown
+        const catMap = {};
+        assets.forEach(a => { const c = a.category || 'Uncategorised'; catMap[c] = (catMap[c] || 0) + 1; });
+        const catSummary = Object.entries(catMap).sort((a,b) => a[0].localeCompare(b[0])).map(([c, n]) => `${c}: ${n}`).join(', ');
+        info.push(`Tile assets: ${assets.length} images in ${Object.keys(catMap).length} categories — ${catSummary}`);
       }
-      // Check saved map tiles for broken paths
-      let missingAssetCount = 0;
+      // Broken paths in saved maps
       const assetPaths = new Set(assets.map(a => a.path));
+      let missingAssetCount = 0;
+      const affectedMaps = [];
       safeArr(e.maps).forEach(mapRecord => {
         const tiles = safeArr((mapRecord.tileLayout || {}).tiles);
-        tiles.forEach(tile => {
-          if (tile.assetPath && !assetPaths.has(tile.assetPath)) missingAssetCount++;
-        });
+        const brokenInMap = tiles.filter(t => t.assetPath && !assetPaths.has(t.assetPath)).length;
+        if (brokenInMap > 0) { missingAssetCount += brokenInMap; affectedMaps.push(mapRecord.name || mapRecord.id); }
       });
       if (missingAssetCount > 0)
-        issues.push({ sev: 'warn', msg: `${missingAssetCount} placed tile(s) reference asset paths that no longer exist — they will show ⚠️ on the canvas.` });
+        issues.push({ sev: 'warn', msg: `${missingAssetCount} placed tile(s) in ${affectedMaps.length} map(s) reference missing assets (will show ⚠️): ${affectedMaps.join(', ')}` });
+    }
+    // Saved maps summary
+    const savedMaps = safeArr(e.maps);
+    if (savedMaps.length) {
+      const totalTiles = savedMaps.reduce((s, m) => s + safeArr((m.tileLayout || {}).tiles).length, 0);
+      info.push(`Saved maps: ${savedMaps.length} map(s), ${totalTiles} total placed tiles`);
     }
     // Legacy emoji-only tiles
     const allPlacedTiles = safeArr(e.maps).flatMap(m => safeArr((m.tileLayout || {}).tiles));
     const legacyTiles = allPlacedTiles.filter(t => !t.assetPath && t.type);
     if (legacyTiles.length > 0)
-      info.push(`Tile legacy compat: ${legacyTiles.length} emoji-only tile(s) across saved maps (will still render via TILE_ASSETS fallback)`);
+      info.push(`Tile legacy compat: ${legacyTiles.length} emoji-only tile(s) across saved maps (will render via emoji fallback)`);
   } catch (tileErr) {
     issues.push({ sev: 'warn', msg: `Tile asset scan failed: ${tileErr.message}` });
   }

@@ -6,6 +6,22 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 252
+
+### Added
+- `assets/tile-map/README.md`: full asset installation guide — folder structure, naming conventions, footprint hints, licensing sources
+- `tests/tile-map.test.js`: 52 pure-function unit tests covering `prettifyAssetName`, `inferTileKind`, `inferTileFootprint`, `assetMatches`, tileMap state migration, and missing-asset detection
+- `npm test` script (`node tests/tile-map.test.js`)
+- `npm run check-release` script — verifies all 9 expected tile-map category subfolders, manifest shape, versions.json, and syntax before packaging
+- `npm run release` script — chains `check`, `check-release`, and `package-release` in one step
+- `npm run validate` and `npm run version-bump` scripts wired to existing scripts
+
+### Changed
+- Diagnostics now reports per-category asset breakdown (e.g. `terrain: 12, tokens: 8`) and names affected maps when broken tile paths are detected
+- `check-release-files.mjs` now verifies the complete asset folder structure (9 category subfolders + README) and runs a syntax check on `main.js`
+
+---
+
 ## [2.1.0] – 2026-05-25
 
 ### Added
