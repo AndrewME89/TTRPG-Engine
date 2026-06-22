@@ -6,6 +6,45 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 256
+
+### Added
+- **Encounter XP Budget Calculator**: `ENCOUNTER_XP_THRESHOLDS` constant (D&D 5e per-character thresholds by level); new Party XP Budget card in Encounters & Combat shows Easy / Medium / Hard / Deadly totals based on current characters
+- **Handout Reveal Queue**: Run Session now shows DM-only handouts alongside queued secrets; "📤 Share with Players" button marks handout player-visible immediately
+- **Quest Status Board**: Adventures & Quests replaces plain quest grid with a board showing Active / Completed / Other counts (stat cards) then grouped lists; `itemCards()` gains an `opts.items` override for pre-filtered rendering
+- **4 new generator types**: Faction Name, NPC Trait, Dungeon Room, Wild Magic Surge — wired in `GEN_TABLES`, `generate()`, and the generator card grid; Faction Name and NPC Trait get context-aware Save buttons in generator history
+- **Campaign Bible — Session History**: New section showing up to 12 recent sessions (newest first) with date/status/summary; "View All" link navigates to Sessions & Timeline; empty state when no sessions exist
+- **CSS**: `.te-quest-status-head` for quest board status group labels
+
+---
+
+## [Unreleased] — Phase 255
+
+### Added
+- **XP Tracker**: `XP_THRESHOLDS` constant (D&D 5e standard); `xp` field added to `CharacterModal` defaults and combat stats section; XP progress bar shows current/next-level XP with purple fill in Character Sheet
+- **Saving Throws**: calculated display below ability scores in Character Sheet — STR through CHA saves with modifier + proficiency bonus; proficient saves highlighted with accent border (`.te-ability-box.is-proficient`) and ● indicator; Passive Perception shown alongside
+- **Death Saves Tracker**: shown only when HP = 0; 3 clickable success bubbles (accent) + 3 failure bubbles (danger); click toggles individual checkmarks; Reset button clears all; data stored in `char.deathSaves`
+- **Spell Slots Tracker**: new section above spell list in Spellbook; levels 1–9 shown (empty high levels hidden); bubble-per-slot click marks used; editable max-per-level input; Reset All Slots button; data stored in `char.spellSlots`
+- **PC Lore expansion**: `renderPCLore()` now shows player-visible `nations` and `religions` (Phase 254 entities) below worlds and cultures
+- **CSS** (styles.css): `.te-ability-box.is-proficient`, `.te-death-saves`, `.te-death-save-row`, `.te-death-save-label`, `.te-save-bubble` (`.is-success`, `.is-failure`), `.te-spell-slots`, `.te-slot-row`, `.te-slot-label`, `.te-slot-bubbles`, `.te-slot-bubble` (`.is-used`)
+
+---
+
+## [Unreleased] — Phase 254
+
+### Added
+- 7 new entity types: `nations`, `religions`, `districts`, `rooms`, `timelines`, `reveals`, `loot`
+- All 7 entities added to `createDefaultState()` (auto-migrated via existing `migrateState` loop)
+- Full field schema arrays for each entity, registered in `ENTITY_FIELD_SCHEMAS`
+- `ENTITY_ICONS` and `ENTITY_LABELS` entries for all 7 types (card rendering, empty-state labels)
+- **World & Lore**: Nations and Religions sections; `+ Nation` / `+ Religion` pageHead buttons
+- **Geography & Maps**: Districts (under Settlements) and Rooms (under Locations) sections with pageHead buttons
+- **Sessions & Timeline**: Timeline Events section; `+ Timeline Event` pageHead button
+- **Secrets & Reveals**: Reveals section between Secrets and Handouts; `+ Reveal` pageHead button
+- **Encounters & Combat**: Loot section below Encounters; `+ Loot` pageHead button
+
+---
+
 ## [Unreleased] — Phase 253
 
 ### Fixed
