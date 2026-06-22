@@ -6,6 +6,18 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 256
+
+### Added
+- **Encounter XP Budget Calculator**: `ENCOUNTER_XP_THRESHOLDS` constant (D&D 5e per-character thresholds by level); new Party XP Budget card in Encounters & Combat shows Easy / Medium / Hard / Deadly totals based on current characters
+- **Handout Reveal Queue**: Run Session now shows DM-only handouts alongside queued secrets; "📤 Share with Players" button marks handout player-visible immediately
+- **Quest Status Board**: Adventures & Quests replaces plain quest grid with a board showing Active / Completed / Other counts (stat cards) then grouped lists; `itemCards()` gains an `opts.items` override for pre-filtered rendering
+- **4 new generator types**: Faction Name, NPC Trait, Dungeon Room, Wild Magic Surge — wired in `GEN_TABLES`, `generate()`, and the generator card grid; Faction Name and NPC Trait get context-aware Save buttons in generator history
+- **Campaign Bible — Session History**: New section showing up to 12 recent sessions (newest first) with date/status/summary; "View All" link navigates to Sessions & Timeline; empty state when no sessions exist
+- **CSS**: `.te-quest-status-head` for quest board status group labels
+
+---
+
 ## [Unreleased] — Phase 255
 
 ### Added

@@ -210,6 +210,8 @@ const CONDITIONS_LIST = ['Blinded','Charmed','Deafened','Exhaustion (1)','Exhaus
 const SPELLCASTING_CLASSES = ['Artificer','Bard','Cleric','Druid','Paladin','Ranger','Sorcerer','Warlock','Wizard'];
 // XP required to reach each level (index = level, so [1] = XP for level 2, etc.)
 const XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+// D&D 5e encounter XP thresholds per character by level [easy, medium, hard, deadly]
+const ENCOUNTER_XP_THRESHOLDS = [null,[25,50,75,100],[50,100,150,200],[75,150,225,400],[125,250,375,500],[250,500,750,1100],[300,600,900,1400],[350,750,1100,1700],[450,900,1400,2100],[550,1100,1600,2400],[600,1200,1900,2800],[800,1600,2400,3600],[1000,2000,3000,4500],[1100,2200,3400,5100],[1250,2500,3800,5700],[1400,2800,4300,6400],[1600,3200,4800,7200],[2000,3900,5900,8800],[2100,4200,6300,9500],[2400,4900,7300,10900],[2800,5700,8500,12700]];
 
 // ── Option banks (Phase 4) ────────────────────────────────────────────────────
 const OPTION_BANKS = {
@@ -791,6 +793,36 @@ const GEN_TABLES = {
     type: ['Encounter','Discovery','Hazard','NPC Meeting','Weather','Supply'],
     events: ['A merchant caravan asks to travel together','Tracks of a large creature cross the path','Abandoned campsite with clues','Collapsed bridge forces a detour','Bandits demand a toll','Wounded traveler needs aid','Strange lights in the distance at night','A wild animal blocks the road','Milestone with scratched warnings','Old battlefield with scattered equipment'],
   },
+  'Faction Name': {
+    adj: ['Iron','Shadow','Golden','Silver','Blood','Crimson','Storm','Ember','Frost','Twilight','Jade','Obsidian','Copper','Ashen'],
+    noun: ['Hand','Circle','Order','Brotherhood','Covenant','Council','League','Shield','Veil','Blade','Crown','Claw','Compact','Accord'],
+  },
+  'Wild Magic Surge': {
+    events: [
+      'A burst of fireworks erupts from the caster\'s hands.',
+      'The caster turns invisible until the start of their next turn.',
+      'The caster grows a long beard of colourful feathers until they sneeze.',
+      'All creatures within 30 ft are teleported to random unoccupied spaces.',
+      'The caster\'s skin turns bright blue for 24 hours.',
+      'A third eye opens on the caster\'s forehead; they gain truesight 60 ft until end of next turn.',
+      'The caster is surrounded by faint carnival music only they can hear for 1 minute.',
+      'For the next minute the caster can only communicate in rhyme.',
+      'The caster summons a unicorn in an unoccupied space within 5 ft.',
+      'A shower of 1 gp gems falls in a 30 ft radius around the caster.',
+      'The caster is polymorphed into a potted plant until the start of their next turn.',
+      'Illusory butterflies fill a 10 ft radius around the caster for 1 minute.',
+      'The next spell the caster casts in the next minute is cast at a slot two levels higher.',
+      'Gravity reverses in a 10 ft radius for 1 round, then snaps back.',
+    ],
+  },
+  'Dungeon Room': {
+    purpose: ['guard post','storage vault','forgotten shrine','torture chamber','crypt','arcane library','alchemist laboratory','throne room','collapsed passage','flooded antechamber','trapped foyer','trophy hall'],
+    feature: ['with a pit trap in the centre','containing a sleeping monster','lit by phosphorescent moss','covered in ancient murals','strewn with old bones','hidden behind a secret door','filled with stale air','partially collapsed','watched by a magic eye','ankle-deep in foul water'],
+  },
+  'NPC Trait': {
+    personality: ['nervous and twitchy','gruff but secretly kind','speaks in elaborate riddles','obsessed with past glory','deeply and loudly devout','deeply distrustful of magic','hungry for news from outside','grieving a recent loss','overly formal and stiff','cheerfully nihilistic'],
+    quirk: ['constantly fiddles with a coin or trinket','refers to themselves in third person','hums tunelessly when thinking','avoids direct eye contact','gives an elaborate greeting ritual','always mentions their hometown','carries a worn letter they won\'t discuss','chews a sprig of mint leaf'],
+  },
 };
 
 function generate(type, state) {
@@ -806,6 +838,10 @@ function generate(type, state) {
     case 'Loot': return `${rnd(t.type)} ${rnd(t.contents)}.`;
     case 'Weather': return `${rnd(t.condition)} ${rnd(t.detail)}.`;
     case 'Travel Event': return rnd(t.events) + '.';
+    case 'Faction Name': return `The ${rnd(t.adj)} ${rnd(t.noun)}`;
+    case 'Wild Magic Surge': return rnd(t.events);
+    case 'Dungeon Room': return `A ${rnd(t.purpose)} ${rnd(t.feature)}.`;
+    case 'NPC Trait': return `${rnd(t.personality)}. ${rnd(t.quirk)}.`;
     default: return '[Result]';
   }
 }
@@ -938,7 +974,7 @@ const ENTITY_LABELS = {
 
 function itemCards(parent, plugin, key, opts) {
   opts = opts || {};
-  const items = safeArr(plugin.state.entities[key]).filter(x => matchesSearch(x, plugin.state.search));
+  const items = opts.items ? opts.items : safeArr(plugin.state.entities[key]).filter(x => matchesSearch(x, plugin.state.search));
   if (!items.length) { emptyState(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts.hint || 'Use the buttons above to create one.'); return; }
   const g = ce(parent, 'div', 'te-grid');
   items.forEach(item => {
@@ -2407,8 +2443,34 @@ function renderAdventure(main, plugin) {
   ]);
   sectionHead(main, 'Adventures');
   itemCards(main, plugin, 'adventures', { meta: ['arcType', 'status'] });
-  sectionHead(main, 'Quests');
-  itemCards(main, plugin, 'quests', { meta: ['questType', 'status', 'giver', 'location'] });
+
+  // Quest Status Board
+  sectionHead(main, 'Quest Board');
+  const allQ = safeArr(plugin.state.entities.quests).filter(q => matchesSearch(q, plugin.state.search));
+  const qActive    = allQ.filter(q => q.status === 'Active');
+  const qCompleted = allQ.filter(q => q.status === 'Completed');
+  const qOther     = allQ.filter(q => q.status !== 'Active' && q.status !== 'Completed');
+  const sumRow = ce(main, 'div', ''); sumRow.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px';
+  [['Active', qActive.length, 'var(--te-accent)'], ['Completed', qCompleted.length, 'var(--color-green,#22c55e)'], ['Other', qOther.length, 'var(--te-muted)']].forEach(([label, count, color]) => {
+    const w = ce(sumRow, 'div', 'te-stat-card'); w.style.minWidth = '80px';
+    const big = ce(w, 'div', 'te-stat-big', String(count)); big.style.color = color;
+    ce(w, 'div', 'te-stat-label', label);
+  });
+  if (!allQ.length) { emptyState(main, 'No quests yet.', 'Use "+ Quest" above to create your first quest.'); }
+  else {
+    if (qActive.length) {
+      const ah = ce(main, 'h3', 'te-quest-status-head'); ah.textContent = 'Active'; ah.style.color = 'var(--te-accent)';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'giver', 'location'], hint: '', items: qActive });
+    }
+    if (qCompleted.length) {
+      const ch = ce(main, 'h3', 'te-quest-status-head'); ch.textContent = 'Completed'; ch.style.color = 'var(--color-green,#22c55e)';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'giver'], hint: '', items: qCompleted });
+    }
+    if (qOther.length) {
+      const oh = ce(main, 'h3', 'te-quest-status-head'); oh.textContent = 'Other';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'status', 'giver'], hint: '', items: qOther });
+    }
+  }
 }
 
 const adventureFields = [
@@ -2431,6 +2493,29 @@ function renderEncounters(main, plugin) {
     { label: '+ Loot', onClick: () => new GenericModal(plugin.app, plugin, 'loot', null, lootFields).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
+
+  // Party XP Budget
+  const partyChars = safeArr(plugin.state.entities.characters);
+  if (partyChars.length) {
+    sectionHead(main, 'Party XP Budget');
+    const budCard = ce(main, 'div', 'te-card'); budCard.style.marginBottom = '16px';
+    const budH = ce(budCard, 'div', 'te-card-head'); ce(budH, 'span', 'te-card-icon', '⚔️'); ce(budH, 'h3', 'te-card-title', `Party of ${partyChars.length}`);
+    const totals = [0, 0, 0, 0];
+    partyChars.forEach(ch => {
+      const lvl = Math.max(1, Math.min(20, parseInt(ch.level) || 1));
+      const thresh = ENCOUNTER_XP_THRESHOLDS[lvl];
+      if (thresh) thresh.forEach((v, i) => totals[i] += v);
+    });
+    const budMeta = ce(budCard, 'div', 'te-card-meta');
+    const lr = ce(budMeta, 'div', 'te-card-meta-row');
+    ce(lr, 'span', 'te-card-meta-label', 'Characters');
+    ce(lr, 'span', '', partyChars.map(ch => `${ch.name || 'Char'} Lvl ${ch.level || 1}`).join(' · '));
+    [['Easy', totals[0]], ['Medium', totals[1]], ['Hard', totals[2]], ['Deadly', totals[3]]].forEach(([label, xp]) => {
+      const r = ce(budMeta, 'div', 'te-card-meta-row');
+      ce(r, 'span', 'te-card-meta-label', label);
+      ce(r, 'span', '', `${xp.toLocaleString()} XP`);
+    });
+  }
 
   // Initiative Tracker (always visible)
   sectionHead(main, 'Initiative Tracker');
@@ -2748,13 +2833,17 @@ function renderGenerators(main, plugin) {
   const g = ce(main, 'div', 'te-grid');
   const genTypes = [
     ['NPC Name', '👤', 'Random NPC first + last name'],
+    ['NPC Trait', '🎭', 'Personality + distinctive quirk'],
     ['Settlement Name', '🏘️', 'Fantasy settlement name'],
     ['Tavern Name', '🍺', 'Inn or tavern name'],
+    ['Faction Name', '⚔️', 'Named organisation or faction'],
     ['Quest Hook', '📋', 'Adventure hook premise'],
     ['Rumour', '💬', 'Tavern rumour or lead'],
     ['Loot', '💰', 'Treasure or loot drop'],
     ['Weather', '⛅', 'Current weather conditions'],
     ['Travel Event', '🚶', 'Random travel encounter or event'],
+    ['Dungeon Room', '🚪', 'Room purpose and notable feature'],
+    ['Wild Magic Surge', '🌀', 'Chaotic magical mishap result'],
   ];
   genTypes.forEach(([type, icon, desc]) => {
     const c = ce(g, 'div', 'te-card');
@@ -2786,6 +2875,10 @@ function renderGenerators(main, plugin) {
       btn(acts, 'Save as Location', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'locations', { name: h.result }, locationFields).open());
     } else if (h.type === 'Quest Hook') {
       btn(acts, 'Save as Quest', 'te-btn is-sm is-primary', () => new QuestModal(plugin.app, plugin, { name: h.result.split('.')[0], summary: h.result }).open());
+    } else if (h.type === 'Faction Name') {
+      btn(acts, 'Save as Faction', 'te-btn is-sm is-primary', () => new FactionModal(plugin.app, plugin, { name: h.result }).open());
+    } else if (h.type === 'NPC Trait') {
+      btn(acts, 'Save as NPC', 'te-btn is-sm is-primary', () => new NPCModal(plugin.app, plugin, { name: 'New NPC', notes: h.result }).open());
     } else {
       btn(acts, 'Save as Note', 'te-btn is-sm', async () => {
         h.savedAt = new Date().toISOString();
@@ -2873,6 +2966,24 @@ function renderCampaignBible(main, plugin) {
     ce(p, 'p', 'te-card-body', bib.playerPrimer);
     btn(ce(p, 'div', 'te-card-actions'), '📤 Export Player Packet', 'te-btn is-sm is-primary', () => exportPlayerSafePacket(plugin));
   }
+
+  sectionHead(main, 'Session History');
+  const sessionLog = safeArr(state.entities.sessions).slice().sort((a, b) => {
+    const da = new Date(a.date || a.createdAt || 0), db = new Date(b.date || b.createdAt || 0);
+    return db - da;
+  });
+  if (sessionLog.length) {
+    const sg = ce(main, 'div', 'te-grid');
+    sessionLog.slice(0, 12).forEach(s => {
+      const c = ce(sg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '📅'); ce(h, 'h3', 'te-card-title', s.name || `Session ${s.sessionNumber || ''}`);
+      if (s.summary || s.notes) ce(c, 'p', 'te-card-body', (s.summary || s.notes || '').slice(0, 100));
+      const m = ce(c, 'div', 'te-card-meta');
+      [['Date', s.date || s.realDate], ['Status', s.status], ['Players', s.players]].forEach(([k, v]) => { if (!v) return; const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
+      btn(ce(c, 'div', 'te-card-actions'), 'View Log', 'te-btn is-sm', async () => { state.activeSection = 'sessions'; await plugin.saveState(); });
+    });
+    if (sessionLog.length > 12) { const ra = ce(main, 'div', 'te-modal-actions'); btn(ra, `View All ${sessionLog.length} Sessions →`, 'te-btn', async () => { state.activeSection = 'sessions'; await plugin.saveState(); }); }
+  } else { emptyState(main, 'No sessions logged yet.', 'Log sessions in Sessions & Timeline.'); }
 }
 
 async function exportCampaignBible(plugin) {
@@ -2987,7 +3098,8 @@ function renderRunSession(main, plugin) {
 
   sectionHead(main, 'Reveal Queue — Secrets & Handouts');
   const pending = safeArr(state.entities.secrets).filter(s => s.status === 'Ready to Reveal');
-  if (pending.length) {
+  const pendingHandouts = safeArr(state.entities.handouts).filter(h => h.visibility === 'dm-only');
+  if (pending.length || pendingHandouts.length) {
     const g = ce(main, 'div', 'te-grid');
     pending.forEach(s => {
       const c = ce(g, 'div', 'te-card');
@@ -2999,7 +3111,18 @@ function renderRunSession(main, plugin) {
         upsert(state, 'secrets', s); await plugin.saveState(); new Notice(`"${s.name}" revealed!`);
       });
     });
-  } else { emptyState(main, 'No secrets queued for reveal.', 'Mark secrets as "Ready to Reveal" in the Secrets & Reveals section.'); }
+    pendingHandouts.forEach(h => {
+      const c = ce(g, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '📄'); ce(hd, 'h3', 'te-card-title', h.name);
+      if (h.content) ce(c, 'p', 'te-card-body', h.content.slice(0, 120));
+      const mt = ce(c, 'div', 'te-card-meta');
+      if (h.type) { const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Type'); ce(r, 'span', '', h.type); }
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, '📤 Share with Players', 'te-btn is-sm is-primary', async () => {
+        h.visibility = 'player-visible'; upsert(state, 'handouts', h); await plugin.saveState(); new Notice(`"${h.name}" shared with players.`);
+      });
+    });
+  } else { emptyState(main, 'No secrets or handouts queued for reveal.', 'Mark secrets as "Ready to Reveal" or create handouts in Secrets & Reveals.'); }
 
   sectionHead(main, 'Session Notes');
   const notesId = state.activeSessionId;

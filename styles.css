@@ -236,6 +236,9 @@
 .te-diag-badge { font-size:.9rem; flex-shrink:0; }
 .te-modal-actions { display:flex; gap:var(--te-gap-sm); flex-wrap:wrap; margin-top:var(--te-gap-sm); }
 
+/* ── Quest Board — Phase 256 ─────────────────────────────────────────────── */
+.te-quest-status-head { font-size:.88rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin:var(--te-gap-md) 0 4px; color:var(--te-muted); }
+
 /* ── PC Companion — Phase 255 ────────────────────────────────────────────── */
 .te-ability-box.is-proficient { border-color:var(--te-accent); }
 .te-death-saves { display:flex; flex-direction:column; gap:8px; margin:6px 0 10px; }
