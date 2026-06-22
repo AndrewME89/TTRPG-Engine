@@ -6,6 +6,25 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 258
+
+### Fixed
+- **Hybridiser checkbox CSS**: `.te-modal input` width rule now excludes `[type="checkbox"]` and `[type="radio"]` — checkboxes no longer render as full-width red bars in the trait picker
+- **Hybridiser trait grid**: `tGrid` now uses class `te-trait-grid` (responsive `auto-fit minmax(220px,1fr)`) instead of hardcoded `1fr 1fr`; looks correct at any modal width
+- **Hybridiser live balance refresh**: `refreshBalance()` closure recomputes score, rating, fill colour, label, and warnings whenever a trait checkbox is toggled or an ASI input changes; ASI total label also updates live
+- **Hybridiser trait descriptions**: Each trait chip now renders its description as visible text (`te-trait-desc`) below the name, not only as a hover tooltip
+- **Edit button routing — `RICH_EDIT_MAP`**: `defaultEdit()` now routes npcs → `NPCModal`, creatures → `CreatureModal`, bbegs → `BBEGModal`, factions → `FactionModal`, quests → `QuestModal`, encounters → `EncounterModal`, sessions → `SessionModal`, secrets → `SecretModal`, calendars → `CalendarModal`, homebrew → `HomebrewModal`, characters → `CharacterModal`, hybridAncestries → `HybridAncestryModal` — all Edit buttons now open the correct rich modal instead of the weak `GenericModal`
+- **Safe Mode no longer a hard brick**: `SAFE_MODE.txt` removed from `KILL_SWITCH_FILES`; if safe mode is active the plugin now loads a recovery shell (Disable Safe Mode, Backup, Diagnostics, Clear Crash Lock) instead of blocking load entirely and leaving the DM unable to recover without touching the filesystem
+- **PC visibility filter**: Hybrid ancestry filter in PC mode changed from `!== 'dm-only'` to `=== 'player-visible'` — future visibility states won't accidentally leak DM content
+- **"Use for New PC/NPC" guard**: Now validates that an ancestry name is entered before opening `CharacterModal` / `NPCModal`
+- **CSS version**: Comment updated from 2.0 to 2.1.0
+- **CSS rgba fix**: `.te-btn.is-danger:hover` changed from `rgba(var(--te-danger), .08)` (invalid for non-RGB variable values) to `color-mix(in srgb, var(--te-danger) 10%, transparent)`
+- **CSS hardcoded colour**: `.te-btn.is-run` `color:#fff` changed to `color:var(--te-on-accent,#fff)`
+- **Field schemas**: Added `damageTypes` and `tables` schemas to `ENTITY_FIELD_SCHEMAS` so `GenericModal` renders useful forms for those entity types
+- **src/ sync**: `src/main.js` and `src/styles.css` copied from root — build script (`scripts/build.mjs`) is now safe to run without overwriting Phase 253–258 work
+
+---
+
 ## [Unreleased] — Phase 257
 
 ### Added

@@ -1,4 +1,4 @@
-/* TTRPG Engine 2.0 — Theme-compliant styles. All colours from Obsidian CSS variables. */
+/* TTRPG Engine 2.1.0 — Theme-compliant styles. All colours from Obsidian CSS variables. */
 
 /* ── Root tokens ─────────────────────────────────────────────────────────── */
 .ttrpg-shell {
@@ -75,8 +75,8 @@
 .te-btn.is-primary { background:var(--te-accent); color:var(--te-on-accent); border-color:var(--te-accent); }
 .te-btn.is-primary:hover { background:var(--te-accent-h); border-color:var(--te-accent-h); }
 .te-btn.is-danger { border-color:var(--te-danger); color:var(--te-danger); }
-.te-btn.is-danger:hover { background:rgba(var(--te-danger), .08); }
-.te-btn.is-run { background:var(--te-danger); color:#fff; border-color:var(--te-danger); font-weight:800; }
+.te-btn.is-danger:hover { background:color-mix(in srgb, var(--te-danger) 10%, transparent); }
+.te-btn.is-run { background:var(--te-danger); color:var(--te-on-accent,#fff); border-color:var(--te-danger); font-weight:800; }
 .te-btn.is-run:hover { filter:brightness(1.1); }
 .te-btn.is-sm { padding:4px 8px; font-size:.78rem; }
 
@@ -119,7 +119,8 @@
 .te-modal { font-family:var(--font-interface,inherit); }
 .te-modal h2 { margin:0 0 var(--te-gap-lg); font-size:1.2rem; font-weight:800; color:var(--te-text); }
 .te-modal .setting-item { align-items:flex-start; border-top:1px solid var(--te-border); }
-.te-modal input,.te-modal textarea,.te-modal select { width:100%; }
+.te-modal input:not([type="checkbox"]):not([type="radio"]),.te-modal textarea,.te-modal select { width:100%; }
+.te-trait-chip input[type="checkbox"] { width:auto; flex:0 0 auto; margin-top:3px; cursor:pointer; }
 .te-field-ta { width:100%; resize:vertical; min-height:60px; }
 .te-modal-buttons { display:flex; gap:var(--te-gap-sm); justify-content:flex-end; margin-top:var(--te-gap-lg); padding-top:var(--te-gap-md); border-top:1px solid var(--te-border); flex-wrap:wrap; }
 .te-modal-section { border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-md); margin:var(--te-gap-md) 0; background:var(--te-bg-alt); }
@@ -263,10 +264,12 @@
 .te-balance-fill.is-strong   { background:var(--color-yellow, #f5a623); }
 .te-balance-fill.is-over     { background:var(--te-danger); }
 .te-balance-label { font-size:.82rem; color:var(--te-muted); white-space:nowrap; }
-.te-trait-chip { display:flex; align-items:flex-start; gap:4px; padding:6px 8px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); cursor:pointer; transition:border-color 120ms,background 120ms; }
+.te-trait-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:6px; margin-bottom:10px; }
+.te-trait-chip { display:flex; align-items:flex-start; gap:4px; padding:6px 8px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); transition:border-color 120ms,background 120ms; }
 .te-trait-chip:hover { border-color:var(--te-accent); }
 .te-trait-chip.is-active { border-color:var(--te-accent); background:color-mix(in srgb, var(--te-accent) 10%, transparent); }
 .te-muted-text { color:var(--te-muted); font-weight:400; }
+.te-trait-desc { font-size:.74rem; color:var(--te-muted); margin:3px 0 0; font-weight:400; line-height:1.35; }
 .te-hybrid-warning-box { background:color-mix(in srgb, var(--te-danger) 8%, transparent); border:1px solid var(--te-danger); border-radius:var(--te-r-sm); padding:8px 10px; margin:6px 0; }
 .te-hybrid-warning-item { font-size:.83rem; color:var(--te-danger); margin-bottom:3px; }
 .te-hybrid-warning-item:last-child { margin-bottom:0; }

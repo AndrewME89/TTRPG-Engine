@@ -8,7 +8,7 @@ const PLUGIN_DIR = '.obsidian/plugins/ttrpg-engine';
 const KILL_SWITCH_FILES = [
   `${PLUGIN_DIR}/DISABLE_TTRPG_ENGINE.txt`,
   `${PLUGIN_DIR}/TTRPG_ENGINE_DISABLED.txt`,
-  `${PLUGIN_DIR}/SAFE_MODE.txt`,
+  // SAFE_MODE.txt is intentionally NOT a kill switch — it loads a recovery shell instead
 ];
 const BOOT_MARKER = `${PLUGIN_DIR}/TTRPG_ENGINE_BOOTING.txt`;
 const LOAD_FAILED = `${PLUGIN_DIR}/TTRPG_ENGINE_LOAD_FAILED.txt`;
@@ -50,7 +50,13 @@ async function beginBoot(plugin) {
     const report = await adapterRead(app, lf);
     return { ok: false, reason: `Previous crash detected. Delete ${LOAD_FAILED} to re-enable.\n\n${report}` };
   }
-  await adapterRemove(app, BOOT_MARKER);
+  // Stale boot marker means the previous boot started but never completed (crash/force-close).
+  if (await adapterExists(app, BOOT_MARKER)) {
+    const stamp = new Date().toISOString();
+    const staleMsg = `TTRPG Engine detected a stale boot marker at ${stamp}.\nThe previous load cycle started but did not complete cleanly — Obsidian may have crashed or the plugin was force-closed.\nUse the "Clear Crash Lock" command to re-enable the plugin after investigation.`;
+    await safeDisable(app, 'Stale boot marker — previous load did not complete', new Error(staleMsg));
+    return { ok: false, reason: 'Stale boot marker detected — the previous load did not complete cleanly. Plugin blocked for safety.\nUse the "Clear Crash Lock" command to re-enable.' };
+  }
   await adapterWrite(app, BOOT_MARKER, `Boot started ${new Date().toISOString()}`);
   return { ok: true };
 }
@@ -202,6 +208,111 @@ const CONDITIONS_LIST = ['Blinded','Charmed','Deafened','Exhaustion (1)','Exhaus
   'Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified',
   'Poisoned','Prone','Restrained','Stunned','Unconscious'];
 const SPELLCASTING_CLASSES = ['Artificer','Bard','Cleric','Druid','Paladin','Ranger','Sorcerer','Warlock','Wizard'];
+// XP required to reach each level (index = level, so [1] = XP for level 2, etc.)
+const XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+// D&D 5e encounter XP thresholds per character by level [easy, medium, hard, deadly]
+const ENCOUNTER_XP_THRESHOLDS = [null,[25,50,75,100],[50,100,150,200],[75,150,225,400],[125,250,375,500],[250,500,750,1100],[300,600,900,1400],[350,750,1100,1700],[450,900,1400,2100],[550,1100,1600,2400],[600,1200,1900,2800],[800,1600,2400,3600],[1000,2000,3000,4500],[1100,2200,3400,5100],[1250,2500,3800,5700],[1400,2800,4300,6400],[1600,3200,4800,7200],[2000,3900,5900,8800],[2100,4200,6300,9500],[2400,4900,7300,10900],[2800,5700,8500,12700]];
+
+// ── Ancestry Hybridiser data ──────────────────────────────────────────────────
+const ANCESTRY_DATA = {
+  'Dragonborn':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:['Fire'],              traits:['Draconic Ancestry','Breath Weapon','Damage Resistance'] },
+  'Dwarf':            { size:'Medium', speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],            traits:['Darkvision','Dwarven Resilience','Stonecunning'] },
+  'Elf':              { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Keen Senses','Fey Ancestry','Trance'] },
+  'Gnome':            { size:'Small',  speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Gnome Cunning'] },
+  'Half-Elf':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Fey Ancestry','Skill Versatility'] },
+  'Half-Orc':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Menacing','Relentless Endurance','Savage Attacks'] },
+  'Halfling':         { size:'Small',  speed:25,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Lucky','Brave','Halfling Nimbleness'] },
+  'Human':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Extra Language','Skill or Feat'] },
+  'Tiefling':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Fire'],              traits:['Darkvision','Hellish Resistance','Infernal Legacy'] },
+  'Aasimar':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Necrotic','Radiant'],traits:['Darkvision','Celestial Resistance','Healing Hands','Light Bearer'] },
+  'Genasi':           { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Elemental Heritage'] },
+  'Goliath':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:["Natural Athlete","Stone's Endurance",'Powerful Build'] },
+  'Tabaxi':           { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Feline Agility',"Cat's Claws"] },
+  'Kenku':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Expert Forgery','Kenku Training','Mimicry'] },
+  'Lizardfolk':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Hold Breath','Natural Armor','Hungry Jaws'] },
+  'Triton':           { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Cold'],              traits:['Amphibious','Control Air and Water','Guardian of the Depths'] },
+  'Yuan-ti Pureblood':{ size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],           traits:['Darkvision','Innate Spellcasting','Magic Resistance'] },
+  'Firbolg':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Firbolg Magic','Hidden Step','Powerful Build'] },
+  'Bugbear':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Long-Limbed','Sneaky','Surprise Attack'] },
+  'Goblin':           { size:'Small',  speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Fury of the Small','Nimble Escape'] },
+  'Hobgoblin':        { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Martial Training','Saving Face'] },
+  'Kobold':           { size:'Small',  speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Pack Tactics','Sunlight Sensitivity'] },
+  'Orc':              { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Aggressive','Menacing','Powerful Build'] },
+  'Tortle':           { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Claws','Hold Breath','Natural Armor','Shell Defense'] },
+  'Changeling':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Shapechanger','Changeling Instincts'] },
+  'Kalashtar':        { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:['Psychic'],          traits:['Dual Mind','Mental Discipline','Mind Link'] },
+  'Shifter':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Shifting'] },
+  'Warforged':        { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:["Constructed Resilience","Sentry's Rest",'Integrated Protection'] },
+  'Centaur':          { size:'Medium', speed:40,  darkvision:0,   creatureType:'Fey',      resistance:[],                   traits:['Charge','Hooves','Equine Build'] },
+  'Loxodon':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Natural Armor','Powerful Build','Trunk'] },
+  'Minotaur':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Horns','Goring Rush','Hammering Horns'] },
+  'Simic Hybrid':     { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Animal Enhancement'] },
+  'Vedalken':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Tireless Precision','Partially Amphibious'] },
+  'Other':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:[] },
+};
+
+const HYBRID_TRAIT_LIBRARY = [
+  // Tier 0 — cosmetic / flavour (score 0)
+  { id:'cosmetic-feature',  name:'Distinctive Feature',   tier:0, desc:'A cosmetic heritage feature (e.g. pointed ears, scaled skin, unusual eyes). No mechanical effect.' },
+  { id:'extra-language',    name:'Extra Language',         tier:0, desc:"Know one additional language from a parent ancestry's cultural heritage." },
+  { id:'tool-proficiency',  name:'Tool Proficiency',       tier:0, desc:"Proficiency with one tool from a parent ancestry." },
+  // Tier 1 — minor (score 1)
+  { id:'skill-proficiency', name:'Skill Proficiency',      tier:1, desc:'Proficiency in one skill relevant to a parent ancestry.' },
+  { id:'keen-senses',       name:'Keen Senses',            tier:1, desc:'Proficiency in Perception.' },
+  { id:'brave',             name:'Brave',                  tier:1, desc:'Advantage on saving throws against being frightened.' },
+  { id:'lucky',             name:'Lucky',                  tier:1, desc:'When you roll a 1 on a d20 attack, check, or save, re-roll and use the new result.' },
+  { id:'powerful-build',    name:'Powerful Build',         tier:1, desc:'Count as one size larger for carrying capacity and push/drag/lift.' },
+  { id:'natural-weapon',    name:'Natural Weapon',         tier:1, desc:'Unarmed strikes deal 1d4 + STR (slashing or piercing); counts as a simple melee weapon.' },
+  { id:'hold-breath',       name:'Hold Breath',            tier:1, desc:'Can hold breath for up to 15 minutes.' },
+  { id:'minor-cantrip',     name:'Cantrip',                tier:1, desc:"Know one cantrip from a parent ancestry's spell list (spellcasting ability: INT, WIS, or CHA)." },
+  { id:'tough-hide',        name:'Tough Hide',             tier:1, desc:'Natural armour: AC equals 13 + DEX modifier when not wearing armour.' },
+  // Tier 2 — medium (score 2)
+  { id:'darkvision-60',     name:'Darkvision 60 ft',       tier:2, desc:'See in dim light as bright light and darkness as dim light out to 60 ft.' },
+  { id:'damage-resistance', name:'Damage Resistance',      tier:2, desc:'Resistance to one damage type (fire, cold, poison, necrotic, radiant, psychic, lightning, thunder, or acid).' },
+  { id:'fey-ancestry',      name:'Fey Ancestry',           tier:2, desc:'Advantage on saves against charm; magic cannot put you to sleep.' },
+  { id:'relentless-endurance', name:'Relentless Endurance',tier:2, desc:'When reduced to 0 HP but not killed outright, drop to 1 HP instead (long rest recharge).' },
+  { id:'nimble-escape',     name:'Nimble Escape',          tier:2, desc:'You can take the Disengage or Hide action as a bonus action.' },
+  { id:'savage-attacks',    name:'Savage Attacks',         tier:2, desc:'On a critical hit with a melee weapon, roll one extra damage die and add it to the damage.' },
+  { id:'aggressive',        name:'Aggressive',             tier:2, desc:'As a bonus action, move up to your speed toward a hostile creature you can see or hear.' },
+  { id:'innate-spell',      name:'Innate Spellcasting',    tier:2, desc:"Know one 1st-level spell from a parent ancestry; cast it once per long rest without a spell slot." },
+  { id:'shifting',          name:'Shifting',               tier:2, desc:'As a bonus action, assume a bestial form for 1 min and gain temp HP equal to your CON modifier.' },
+  { id:'poison-resilience', name:'Dwarven Resilience',     tier:2, desc:'Advantage on saves against poison; resistance to poison damage.' },
+  { id:'magic-resistance',  name:'Magic Resistance',       tier:2, desc:'Advantage on saving throws against spells and other magical effects.' },
+  // Tier 3 — strong (score 3)
+  { id:'flight-30',         name:'Flight Speed 30 ft',     tier:3, desc:'Flying speed of 30 ft. Cannot fly in medium or heavy armour.' },
+  { id:'darkvision-120',    name:'Darkvision 120 ft',      tier:3, desc:'See in darkness as dim light out to 120 ft.' },
+  { id:'dual-resistance',   name:'Dual Damage Resistance', tier:3, desc:"Resistance to two damage types, each from a parent ancestry's heritage." },
+  { id:'moderate-spellcasting', name:'Moderate Innate Spellcasting', tier:3, desc:'Know one 1st-level and one 2nd-level spell; cast each once per long rest without a slot.' },
+  { id:'pack-tactics',      name:'Pack Tactics',           tier:3, desc:'Advantage on attack rolls against a creature if at least one ally is adjacent to it and not incapacitated.' },
+  { id:'constructed-resilience', name:'Constructed Resilience', tier:3, desc:'Advantage vs. poison; resistance to poison; immune to disease; no food/drink/air required; immune to magical sleep.' },
+  { id:'divine-heritage',   name:'Divine Heritage',        tier:3, desc:'Celestial/fiendish lineage: advantage on saves against divine effects; healing dice treat 1s as 2s.' },
+];
+
+function computeHybridBalance(values) {
+  const traitIds = safeArr(values.traits);
+  const traitObjs = traitIds.map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+  const score = traitObjs.reduce((s, t) => s + (t.tier || 0), 0);
+  let rating;
+  if (score <= 3) rating = 'Underpowered';
+  else if (score <= 6) rating = 'Balanced';
+  else if (score <= 8) rating = 'Strong';
+  else rating = 'Overpowered';
+  const warnings = [];
+  const dvTraits = traitObjs.filter(t => t.id === 'darkvision-60' || t.id === 'darkvision-120');
+  const parentDv = [values.dominantAncestry, values.recessiveAncestry, values.thirdInfluence].filter(Boolean)
+    .some(a => (ANCESTRY_DATA[a] || {}).darkvision > 0);
+  if (dvTraits.length > 1) warnings.push('Multiple darkvision traits selected (redundant).');
+  if (dvTraits.length && parentDv) warnings.push('Darkvision trait selected but a parent ancestry already grants darkvision — consider removing.');
+  const resistTraits = traitObjs.filter(t => t.id === 'damage-resistance' || t.id === 'dual-resistance' || t.id === 'poison-resilience');
+  if (resistTraits.length > 1) warnings.push('Multiple damage resistance traits selected.');
+  const spellTraits = traitObjs.filter(t => t.id === 'minor-cantrip' || t.id === 'innate-spell' || t.id === 'moderate-spellcasting');
+  if (spellTraits.length > 1) warnings.push('Multiple innate spellcasting traits selected.');
+  if (traitIds.includes('flight-30')) warnings.push('Flight is a very strong trait — recommend DM approval before level 5.');
+  if (values.creatureType && values.creatureType !== 'Humanoid') warnings.push(`Non-humanoid type (${values.creatureType}) may affect spells and class features.`);
+  const asiTotal = Object.values(values.asi || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+  if (asiTotal > 3 && !values.asiOverride) warnings.push(`ASI total is +${asiTotal} — exceeds +3 without DM override.`);
+  return { score, rating, warnings };
+}
 
 // ── Option banks (Phase 4) ────────────────────────────────────────────────────
 const OPTION_BANKS = {
@@ -276,6 +387,7 @@ const OPTION_BANKS = {
   incursionTypes:['Raid','Occupation','Corruption Spread','Portal Opening','Army Advance','Arcane Storm','Custom'],
   secretTypes:  ['Character Secret','Faction Secret','World Secret','NPC Secret','Location Secret','Item Secret','Prophecy','Custom'],
   handoutTypes: ['Document','Map','Item','Letter','Clue','Image','Custom'],
+  sessionZeroTopics: ['Safety Tools','Tone & Themes','Character Concepts','Party Composition','Table Expectations','Scheduling & Frequency','Absence Policy','Between-Session Communication','Content Lines & Veils','Mature Content','Player vs Player','Character Death','Romance','Retirement Conditions','PvP Combat','Out-of-Character Communication','Custom'],
 };
 
 // ── Seed data ────────────────────────────────────────────────────────────────
@@ -366,6 +478,15 @@ function createDefaultState() {
       warFronts: [],
       incursions: [],
       endgameStates: [],
+      // Phase 254 entity types
+      nations: [],
+      religions: [],
+      districts: [],
+      rooms: [],
+      timelines: [],
+      reveals: [],
+      loot: [],
+      hybridAncestries: [],
     },
     relationships: [],
     generatorHistory: [],
@@ -581,28 +702,39 @@ async function runDiagnostics(plugin) {
       issues.push({ sev: 'warn', msg: `Tile asset folder "${TILE_ASSET_ROOT}" not found — palette will use emoji fallbacks. Create the folder and add images for real tiles.` });
     } else {
       const assets = await scanPluginTileAssets(plugin);
-      const categories = new Set(assets.map(a => a.category).filter(Boolean));
-      info.push(`Tile assets: ${assets.length} images in ${categories.size} categories (${TILE_ASSET_ROOT})`);
       if (!assets.length) {
-        issues.push({ sev: 'warn', msg: 'Asset folder exists but contains no image files — add .png/.jpg/.webp files to enable image tiles.' });
+        issues.push({ sev: 'warn', msg: 'Asset folder exists but contains no image files — add .png/.jpg/.webp files to enable image tiles. See assets/tile-map/README.md for setup instructions.' });
+        info.push(`Tile assets: 0 images in ${TILE_ASSET_ROOT} (emoji fallbacks active)`);
+      } else {
+        // Per-category breakdown
+        const catMap = {};
+        assets.forEach(a => { const c = a.category || 'Uncategorised'; catMap[c] = (catMap[c] || 0) + 1; });
+        const catSummary = Object.entries(catMap).sort((a,b) => a[0].localeCompare(b[0])).map(([c, n]) => `${c}: ${n}`).join(', ');
+        info.push(`Tile assets: ${assets.length} images in ${Object.keys(catMap).length} categories — ${catSummary}`);
       }
-      // Check saved map tiles for broken paths
-      let missingAssetCount = 0;
+      // Broken paths in saved maps
       const assetPaths = new Set(assets.map(a => a.path));
+      let missingAssetCount = 0;
+      const affectedMaps = [];
       safeArr(e.maps).forEach(mapRecord => {
         const tiles = safeArr((mapRecord.tileLayout || {}).tiles);
-        tiles.forEach(tile => {
-          if (tile.assetPath && !assetPaths.has(tile.assetPath)) missingAssetCount++;
-        });
+        const brokenInMap = tiles.filter(t => t.assetPath && !assetPaths.has(t.assetPath)).length;
+        if (brokenInMap > 0) { missingAssetCount += brokenInMap; affectedMaps.push(mapRecord.name || mapRecord.id); }
       });
       if (missingAssetCount > 0)
-        issues.push({ sev: 'warn', msg: `${missingAssetCount} placed tile(s) reference asset paths that no longer exist — they will show ⚠️ on the canvas.` });
+        issues.push({ sev: 'warn', msg: `${missingAssetCount} placed tile(s) in ${affectedMaps.length} map(s) reference missing assets (will show ⚠️): ${affectedMaps.join(', ')}` });
+    }
+    // Saved maps summary
+    const savedMaps = safeArr(e.maps);
+    if (savedMaps.length) {
+      const totalTiles = savedMaps.reduce((s, m) => s + safeArr((m.tileLayout || {}).tiles).length, 0);
+      info.push(`Saved maps: ${savedMaps.length} map(s), ${totalTiles} total placed tiles`);
     }
     // Legacy emoji-only tiles
     const allPlacedTiles = safeArr(e.maps).flatMap(m => safeArr((m.tileLayout || {}).tiles));
     const legacyTiles = allPlacedTiles.filter(t => !t.assetPath && t.type);
     if (legacyTiles.length > 0)
-      info.push(`Tile legacy compat: ${legacyTiles.length} emoji-only tile(s) across saved maps (will still render via TILE_ASSETS fallback)`);
+      info.push(`Tile legacy compat: ${legacyTiles.length} emoji-only tile(s) across saved maps (will render via emoji fallback)`);
   } catch (tileErr) {
     issues.push({ sev: 'warn', msg: `Tile asset scan failed: ${tileErr.message}` });
   }
@@ -679,6 +811,19 @@ async function exportPlayerSafePacket(plugin) {
   if (visQ.length) { md += '## Active Quests\n\n'; visQ.forEach(q => { md += `### ${q.name}\n${q.playerSummary || q.summary || ''}\n\n`; }); }
   const visH = safeArr(state.entities.handouts).filter(h => h.visibility === 'player-visible');
   if (visH.length) { md += '## Handouts\n\n'; visH.forEach(h => { md += `### ${h.name}\n${h.content || h.summary || ''}\n\n`; }); }
+  const visHybrids = safeArr(state.entities.hybridAncestries).filter(h => h.visibility === 'player-visible');
+  if (visHybrids.length) {
+    md += '## Hybrid Ancestries\n\n';
+    visHybrids.forEach(h => {
+      const traitObjs = safeArr(h.traits).map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+      md += `### ${h.name}\n`;
+      md += `**Parents:** ${[h.dominantAncestry, h.recessiveAncestry].filter(Boolean).join(' × ')}\n`;
+      md += `**Size:** ${h.size || 'Medium'} | **Speed:** ${h.speed || 30} ft | **Type:** ${h.creatureType || 'Humanoid'} | **Darkvision:** ${h.darkvision || 'None'}\n`;
+      if (traitObjs.length) { md += `**Traits:** ${traitObjs.map(t => t.name).join(', ')}\n`; }
+      if (h.summary) md += `${h.summary}\n`;
+      md += '\n';
+    });
+  }
   await writeNote(plugin.app, `${dir}/player-packet.md`, md);
   new Notice(`Player packet exported to ${dir}`);
 }
@@ -763,6 +908,36 @@ const GEN_TABLES = {
     type: ['Encounter','Discovery','Hazard','NPC Meeting','Weather','Supply'],
     events: ['A merchant caravan asks to travel together','Tracks of a large creature cross the path','Abandoned campsite with clues','Collapsed bridge forces a detour','Bandits demand a toll','Wounded traveler needs aid','Strange lights in the distance at night','A wild animal blocks the road','Milestone with scratched warnings','Old battlefield with scattered equipment'],
   },
+  'Faction Name': {
+    adj: ['Iron','Shadow','Golden','Silver','Blood','Crimson','Storm','Ember','Frost','Twilight','Jade','Obsidian','Copper','Ashen'],
+    noun: ['Hand','Circle','Order','Brotherhood','Covenant','Council','League','Shield','Veil','Blade','Crown','Claw','Compact','Accord'],
+  },
+  'Wild Magic Surge': {
+    events: [
+      'A burst of fireworks erupts from the caster\'s hands.',
+      'The caster turns invisible until the start of their next turn.',
+      'The caster grows a long beard of colourful feathers until they sneeze.',
+      'All creatures within 30 ft are teleported to random unoccupied spaces.',
+      'The caster\'s skin turns bright blue for 24 hours.',
+      'A third eye opens on the caster\'s forehead; they gain truesight 60 ft until end of next turn.',
+      'The caster is surrounded by faint carnival music only they can hear for 1 minute.',
+      'For the next minute the caster can only communicate in rhyme.',
+      'The caster summons a unicorn in an unoccupied space within 5 ft.',
+      'A shower of 1 gp gems falls in a 30 ft radius around the caster.',
+      'The caster is polymorphed into a potted plant until the start of their next turn.',
+      'Illusory butterflies fill a 10 ft radius around the caster for 1 minute.',
+      'The next spell the caster casts in the next minute is cast at a slot two levels higher.',
+      'Gravity reverses in a 10 ft radius for 1 round, then snaps back.',
+    ],
+  },
+  'Dungeon Room': {
+    purpose: ['guard post','storage vault','forgotten shrine','torture chamber','crypt','arcane library','alchemist laboratory','throne room','collapsed passage','flooded antechamber','trapped foyer','trophy hall'],
+    feature: ['with a pit trap in the centre','containing a sleeping monster','lit by phosphorescent moss','covered in ancient murals','strewn with old bones','hidden behind a secret door','filled with stale air','partially collapsed','watched by a magic eye','ankle-deep in foul water'],
+  },
+  'NPC Trait': {
+    personality: ['nervous and twitchy','gruff but secretly kind','speaks in elaborate riddles','obsessed with past glory','deeply and loudly devout','deeply distrustful of magic','hungry for news from outside','grieving a recent loss','overly formal and stiff','cheerfully nihilistic'],
+    quirk: ['constantly fiddles with a coin or trinket','refers to themselves in third person','hums tunelessly when thinking','avoids direct eye contact','gives an elaborate greeting ritual','always mentions their hometown','carries a worn letter they won\'t discuss','chews a sprig of mint leaf'],
+  },
 };
 
 function generate(type, state) {
@@ -778,6 +953,10 @@ function generate(type, state) {
     case 'Loot': return `${rnd(t.type)} ${rnd(t.contents)}.`;
     case 'Weather': return `${rnd(t.condition)} ${rnd(t.detail)}.`;
     case 'Travel Event': return rnd(t.events) + '.';
+    case 'Faction Name': return `The ${rnd(t.adj)} ${rnd(t.noun)}`;
+    case 'Wild Magic Surge': return rnd(t.events);
+    case 'Dungeon Room': return `A ${rnd(t.purpose)} ${rnd(t.feature)}.`;
+    case 'NPC Trait': return `${rnd(t.personality)}. ${rnd(t.quirk)}.`;
     default: return '[Result]';
   }
 }
@@ -891,6 +1070,8 @@ const ENTITY_ICONS = {
   characters:'🧙', calendars:'📆', journals:'📓',
   maps:'🗺️', dungeons:'🕳️', timers:'⏱️', enemyTemplates:'⚔️',
   reputations:'⭐', warFronts:'🚩', incursions:'🌊', endgameStates:'🌋',
+  nations:'👑', religions:'🕍', districts:'🏙️', rooms:'🚪', timelines:'📅', reveals:'💡', loot:'💰',
+  hybridAncestries:'🧬',
 };
 const ENTITY_LABELS = {
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
@@ -904,11 +1085,13 @@ const ENTITY_LABELS = {
   tables:'Table', characters:'Character', calendars:'Calendar', journals:'Journal',
   maps:'Map', dungeons:'Dungeon', timers:'Escalation Timer', enemyTemplates:'Enemy Template',
   reputations:'Reputation', warFronts:'War Front', incursions:'Realm Incursion', endgameStates:'Ending State',
+  nations:'Nation', religions:'Religion', districts:'District', rooms:'Room', timelines:'Timeline Event', reveals:'Reveal', loot:'Loot Entry',
+  hybridAncestries:'Hybrid Ancestry',
 };
 
 function itemCards(parent, plugin, key, opts) {
   opts = opts || {};
-  const items = safeArr(plugin.state.entities[key]).filter(x => matchesSearch(x, plugin.state.search));
+  const items = opts.items ? opts.items : safeArr(plugin.state.entities[key]).filter(x => matchesSearch(x, plugin.state.search));
   if (!items.length) { emptyState(parent, `No ${ENTITY_LABELS[key] || key} entries yet.`, opts.hint || 'Use the buttons above to create one.'); return; }
   const g = ce(parent, 'div', 'te-grid');
   items.forEach(item => {
@@ -942,8 +1125,24 @@ function itemCards(parent, plugin, key, opts) {
   });
 }
 
+const RICH_EDIT_MAP = {
+  npcs:             (p, i) => new NPCModal(p.app, p, i).open(),
+  creatures:        (p, i) => new CreatureModal(p.app, p, i).open(),
+  bbegs:            (p, i) => new BBEGModal(p.app, p, i).open(),
+  factions:         (p, i) => new FactionModal(p.app, p, i).open(),
+  quests:           (p, i) => new QuestModal(p.app, p, i).open(),
+  encounters:       (p, i) => new EncounterModal(p.app, p, i).open(),
+  sessions:         (p, i) => new SessionModal(p.app, p, i).open(),
+  secrets:          (p, i) => new SecretModal(p.app, p, i).open(),
+  calendars:        (p, i) => new CalendarModal(p.app, p, i).open(),
+  homebrew:         (p, i) => new HomebrewModal(p.app, p, i).open(),
+  characters:       (p, i) => new CharacterModal(p.app, p, i).open(),
+  hybridAncestries: (p, i) => new HybridAncestryModal(p.app, p, i).open(),
+};
 function defaultEdit(plugin, key, item) {
-  new GenericModal(plugin.app, plugin, key, item).open();
+  if (RICH_EDIT_MAP[key]) { RICH_EDIT_MAP[key](plugin, item); return; }
+  const fields = ENTITY_FIELD_SCHEMAS[key] || [];
+  new GenericModal(plugin.app, plugin, key, item, fields).open();
 }
 
 // ── PLUGIN CLASS ──────────────────────────────────────────────────────────────
@@ -964,95 +1163,119 @@ class TTRPGEnginePlugin extends Plugin {
       return;
     }
 
+    // Safe mode — register a minimal recovery shell so the DM can fix things without touching files
+    if (await safeModeActive(this.app)) {
+      this._safeMode = true;
+      this.registerView(VIEW_TYPE, leaf => new TTRPGMainView(leaf, this));
+      this.addRibbonIcon('castle', 'TTRPG Engine (Safe Mode)', () => this.activateView());
+      const scmd = (id, name, fn) => this.addCommand({ id, name, callback: fn });
+      scmd('open', 'Open (Safe Mode Recovery)', () => this.activateView());
+      scmd('disable-safe-mode', 'Disable safe mode', async () => { await disableSafeMode(this.app); new Notice('Safe mode disabled. Reload Obsidian to restore full operation.', 8000); });
+      scmd('backup', 'Backup Data', () => exportBackup(this));
+      scmd('repair', 'Repair / reindex data', async () => { migrateState(this.state); await this.saveState(); new Notice('Data repaired and reindexed.'); });
+      await endBoot(this);
+      return;
+    }
+
     try {
       this.registerView(VIEW_TYPE, leaf => new TTRPGMainView(leaf, this));
 
       this.addRibbonIcon('castle', 'TTRPG Engine', () => this.activateView());
 
       const cmd = (id, name, fn) => this.addCommand({ id, name, callback: fn });
-      cmd('open', 'Open TTRPG Engine', () => this.activateView());
-      cmd('create-campaign', 'Create Campaign', () => { this.activateView(); new CampaignModal(this.app, this).open(); });
-      cmd('run-campaign', 'Run / Resume Campaign', () => { this.activateView(); new SessionModal(this.app, this).open(); });
-      cmd('roll-dice', 'Roll Dice', () => new DiceModal(this.app, this).open());
+      cmd('open', 'Open', () => this.activateView());
+      cmd('create-campaign', 'Create campaign', () => { this.activateView(); new CampaignModal(this.app, this).open(); });
+      cmd('run-campaign', 'Run / resume campaign', () => { this.activateView(); new SessionModal(this.app, this).open(); });
+      cmd('roll-dice', 'Roll dice', () => new DiceModal(this.app, this).open());
       cmd('create-npc', 'Create NPC', () => new NPCModal(this.app, this).open());
-      cmd('create-encounter', 'Create Encounter', () => new EncounterModal(this.app, this).open());
-      cmd('create-quest', 'Create Quest', () => new QuestModal(this.app, this).open());
-      cmd('create-session', 'Create Session Log', () => new SessionModal(this.app, this).open());
-      cmd('create-homebrew', 'Create Homebrew Entry', () => new HomebrewModal(this.app, this).open());
-      cmd('tile-map', 'Open Tile Map Builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
-      cmd('repair', 'Repair / Reindex Data', async () => {
+      cmd('create-encounter', 'Create encounter', () => new EncounterModal(this.app, this).open());
+      cmd('create-quest', 'Create quest', () => new QuestModal(this.app, this).open());
+      cmd('create-session', 'Create session log', () => new SessionModal(this.app, this).open());
+      cmd('create-homebrew', 'Create homebrew entry', () => new HomebrewModal(this.app, this).open());
+      cmd('tile-map', 'Open tile map builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
+      cmd('repair', 'Repair / reindex data', async () => {
         migrateState(this.state);
         await this.saveState();
-        const e = this.state.entities;
-        new Notice(`Reindexed. Campaigns:${e.campaigns.length} NPCs:${e.npcs.length} Quests:${e.quests.length} Sessions:${e.sessions.length} Secrets:${e.secrets.length}`, 6000);
+        const diag = await runDiagnostics(this);
+        const errors = diag.issues.filter(i => i.sev === 'error').length;
+        const warns  = diag.issues.filter(i => i.sev === 'warn').length;
+        const total  = Object.values(diag.counts).reduce((s, v) => s + v, 0);
+        new Notice(
+          `Reindexed — ${total} entities. ${errors ? errors + ' errors' : 'No errors'}${warns ? ', ' + warns + ' warnings' : ''}. Open Diagnostics for the full report.`,
+          8000
+        );
       });
       cmd('backup', 'Backup Data', () => exportBackup(this));
       cmd('my-content', 'Open My Content / Saved Items', async () => { this.state.activeSection = 'dashboard'; await this.saveState(); this.activateView(); });
       // Phase 1 — safety commands
-      cmd('open-diagnostics',  'TTRPG Engine: Open Diagnostics Report', () => new DiagnosticsModal(this.app, this).open());
-      cmd('enable-safe-mode',  'TTRPG Engine: Enable Safe Mode', async () => {
+      cmd('open-diagnostics',  'Open diagnostics report', () => new DiagnosticsModal(this.app, this).open());
+      cmd('enable-safe-mode',  'Enable safe mode', async () => {
         await enableSafeMode(this.app);
         new Notice('Safe mode enabled. The plugin will not load on next startup.', 8000);
         this.refreshViews();
       });
-      cmd('disable-safe-mode', 'TTRPG Engine: Disable Safe Mode', async () => {
+      cmd('disable-safe-mode', 'Disable safe mode', async () => {
         await disableSafeMode(this.app);
         new Notice('Safe mode disabled.');
         this.refreshViews();
       });
-      cmd('clear-crash-lock',  'TTRPG Engine: Clear Crash Lock', async () => {
+      cmd('clear-crash-lock',  'Clear crash lock', async () => {
         await clearCrashLock(this.app);
         new Notice('Crash lock cleared — plugin will load normally on next startup.');
       });
-      cmd('open-crash-report', 'TTRPG Engine: View Last Crash Report', async () => {
+      cmd('open-crash-report', 'View last crash report', async () => {
         const report = await readCrashReport(this.app);
         if (!report) { new Notice('No crash report found.'); return; }
         new DiagnosticsModal(this.app, this, report).open();
       });
       // Additional creation commands
-      cmd('create-world',    'Create World',    () => new GenericModal(this.app, this, 'worlds').open());
-      cmd('create-faction',  'Create Faction',  () => new FactionModal(this.app, this).open());
-      cmd('create-location', 'Create Location', () => new GenericModal(this.app, this, 'locations').open());
-      cmd('create-creature', 'Create Creature', () => new CreatureModal(this.app, this).open());
+      cmd('create-world',    'Create world',    () => new GenericModal(this.app, this, 'worlds', null, worldFields).open());
+      cmd('create-faction',  'Create faction',  () => new FactionModal(this.app, this).open());
+      cmd('create-location', 'Create location', () => new GenericModal(this.app, this, 'locations', null, locationFields).open());
+      cmd('create-creature', 'Create creature', () => new CreatureModal(this.app, this).open());
       cmd('create-bbeg',     'Create BBEG',     () => new BBEGModal(this.app, this).open());
-      cmd('create-character','Create Character Sheet', () => new CharacterModal(this.app, this).open());
+      cmd('create-character','Create character sheet', () => new CharacterModal(this.app, this).open());
       // Phase 6 - Campaign Wizard
-      cmd('campaign-wizard', 'TTRPG Engine: Campaign Creation Wizard', () => new CampaignWizardModal(this.app, this).open());
+      cmd('campaign-wizard', 'Open campaign creation wizard', () => new CampaignWizardModal(this.app, this).open());
       // Phase 7 - Campaign Bible
-      cmd('campaign-bible', 'TTRPG Engine: Open Campaign Bible', async () => { this.state.activeSection = 'bible'; await this.saveState(); this.activateView(); });
+      cmd('campaign-bible', 'Open campaign bible', async () => { this.state.activeSection = 'bible'; await this.saveState(); this.activateView(); });
       // Phase 9 - Dungeons
-      cmd('create-dungeon', 'Create Dungeon / Location', () => new DungeonModal(this.app, this).open());
+      cmd('create-dungeon', 'Create dungeon / location', () => new DungeonModal(this.app, this).open());
       // Phase 11 - War Machine
-      cmd('create-timer', 'Create Escalation Timer', () => new TimerModal(this.app, this).open());
-      cmd('create-enemy-template', 'Create Enemy Template', () => new EnemyTemplateModal(this.app, this).open());
-      cmd('war-machine', 'TTRPG Engine: Open War Machine', async () => { this.state.activeSection = 'war-machine'; await this.saveState(); this.activateView(); });
+      cmd('create-timer', 'Create escalation timer', () => new TimerModal(this.app, this).open());
+      cmd('create-enemy-template', 'Create enemy template', () => new EnemyTemplateModal(this.app, this).open());
+      cmd('war-machine', 'Open war machine', async () => { this.state.activeSection = 'war-machine'; await this.saveState(); this.activateView(); });
       // Phase 12 - Faction Matrix
-      cmd('faction-matrix', 'TTRPG Engine: Open Faction Relationship Matrix', async () => { this.state.activeSection = 'faction-matrix'; await this.saveState(); this.activateView(); });
+      cmd('faction-matrix', 'Open faction relationship matrix', async () => { this.state.activeSection = 'faction-matrix'; await this.saveState(); this.activateView(); });
       // Phase 13 - Run Session
-      cmd('run-session', 'TTRPG Engine: Run / Resume Session (Live Mode)', async () => { this.state.activeSection = 'run-session'; await this.saveState(); this.activateView(); });
-      cmd('end-session', 'TTRPG Engine: End Current Session', async () => { this.state.sessionRunMode = false; this.state.activeSessionId = ''; await this.saveState(); new Notice('Session ended.'); });
+      cmd('run-session', 'Run / resume session', async () => { this.state.activeSection = 'run-session'; await this.saveState(); this.activateView(); });
+      cmd('end-session', 'End current session', async () => { this.state.sessionRunMode = false; this.state.activeSessionId = ''; await this.saveState(); new Notice('Session ended.'); });
       // Phase 14 - PC Companion
-      cmd('pc-companion', 'TTRPG Engine: Open PC Companion', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-overview'; await this.saveState(); this.activateView(); });
-      cmd('open-inventory', 'TTRPG Engine: Open PC Inventory', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-inventory'; await this.saveState(); this.activateView(); });
-      cmd('open-spellbook', 'TTRPG Engine: Open Spellbook', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-spellbook'; await this.saveState(); this.activateView(); });
-      cmd('long-rest', 'TTRPG Engine: Long Rest', async () => {
+      cmd('pc-companion', 'Open PC companion', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-overview'; await this.saveState(); this.activateView(); });
+      cmd('open-inventory', 'Open PC inventory', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-inventory'; await this.saveState(); this.activateView(); });
+      cmd('open-spellbook', 'Open spellbook', async () => { this.state.mode = 'PLAYER'; this.state.activeSection = 'pc-spellbook'; await this.saveState(); this.activateView(); });
+      cmd('long-rest', 'Long rest', async () => {
         const chars = safeArr(this.state.entities.characters);
         if (!chars.length) { new Notice('No characters found.'); return; }
         chars.forEach(c => { c.hp = c.maxHp || c.hp; c.deathSaves = { successes: 0, failures: 0 }; c.updatedAt = new Date().toISOString(); });
         await this.saveState();
-        new Notice(`Long Rest complete — HP restored for ${chars.length} character(s).`);
+        new Notice(`Long rest complete — HP restored for ${chars.length} character(s).`);
       });
-      cmd('short-rest', 'TTRPG Engine: Short Rest', async () => {
+      cmd('short-rest', 'Short rest', async () => {
         const chars = safeArr(this.state.entities.characters);
         if (!chars.length) { new Notice('No characters found.'); return; }
-        new Notice(`Short Rest taken for ${chars.length} character(s). Use Hit Dice to recover HP.`);
+        new Notice(`Short rest taken for ${chars.length} character(s). Use Hit Dice to recover HP.`);
       });
       // Phase 18 - Export
-      cmd('export-campaign', 'TTRPG Engine: Export Campaign', () => new ExportModal(this.app, this).open());
-      cmd('export-player-packet', 'TTRPG Engine: Export Player Packet', () => exportPlayerSafePacket(this));
-      cmd('import-campaign', 'TTRPG Engine: Import Campaign', () => new ImportModal(this.app, this).open());
+      cmd('export-campaign', 'Export campaign', () => new ExportModal(this.app, this).open());
+      cmd('export-player-packet', 'Export player packet', () => exportPlayerSafePacket(this));
+      cmd('import-campaign', 'Import campaign', () => new ImportModal(this.app, this).open());
       // Phase 19 - Endgame
-      cmd('endgame', 'TTRPG Engine: Open Endgame Tracker', async () => { this.state.activeSection = 'endgame'; await this.saveState(); this.activateView(); });
+      cmd('endgame', 'Open endgame tracker', async () => { this.state.activeSection = 'endgame'; await this.saveState(); this.activateView(); });
+      // Phase 251 - Missing create commands
+      cmd('create-region',     'Create region',     () => new GenericModal(this.app, this, 'regions', null, regionFields).open());
+      cmd('create-settlement', 'Create settlement', () => new GenericModal(this.app, this, 'settlements', null, settlementFields).open());
+      cmd('create-secret',     'Create secret',     () => new SecretModal(this.app, this).open());
 
       await endBoot(this);
     } catch (e) {
@@ -1062,7 +1285,6 @@ class TTRPGEnginePlugin extends Plugin {
   }
 
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
     adapterRemove(this.app, BOOT_MARKER);
   }
 
@@ -1108,12 +1330,13 @@ class TTRPGMainView extends ItemView {
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return 'TTRPG Engine'; }
   getIcon() { return 'castle'; }
-  async onOpen() { this.render(); }
-  async onClose() {}
+  async onOpen() { this.plugin.view = this; this.render(); }
+  async onClose() { if (this.plugin.view === this) this.plugin.view = null; }
 
   render() {
     const root = this.containerEl.children[1];
     clear(root);
+    if (this.plugin._safeMode) { renderSafeModeRecovery(root, this.plugin); return; }
     const state = this.plugin.state;
     root.className = 'ttrpg-shell' + (state.settings.compact ? ' is-compact' : '') + (state.sidebarCollapsed ? ' is-collapsed' : '');
 
@@ -1167,6 +1390,7 @@ class TTRPGMainView extends ItemView {
         { id: 'faction-matrix', icon: '🕸️', label: 'Faction Matrix' },
         { id: 'adventure',   icon: '📝', label: 'Adventures & Quests' },
         { id: 'encounters',  icon: '🎯', label: 'Encounters & Combat' },
+        { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
       ]},
       { label: 'Campaign Ops', items: [
         { id: 'rules',       icon: '⚙️', label: 'Rules & Mechanics' },
@@ -1189,6 +1413,7 @@ class TTRPGMainView extends ItemView {
         { id: 'pc-character',  icon: '📊', label: 'Character Sheet' },
         { id: 'pc-inventory',  icon: '🎒', label: 'Inventory' },
         { id: 'pc-spellbook',  icon: '📕', label: 'Spellbook' },
+        { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
       ]},
       { label: 'Campaign', items: [
         { id: 'pc-quests',     icon: '📋', label: 'Quest Log' },
@@ -1217,6 +1442,26 @@ class TTRPGMainView extends ItemView {
     const main = ce(body, 'main', 'te-main');
     renderSection(main, this.plugin, state.activeSection || (state.mode === 'PLAYER' ? 'pc-overview' : 'dashboard'));
   }
+}
+
+// ── Safe mode recovery splash ──────────────────────────────────────────────────
+function renderSafeModeRecovery(root, plugin) {
+  root.className = 'ttrpg-shell';
+  const main = ce(root, 'main', 'te-main');
+  const hd = ce(main, 'div', 'te-card'); hd.style.marginBottom = '16px';
+  const hh = ce(hd, 'div', 'te-card-head'); ce(hh, 'span', 'te-card-icon', '🔒'); ce(hh, 'h3', 'te-card-title', 'Safe Mode Active');
+  ce(hd, 'p', 'te-card-body', 'TTRPG Engine is running in safe mode. Normal plugin features are suspended. Your data is loaded — use the recovery options below, then reload Obsidian.');
+  const g = ce(main, 'div', 'te-grid');
+  const opt = (icon, title, desc, label, onClick) => {
+    const c = ce(g, 'div', 'te-card');
+    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', title);
+    ce(c, 'p', 'te-card-body', desc);
+    btn(ce(c, 'div', 'te-card-actions'), label, 'te-btn is-primary is-sm', onClick);
+  };
+  opt('✅', 'Disable Safe Mode', 'Re-enable the full plugin. Reload Obsidian after clicking.', 'Disable Safe Mode', async () => { await disableSafeMode(plugin.app); new Notice('Safe mode disabled. Please reload Obsidian to restore normal operation.', 8000); });
+  opt('💾', 'Backup Data', 'Export a full backup of your campaign data before making changes.', 'Backup Now', async () => exportBackup(plugin));
+  opt('🔧', 'Diagnostics', 'View crash reports, system health, and repair data.', 'Open Diagnostics', () => new DiagnosticsModal(plugin.app, plugin).open());
+  opt('🔓', 'Clear Crash Lock', 'Remove the crash-lock file that may be blocking normal operation.', 'Clear Lock', async () => { await clearCrashLock(plugin.app); new Notice('Crash lock cleared.'); });
 }
 
 // ── Section router ─────────────────────────────────────────────────────────────
@@ -1256,6 +1501,7 @@ function renderSection(main, plugin, section) {
     'pc-handouts':   renderPCHandouts,
     'pc-journal':    renderPCJournal,
     'pc-lore':       renderPCLore,
+    'hybrid-ancestry': renderHybridAncestry,
   };
   (map[section] || renderDashboard)(main, plugin);
 }
@@ -1388,6 +1634,7 @@ function renderDmScreen(main, plugin) {
     { label: '+ New Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
+  sectionHead(main, 'Quick Reference');
   const g = ce(main, 'div', 'te-grid');
 
   // Core References card
@@ -1525,6 +1772,8 @@ function renderWorld(main, plugin) {
     { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
     { label: '+ Culture', onClick: () => new GenericModal(plugin.app, plugin, 'cultures', null, cultureFields).open() },
     { label: '+ Language', onClick: () => new GenericModal(plugin.app, plugin, 'languages', null, langFields).open() },
+    { label: '+ Nation', onClick: () => new GenericModal(plugin.app, plugin, 'nations', null, nationFields).open() },
+    { label: '+ Religion', onClick: () => new GenericModal(plugin.app, plugin, 'religions', null, religionFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
   ]);
 
@@ -1544,6 +1793,10 @@ function renderWorld(main, plugin) {
   const cals = safeArr(plugin.state.entities.calendars).concat(plugin.state.calendar && plugin.state.calendar.name ? [plugin.state.calendar] : []);
   if (!cals.length) { emptyState(main, 'No calendars yet.', 'Use the Calendar button above to create one.'); }
   else itemCards(main, plugin, 'calendars', { meta: ['year', 'month', 'day'] });
+  sectionHead(main, 'Nations');
+  itemCards(main, plugin, 'nations', { meta: ['type', 'ruler', 'capital'] });
+  sectionHead(main, 'Religions');
+  itemCards(main, plugin, 'religions', { meta: ['type', 'deity', 'alignment'] });
 }
 
 // Field definitions for generic modals
@@ -1613,6 +1866,8 @@ function renderGeography(main, plugin) {
     { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Location', onClick: () => new GenericModal(plugin.app, plugin, 'locations', null, locationFields).open() },
+    { label: '+ District', onClick: () => new GenericModal(plugin.app, plugin, 'districts', null, districtFields).open() },
+    { label: '+ Room', onClick: () => new GenericModal(plugin.app, plugin, 'rooms', null, roomFields).open() },
     { label: '+ POI', onClick: () => new GenericModal(plugin.app, plugin, 'pois', null, poiFields).open() },
     { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
   ]);
@@ -1665,8 +1920,12 @@ function renderGeography(main, plugin) {
   itemCards(main, plugin, 'regions', { meta: ['terrain', 'climate', 'population'] });
   sectionHead(main, 'Settlements');
   itemCards(main, plugin, 'settlements', { meta: ['type', 'population', 'region'] });
+  sectionHead(main, 'Districts');
+  itemCards(main, plugin, 'districts', { meta: ['type', 'settlementId', 'atmosphere'] });
   sectionHead(main, 'Locations');
   itemCards(main, plugin, 'locations', { meta: ['type', 'parent'] });
+  sectionHead(main, 'Rooms');
+  itemCards(main, plugin, 'rooms', { meta: ['type', 'locationId'] });
   sectionHead(main, 'Points of Interest');
   itemCards(main, plugin, 'pois', { meta: ['type', 'location'] });
   sectionHead(main, 'Routes');
@@ -2354,8 +2613,34 @@ function renderAdventure(main, plugin) {
   ]);
   sectionHead(main, 'Adventures');
   itemCards(main, plugin, 'adventures', { meta: ['arcType', 'status'] });
-  sectionHead(main, 'Quests');
-  itemCards(main, plugin, 'quests', { meta: ['questType', 'status', 'giver', 'location'] });
+
+  // Quest Status Board
+  sectionHead(main, 'Quest Board');
+  const allQ = safeArr(plugin.state.entities.quests).filter(q => matchesSearch(q, plugin.state.search));
+  const qActive    = allQ.filter(q => q.status === 'Active');
+  const qCompleted = allQ.filter(q => q.status === 'Completed');
+  const qOther     = allQ.filter(q => q.status !== 'Active' && q.status !== 'Completed');
+  const sumRow = ce(main, 'div', ''); sumRow.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px';
+  [['Active', qActive.length, 'var(--te-accent)'], ['Completed', qCompleted.length, 'var(--color-green,#22c55e)'], ['Other', qOther.length, 'var(--te-muted)']].forEach(([label, count, color]) => {
+    const w = ce(sumRow, 'div', 'te-stat-card'); w.style.minWidth = '80px';
+    const big = ce(w, 'div', 'te-stat-big', String(count)); big.style.color = color;
+    ce(w, 'div', 'te-stat-label', label);
+  });
+  if (!allQ.length) { emptyState(main, 'No quests yet.', 'Use "+ Quest" above to create your first quest.'); }
+  else {
+    if (qActive.length) {
+      const ah = ce(main, 'h3', 'te-quest-status-head'); ah.textContent = 'Active'; ah.style.color = 'var(--te-accent)';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'giver', 'location'], hint: '', items: qActive });
+    }
+    if (qCompleted.length) {
+      const ch = ce(main, 'h3', 'te-quest-status-head'); ch.textContent = 'Completed'; ch.style.color = 'var(--color-green,#22c55e)';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'giver'], hint: '', items: qCompleted });
+    }
+    if (qOther.length) {
+      const oh = ce(main, 'h3', 'te-quest-status-head'); oh.textContent = 'Other';
+      itemCards(main, plugin, 'quests', { meta: ['questType', 'status', 'giver'], hint: '', items: qOther });
+    }
+  }
 }
 
 const adventureFields = [
@@ -2375,8 +2660,32 @@ const adventureFields = [
 function renderEncounters(main, plugin) {
   pageHead(main, plugin, 'Encounters & Combat', 'Encounter builder, initiative tracker, and combat tools.', [
     { label: '+ Encounter', primary: true, onClick: () => new EncounterModal(plugin.app, plugin).open() },
+    { label: '+ Loot', onClick: () => new GenericModal(plugin.app, plugin, 'loot', null, lootFields).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
+
+  // Party XP Budget
+  const partyChars = safeArr(plugin.state.entities.characters);
+  if (partyChars.length) {
+    sectionHead(main, 'Party XP Budget');
+    const budCard = ce(main, 'div', 'te-card'); budCard.style.marginBottom = '16px';
+    const budH = ce(budCard, 'div', 'te-card-head'); ce(budH, 'span', 'te-card-icon', '⚔️'); ce(budH, 'h3', 'te-card-title', `Party of ${partyChars.length}`);
+    const totals = [0, 0, 0, 0];
+    partyChars.forEach(ch => {
+      const lvl = Math.max(1, Math.min(20, parseInt(ch.level) || 1));
+      const thresh = ENCOUNTER_XP_THRESHOLDS[lvl];
+      if (thresh) thresh.forEach((v, i) => totals[i] += v);
+    });
+    const budMeta = ce(budCard, 'div', 'te-card-meta');
+    const lr = ce(budMeta, 'div', 'te-card-meta-row');
+    ce(lr, 'span', 'te-card-meta-label', 'Characters');
+    ce(lr, 'span', '', partyChars.map(ch => `${ch.name || 'Char'} Lvl ${ch.level || 1}`).join(' · '));
+    [['Easy', totals[0]], ['Medium', totals[1]], ['Hard', totals[2]], ['Deadly', totals[3]]].forEach(([label, xp]) => {
+      const r = ce(budMeta, 'div', 'te-card-meta-row');
+      ce(r, 'span', 'te-card-meta-label', label);
+      ce(r, 'span', '', `${xp.toLocaleString()} XP`);
+    });
+  }
 
   // Initiative Tracker (always visible)
   sectionHead(main, 'Initiative Tracker');
@@ -2384,6 +2693,8 @@ function renderEncounters(main, plugin) {
 
   sectionHead(main, 'Encounters');
   itemCards(main, plugin, 'encounters', { meta: ['type', 'difficulty', 'location', 'linkedQuest'] });
+  sectionHead(main, 'Loot');
+  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status'] });
 }
 
 function renderInitiativeTracker(parent, plugin) {
@@ -2538,6 +2849,7 @@ function renderSessions(main, plugin) {
     { label: '+ Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '▶ Run / Resume', run: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones', null, milestoneFields).open() },
+    { label: '+ Timeline Event', onClick: () => new GenericModal(plugin.app, plugin, 'timelines', null, timelineFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
   ]);
 
@@ -2565,6 +2877,8 @@ function renderSessions(main, plugin) {
   });
   sectionHead(main, 'Milestones');
   itemCards(main, plugin, 'milestones', { meta: ['type', 'achieved'] });
+  sectionHead(main, 'Timeline Events');
+  itemCards(main, plugin, 'timelines', { meta: ['date', 'era', 'type'] });
 }
 
 const milestoneFields = [
@@ -2579,11 +2893,14 @@ const milestoneFields = [
 function renderSecrets(main, plugin) {
   pageHead(main, plugin, 'Secrets & Reveals', 'DM-only secrets, reveal tracking, and player-safe handouts.', [
     { label: '+ Secret', primary: true, onClick: () => new SecretModal(plugin.app, plugin).open() },
+    { label: '+ Reveal', onClick: () => new GenericModal(plugin.app, plugin, 'reveals', null, revealFields).open() },
     { label: '+ Handout', onClick: () => new GenericModal(plugin.app, plugin, 'handouts', null, handoutFields).open() },
     { label: '📤 Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) },
   ]);
   sectionHead(main, 'Secrets (DM Only)');
   itemCards(main, plugin, 'secrets', { meta: ['secretType', 'revealStatus', 'revealTrigger'] });
+  sectionHead(main, 'Reveals');
+  itemCards(main, plugin, 'reveals', { meta: ['status', 'session', 'secretId'] });
   sectionHead(main, 'Handouts');
   itemCards(main, plugin, 'handouts', {
     meta: ['type', 'visibility', 'linkedSession'],
@@ -2686,13 +3003,17 @@ function renderGenerators(main, plugin) {
   const g = ce(main, 'div', 'te-grid');
   const genTypes = [
     ['NPC Name', '👤', 'Random NPC first + last name'],
+    ['NPC Trait', '🎭', 'Personality + distinctive quirk'],
     ['Settlement Name', '🏘️', 'Fantasy settlement name'],
     ['Tavern Name', '🍺', 'Inn or tavern name'],
+    ['Faction Name', '⚔️', 'Named organisation or faction'],
     ['Quest Hook', '📋', 'Adventure hook premise'],
     ['Rumour', '💬', 'Tavern rumour or lead'],
     ['Loot', '💰', 'Treasure or loot drop'],
     ['Weather', '⛅', 'Current weather conditions'],
     ['Travel Event', '🚶', 'Random travel encounter or event'],
+    ['Dungeon Room', '🚪', 'Room purpose and notable feature'],
+    ['Wild Magic Surge', '🌀', 'Chaotic magical mishap result'],
   ];
   genTypes.forEach(([type, icon, desc]) => {
     const c = ce(g, 'div', 'te-card');
@@ -2719,11 +3040,15 @@ function renderGenerators(main, plugin) {
     if (h.type === 'NPC Name') {
       btn(acts, 'Save as NPC', 'te-btn is-sm is-primary', () => new NPCModal(plugin.app, plugin, { name: h.result }).open());
     } else if (h.type === 'Settlement Name') {
-      btn(acts, 'Save as Settlement', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'settlements', { name: h.result }).open());
+      btn(acts, 'Save as Settlement', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'settlements', { name: h.result }, settlementFields).open());
     } else if (h.type === 'Tavern Name') {
-      btn(acts, 'Save as Location', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'locations', { name: h.result }).open());
+      btn(acts, 'Save as Location', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'locations', { name: h.result }, locationFields).open());
     } else if (h.type === 'Quest Hook') {
       btn(acts, 'Save as Quest', 'te-btn is-sm is-primary', () => new QuestModal(plugin.app, plugin, { name: h.result.split('.')[0], summary: h.result }).open());
+    } else if (h.type === 'Faction Name') {
+      btn(acts, 'Save as Faction', 'te-btn is-sm is-primary', () => new FactionModal(plugin.app, plugin, { name: h.result }).open());
+    } else if (h.type === 'NPC Trait') {
+      btn(acts, 'Save as NPC', 'te-btn is-sm is-primary', () => new NPCModal(plugin.app, plugin, { name: 'New NPC', notes: h.result }).open());
     } else {
       btn(acts, 'Save as Note', 'te-btn is-sm', async () => {
         h.savedAt = new Date().toISOString();
@@ -2801,7 +3126,7 @@ function renderCampaignBible(main, plugin) {
       const mt = ce(c, 'div', 'te-card-meta');
       [['Level', m.level], ['Status', m.status]].forEach(([k, v]) => { if (!v) return; const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m, milestoneFields).open());
     });
   } else { emptyState(main, 'No milestones.', 'Add milestones in Adventures & Quests.'); }
 
@@ -2811,6 +3136,24 @@ function renderCampaignBible(main, plugin) {
     ce(p, 'p', 'te-card-body', bib.playerPrimer);
     btn(ce(p, 'div', 'te-card-actions'), '📤 Export Player Packet', 'te-btn is-sm is-primary', () => exportPlayerSafePacket(plugin));
   }
+
+  sectionHead(main, 'Session History');
+  const sessionLog = safeArr(state.entities.sessions).slice().sort((a, b) => {
+    const da = new Date(a.date || a.createdAt || 0), db = new Date(b.date || b.createdAt || 0);
+    return db - da;
+  });
+  if (sessionLog.length) {
+    const sg = ce(main, 'div', 'te-grid');
+    sessionLog.slice(0, 12).forEach(s => {
+      const c = ce(sg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '📅'); ce(h, 'h3', 'te-card-title', s.name || `Session ${s.sessionNumber || ''}`);
+      if (s.summary || s.notes) ce(c, 'p', 'te-card-body', (s.summary || s.notes || '').slice(0, 100));
+      const m = ce(c, 'div', 'te-card-meta');
+      [['Date', s.date || s.realDate], ['Status', s.status], ['Players', s.players]].forEach(([k, v]) => { if (!v) return; const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
+      btn(ce(c, 'div', 'te-card-actions'), 'View Log', 'te-btn is-sm', async () => { state.activeSection = 'sessions'; await plugin.saveState(); });
+    });
+    if (sessionLog.length > 12) { const ra = ce(main, 'div', 'te-modal-actions'); btn(ra, `View All ${sessionLog.length} Sessions →`, 'te-btn', async () => { state.activeSection = 'sessions'; await plugin.saveState(); }); }
+  } else { emptyState(main, 'No sessions logged yet.', 'Log sessions in Sessions & Timeline.'); }
 }
 
 async function exportCampaignBible(plugin) {
@@ -2832,8 +3175,8 @@ async function exportCampaignBible(plugin) {
 // ── GAZETTEER (Phase 9) ────────────────────────────────────────────────────────
 function renderGazetteer(main, plugin) {
   pageHead(main, plugin, 'Gazetteer', 'Regions, settlements, dungeons, and locations at a glance.', [
-    { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions').open() },
-    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements').open() },
+    { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
+    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Dungeon', primary: true, onClick: () => new DungeonModal(plugin.app, plugin).open() },
   ]);
 
@@ -2851,7 +3194,7 @@ function renderGazetteer(main, plugin) {
       const m = ce(c, 'div', 'te-card-meta');
       [['Type', r.type], ['Government', r.government], ['Hazards', safeArr(r.hazards).join(', ')]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v).slice(0, 60)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'regions', r).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'regions', r, regionFields).open());
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'regions', r.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No regions yet.', 'Add regions to build your world geography.'); }
@@ -2867,7 +3210,7 @@ function renderGazetteer(main, plugin) {
       const m = ce(c, 'div', 'te-card-meta');
       [['Type', s.type], ['Population', s.population], ['Government', s.government]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'settlements', s).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'settlements', s, settlementFields).open());
       btn(a, 'Sync', 'te-btn is-sm', () => writeEntityNote(plugin, 'settlements', s));
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'settlements', s.id); await plugin.saveState(); });
     });
@@ -2925,7 +3268,8 @@ function renderRunSession(main, plugin) {
 
   sectionHead(main, 'Reveal Queue — Secrets & Handouts');
   const pending = safeArr(state.entities.secrets).filter(s => s.status === 'Ready to Reveal');
-  if (pending.length) {
+  const pendingHandouts = safeArr(state.entities.handouts).filter(h => h.visibility === 'dm-only');
+  if (pending.length || pendingHandouts.length) {
     const g = ce(main, 'div', 'te-grid');
     pending.forEach(s => {
       const c = ce(g, 'div', 'te-card');
@@ -2937,7 +3281,18 @@ function renderRunSession(main, plugin) {
         upsert(state, 'secrets', s); await plugin.saveState(); new Notice(`"${s.name}" revealed!`);
       });
     });
-  } else { emptyState(main, 'No secrets queued for reveal.', 'Mark secrets as "Ready to Reveal" in the Secrets & Reveals section.'); }
+    pendingHandouts.forEach(h => {
+      const c = ce(g, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '📄'); ce(hd, 'h3', 'te-card-title', h.name);
+      if (h.content) ce(c, 'p', 'te-card-body', h.content.slice(0, 120));
+      const mt = ce(c, 'div', 'te-card-meta');
+      if (h.type) { const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Type'); ce(r, 'span', '', h.type); }
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, '📤 Share with Players', 'te-btn is-sm is-primary', async () => {
+        h.visibility = 'player-visible'; upsert(state, 'handouts', h); await plugin.saveState(); new Notice(`"${h.name}" shared with players.`);
+      });
+    });
+  } else { emptyState(main, 'No secrets or handouts queued for reveal.', 'Mark secrets as "Ready to Reveal" or create handouts in Secrets & Reveals.'); }
 
   sectionHead(main, 'Session Notes');
   const notesId = state.activeSessionId;
@@ -3049,14 +3404,14 @@ function renderFactionMatrix(main, plugin) {
       const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = lvlPct + '%';
       ce(c, 'p', 'te-progress-label', `Reputation: ${lvl}`);
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open());
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'reputations', rep.id); await plugin.saveState(); });
     });
   }
   const repRow = ce(main, 'div', 'te-modal-actions');
   btn(repRow, '+ Add Reputation', 'te-btn', () => {
     const rep = { id: uid('rep'), name: 'Party Reputation', factionId: factions[0]?.id || '', level: 'Neutral', notes: '' };
-    new GenericModal(plugin.app, plugin, 'reputations', rep).open();
+    new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open();
   });
 }
 
@@ -3064,9 +3419,9 @@ function renderFactionMatrix(main, plugin) {
 function renderEndgame(main, plugin) {
   const state = plugin.state;
   pageHead(main, plugin, 'Endgame & Realm Tracker', 'War fronts, realm incursions, broken cosmology reveals, and ending states.', [
-    { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts').open() },
-    { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions').open() },
-    { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates').open() },
+    { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts', null, warFrontFields).open() },
+    { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions', null, incursionFields).open() },
+    { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates', null, endgameStateFields).open() },
   ]);
 
   sectionHead(main, 'War Fronts');
@@ -3283,6 +3638,180 @@ const journalFields = [
   { key: 'summary', label: 'Journal Entry', type: 'textarea' },
 ];
 
+// Field arrays for entity types that previously used bare GenericModal calls
+const reputationFields = [
+  { key: 'name', label: 'Name', type: 'text' },
+  { key: 'factionId', label: 'Faction ID', type: 'text' },
+  { key: 'level', label: 'Reputation Level', type: 'select', options: ['Exalted','Revered','Honoured','Friendly','Neutral','Unfriendly','Hostile','Hated'] },
+  { key: 'notes', label: 'Notes', type: 'textarea' },
+];
+const warFrontFields = [
+  { key: 'name', label: 'War Front Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Active Front','Stalemate','Advance','Retreat','Siege','Guerrilla Campaign','Ceasefire','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Active','Escalating','Stalemate','Cooling Down','Resolved'] },
+  { key: 'faction', label: 'Primary Faction', type: 'text' },
+  { key: 'location', label: 'Location', type: 'text' },
+  { key: 'strength', label: 'Enemy Strength', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const incursionFields = [
+  { key: 'name', label: 'Incursion Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Raid','Occupation','Corruption Spread','Portal Opening','Army Advance','Arcane Storm','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Emerging','Active','Critical','Contained','Repelled'] },
+  { key: 'origin', label: 'Origin', type: 'text' },
+  { key: 'threat', label: 'Threat Level', type: 'select', options: ['Low','Medium','High','Critical','Existential'] },
+  { key: 'progress', label: 'Current Progress', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const endgameStateFields = [
+  { key: 'name', label: 'Ending State Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Victory','Defeat','Pyrrhic Victory','Bittersweet','Ambiguous','Tragedy','Transcendence','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Possible','Likely','Inevitable','Averted','Achieved'] },
+  { key: 'trigger', label: 'Trigger Condition', type: 'textarea' },
+  { key: 'consequence', label: 'World Consequence', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+
+const nationFields = [
+  { key: 'name', label: 'Nation Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Empire','Kingdom','Republic','City-State','Confederation','Theocracy','Tribal Land','Occupied Territory','Other'] },
+  { key: 'ruler', label: 'Ruler / Leader', type: 'text' },
+  { key: 'capital', label: 'Capital', type: 'text' },
+  { key: 'government', label: 'Government', type: 'text' },
+  { key: 'population', label: 'Population', type: 'text' },
+  { key: 'military', label: 'Military Strength', type: 'text' },
+  { key: 'economy', label: 'Economy', type: 'text' },
+  { key: 'allies', label: 'Allies (chip)', type: 'chip' },
+  { key: 'enemies', label: 'Enemies (chip)', type: 'chip' },
+  { key: 'history', label: 'History', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const religionFields = [
+  { key: 'name', label: 'Religion Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Monotheistic','Polytheistic','Animistic','Druidic','Ancestor Worship','Cult','Secret Society','Philosophical','Other'] },
+  { key: 'deity', label: 'Primary Deity / Focus', type: 'text' },
+  { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
+  { key: 'domain', label: 'Domain / Aspect', type: 'text' },
+  { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
+  { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
+  { key: 'holyDays', label: 'Holy Days', type: 'text' },
+  { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
+  { key: 'temples', label: 'Temples / Holy Sites (chip)', type: 'chip' },
+  { key: 'restrictions', label: 'Taboos & Restrictions', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const districtFields = [
+  { key: 'name', label: 'District Name', type: 'text' },
+  { key: 'settlementId', label: 'Settlement', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Market','Residential','Noble Quarter','Docks','Temple District','Slums','Military','Industrial','Foreign Quarter','Ruined','Underground','Other'] },
+  { key: 'population', label: 'Population', type: 'text' },
+  { key: 'atmosphere', label: 'Atmosphere', type: 'text' },
+  { key: 'notableLocations', label: 'Notable Locations (chip)', type: 'chip' },
+  { key: 'factions', label: 'Active Factions (chip)', type: 'chip' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const roomFields = [
+  { key: 'name', label: 'Room Name', type: 'text' },
+  { key: 'locationId', label: 'Location / Dungeon', type: 'text' },
+  { key: 'type', label: 'Room Type', type: 'select', options: ['Entrance','Corridor','Chamber','Guard Post','Secret Room','Boss Chamber','Treasure Room','Trap Room','Rest Area','Shrine','Prison','Workshop','Library','Other'] },
+  { key: 'features', label: 'Features (chip)', type: 'chip' },
+  { key: 'traps', label: 'Traps', type: 'textarea' },
+  { key: 'loot', label: 'Loot / Treasure', type: 'textarea' },
+  { key: 'connections', label: 'Connected Rooms (chip)', type: 'chip' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const timelineFields = [
+  { key: 'name', label: 'Event Name', type: 'text' },
+  { key: 'date', label: 'In-World Date', type: 'text' },
+  { key: 'era', label: 'Era / Age', type: 'text' },
+  { key: 'type', label: 'Event Type', type: 'select', options: ['World Event','Campaign Event','Session Event','Character Event','Faction Event','Discovery','Battle','Political','Catastrophe','Other'] },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'impact', label: 'World Impact', type: 'textarea' },
+  { key: 'linkedSessionId', label: 'Linked Session', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const revealFields = [
+  { key: 'name', label: 'Reveal Name', type: 'text' },
+  { key: 'secretId', label: 'Related Secret', type: 'text' },
+  { key: 'status', label: 'Status', type: 'select', options: ['Pending','Delivered','Deflected','Spoiled','Skipped'] },
+  { key: 'session', label: 'Delivery Session', type: 'text' },
+  { key: 'trigger', label: 'Trigger / Method', type: 'textarea' },
+  { key: 'effect', label: 'Story Effect', type: 'textarea' },
+  { key: 'playerReaction', label: 'Player Reaction', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const lootFields = [
+  { key: 'name', label: 'Item Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Weapon','Armour','Magic Item','Consumable','Valuables','Currency','Trade Good','Mundane','Other'] },
+  { key: 'rarity', label: 'Rarity', type: 'select', options: ['Common','Uncommon','Rare','Very Rare','Legendary','Artifact'] },
+  { key: 'value', label: 'Value (gp)', type: 'text' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'encounterId', label: 'Source Encounter', type: 'text' },
+  { key: 'status', label: 'Status', type: 'select', options: ['Available','Claimed','Sold','Lost','Destroyed'] },
+  { key: 'claimedBy', label: 'Claimed By', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+
+// Central schema lookup — maps every entity key to its GenericModal field array.
+// Used by defaultEdit() so every Edit button opens a schema-aware form.
+const ENTITY_FIELD_SCHEMAS = {
+  worlds: worldFields,
+  cosmologies: cosmologyFields,
+  realms: realmFields,
+  deities: deityFields,
+  cultures: cultureFields,
+  languages: langFields,
+  regions: regionFields,
+  settlements: settlementFields,
+  locations: locationFields,
+  pois: poiFields,
+  routes: routeFields,
+  adventures: adventureFields,
+  rules: ruleFields,
+  downtime: downtimeFields,
+  bastions: bastionFields,
+  milestones: milestoneFields,
+  handouts: handoutFields,
+  compendium: compendiumFields,
+  journals: journalFields,
+  reputations: reputationFields,
+  warFronts: warFrontFields,
+  incursions: incursionFields,
+  endgameStates: endgameStateFields,
+  nations: nationFields,
+  religions: religionFields,
+  districts: districtFields,
+  rooms: roomFields,
+  timelines: timelineFields,
+  reveals: revealFields,
+  loot: lootFields,
+  hybridAncestries: [
+    { key: 'name', label: 'Name', type: 'text' },
+    { key: 'dominantAncestry', label: 'Dominant Ancestry', type: 'text' },
+    { key: 'recessiveAncestry', label: 'Recessive Ancestry', type: 'text' },
+    { key: 'size', label: 'Size', type: 'select', options: ['Tiny','Small','Medium','Large','Huge','Gargantuan'] },
+    { key: 'creatureType', label: 'Creature Type', type: 'text' },
+    { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
+    { key: 'summary', label: 'Summary', type: 'textarea' },
+  ],
+  damageTypes: [
+    { key: 'name', label: 'Damage Type', type: 'text' },
+    { key: 'summary', label: 'Description', type: 'textarea' },
+    { key: 'immunity', label: 'Common Immunities', type: 'text' },
+    { key: 'resistance', label: 'Common Resistances', type: 'text' },
+    { key: 'notes', label: 'Notes', type: 'textarea' },
+  ],
+  tables: [
+    { key: 'name', label: 'Table Name', type: 'text' },
+    { key: 'category', label: 'Category', type: 'text' },
+    { key: 'content', label: 'Table Content (one entry per line)', type: 'textarea' },
+    { key: 'summary', label: 'Description', type: 'textarea' },
+    { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
+  ],
+};
+
 function renderPlayerLore(parent, plugin) {
   // Show worlds and cultures with player-visible content
   const worlds = safeArr(plugin.state.entities.worlds).filter(w => w.visibility !== 'dm-only' && w.visibility !== 'secret');
@@ -3353,6 +3882,23 @@ function renderPCCharacter(main, plugin) {
   btn(hpWrap, '-1', 'te-btn is-sm is-danger', async () => { char.hp = Math.max(0, (parseInt(char.hp) || 0) - 1); upsert(state, 'characters', char); await plugin.saveState(); });
   btn(hpWrap, '+1', 'te-btn is-sm', async () => { char.hp = Math.min(parseInt(char.maxHp) || 999, (parseInt(char.hp) || 0) + 1); upsert(state, 'characters', char); await plugin.saveState(); });
 
+  // XP progress bar
+  if (typeof char.xp === 'number') {
+    const lvl = Math.max(1, Math.min(19, char.level || 1));
+    const curXp = char.xp;
+    const prevXp = XP_THRESHOLDS[lvl] || 0;
+    const nextXp = XP_THRESHOLDS[lvl + 1];
+    const xpWrap = ce(c, 'div', ''); xpWrap.style.padding = '6px 0';
+    if (nextXp && lvl < 20) {
+      const pct = Math.min(100, Math.max(0, Math.round(((curXp - prevXp) / Math.max(1, nextXp - prevXp)) * 100)));
+      ce(xpWrap, 'p', 'te-progress-label', `XP: ${curXp.toLocaleString()} / ${nextXp.toLocaleString()} — Level ${lvl} → ${lvl + 1}`);
+      const xpBar = ce(xpWrap, 'div', 'te-progress-bar');
+      const xpFill = ce(xpBar, 'div', 'te-progress-fill'); xpFill.style.width = pct + '%'; xpFill.style.background = 'var(--color-purple,#8b5cf6)';
+    } else {
+      ce(xpWrap, 'p', 'te-progress-label', `XP: ${curXp.toLocaleString()} — Max Level`);
+    }
+  }
+
   // Stat grid
   const sg = ce(c, 'div', 'te-stat-grid'); sg.style.marginTop = '8px';
   [['AC', char.ac], ['Speed', char.speed], ['Initiative', char.initiative], ['Prof.', char.level ? '+' + profBonus(char.level) : '']].forEach(([k, v]) => { if (!v) return; const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', String(v)); ce(sc, 'div', 'te-stat-label', k); });
@@ -3366,11 +3912,54 @@ function renderPCCharacter(main, plugin) {
     ce(box, 'div', 'te-ability-mod', modStr(char[ab] || 10));
   });
 
+  // Saving throws + passive perception
+  const ST_LABELS = ['STR','DEX','CON','INT','WIS','CHA'];
+  const ST_KEYS   = ['str','dex','con','int','wis','cha'];
+  const stHead = ce(c, 'div', ''); stHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin:var(--te-gap-sm) 0 4px';
+  ce(stHead, 'span', 'te-card-meta-label', 'Saving Throws');
+  const passPerc = 10 + modifier(char.wis || 10) + (safeArr(char.skills).includes('Perception') ? profBonus(char.level || 1) : 0);
+  ce(stHead, 'span', 'te-progress-label', `Passive Perception: ${passPerc}`);
+  const stGrid = ce(c, 'div', 'te-ability-grid');
+  ST_KEYS.forEach((ab, i) => {
+    const prof = safeArr(char.savingThrows).includes(ST_LABELS[i]);
+    const val  = modifier(char[ab] || 10) + (prof ? profBonus(char.level || 1) : 0);
+    const box  = ce(stGrid, 'div', 'te-ability-box' + (prof ? ' is-proficient' : ''));
+    ce(box, 'div', 'te-ability-label', ST_LABELS[i]);
+    ce(box, 'div', 'te-ability-score', (val >= 0 ? '+' : '') + val);
+    if (prof) ce(box, 'div', 'te-ability-mod', '●');
+  });
+
   const meta = ce(c, 'div', 'te-card-meta');
   [['Alignment', char.alignment], ['Background', char.background]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v); });
   if (safeArr(char.skills).length) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Skills'); ce(r, 'span', '', char.skills.join(', ')); }
   if (safeArr(char.features).length) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Features'); ce(r, 'span', '', char.features.join(', ')); }
   if (char.backstory) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Backstory'); ce(r, 'span', '', char.backstory.slice(0, 120)); }
+
+  // Death saves (only when HP = 0)
+  if ((parseInt(char.hp) || 0) === 0) {
+    const dsWrap = ce(c, 'div', ''); dsWrap.style.padding = '8px 0';
+    ce(dsWrap, 'div', 'te-card-meta-label', 'Death Saving Throws');
+    const ds = char.deathSaves || { successes: 0, failures: 0 };
+    const dsRow = ce(dsWrap, 'div', 'te-death-saves');
+    ['Successes','Failures'].forEach(kind => {
+      const row = ce(dsRow, 'div', 'te-death-save-row');
+      ce(row, 'span', 'te-death-save-label', kind === 'Successes' ? '✓ Successes' : '✗ Failures');
+      for (let i = 0; i < 3; i++) {
+        const count = kind === 'Successes' ? ds.successes : ds.failures;
+        const filled = i < count;
+        const b = ce(row, 'div', 'te-save-bubble' + (filled ? (kind === 'Successes' ? ' is-success' : ' is-failure') : ''));
+        b.addEventListener('click', async () => {
+          if (!char.deathSaves) char.deathSaves = { successes: 0, failures: 0 };
+          const cur = kind === 'Successes' ? char.deathSaves.successes : char.deathSaves.failures;
+          const next = i < cur ? i : i + 1;
+          if (kind === 'Successes') char.deathSaves.successes = next;
+          else char.deathSaves.failures = next;
+          upsert(state, 'characters', char); await plugin.saveState();
+        });
+      }
+    });
+    btn(dsWrap, 'Reset', 'te-btn is-sm is-danger', async () => { char.deathSaves = { successes: 0, failures: 0 }; upsert(state, 'characters', char); await plugin.saveState(); });
+  }
 
   const a = ce(c, 'div', 'te-card-actions');
   btn(a, 'Full Edit', 'te-btn is-sm is-primary', () => new CharacterModal(plugin.app, plugin, char).open());
@@ -3429,6 +4018,42 @@ function renderPCSpellbook(main, plugin) {
   const isSpellcaster = SPELLCASTING_CLASSES.includes(char.class);
   if (!isSpellcaster) { emptyState(main, `${char.name} is a ${char.class || 'non-spellcasting class'}.`, 'Spellbook is available for spellcasting classes.'); return; }
 
+  // Spell Slots Tracker
+  sectionHead(main, 'Spell Slots');
+  ce(main, 'p', 'te-progress-label', 'Click a bubble to mark it used. Set max slots for each level. Resets on rest.');
+  const slotWrap = ce(main, 'div', 'te-spell-slots');
+  for (let lvl = 1; lvl <= 9; lvl++) {
+    const slotData = (char.spellSlots || {})[lvl] || { max: 0, used: 0 };
+    if (lvl > 1 && slotData.max === 0) continue; // hide empty high levels
+    const row = ce(slotWrap, 'div', 'te-slot-row');
+    ce(row, 'span', 'te-slot-label', `Level ${lvl}`);
+    const bubbles = ce(row, 'div', 'te-slot-bubbles');
+    for (let i = 0; i < Math.max(slotData.max, 0); i++) {
+      const b = ce(bubbles, 'div', 'te-slot-bubble' + (i < slotData.used ? ' is-used' : ''));
+      b.addEventListener('click', async () => {
+        if (!char.spellSlots) char.spellSlots = {};
+        if (!char.spellSlots[lvl]) char.spellSlots[lvl] = { max: slotData.max, used: 0 };
+        const cur = char.spellSlots[lvl].used || 0;
+        char.spellSlots[lvl].used = i < cur ? i : Math.min(i + 1, char.spellSlots[lvl].max);
+        upsert(state, 'characters', char); await plugin.saveState();
+      });
+    }
+    const maxInp = ce(row, 'input'); maxInp.type = 'number'; maxInp.min = '0'; maxInp.max = '9'; maxInp.value = String(slotData.max || 0);
+    maxInp.title = 'Set maximum slots for this level';
+    maxInp.style.cssText = 'width:46px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:2px 6px;text-align:center';
+    maxInp.addEventListener('change', async () => {
+      if (!char.spellSlots) char.spellSlots = {};
+      const newMax = Math.max(0, Math.min(9, parseInt(maxInp.value) || 0));
+      char.spellSlots[lvl] = { max: newMax, used: Math.min(newMax, (char.spellSlots[lvl] || {}).used || 0) };
+      upsert(state, 'characters', char); await plugin.saveState();
+    });
+  }
+  const resetRow = ce(main, 'div', ''); resetRow.style.marginBottom = '16px';
+  btn(resetRow, '↺ Reset All Slots', 'te-btn is-sm', async () => {
+    if (char.spellSlots) { Object.keys(char.spellSlots).forEach(k => { char.spellSlots[k].used = 0; }); }
+    upsert(state, 'characters', char); await plugin.saveState(); new Notice('Spell slots reset.');
+  });
+
   sectionHead(main, `${char.name}'s Spells`);
   const spells = safeArr(char.spells);
   if (spells.length) {
@@ -3473,6 +4098,99 @@ function renderPCJournal(main, plugin) {
 function renderPCLore(main, plugin) {
   pageHead(main, plugin, '🌐 World Lore', 'Player-safe world information.');
   renderPlayerLore(main, plugin);
+  const nations = safeArr(plugin.state.entities.nations).filter(n => n.visibility !== 'dm-only' && n.visibility !== 'secret');
+  if (nations.length) {
+    sectionHead(main, 'Nations');
+    const ng = ce(main, 'div', 'te-grid');
+    nations.forEach(n => {
+      const c = ce(ng, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '👑'); ce(hd, 'h3', 'te-card-title', n.name);
+      const meta = ce(c, 'div', 'te-card-meta');
+      [['Type', n.type], ['Ruler', n.ruler], ['Capital', n.capital]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v); });
+      if (n.summary) ce(c, 'p', 'te-card-body', n.summary.slice(0, 120));
+    });
+  }
+  const religions = safeArr(plugin.state.entities.religions).filter(r => r.visibility !== 'dm-only' && r.visibility !== 'secret');
+  if (religions.length) {
+    sectionHead(main, 'Religions');
+    const rg = ce(main, 'div', 'te-grid');
+    religions.forEach(r => {
+      const c = ce(rg, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '🕍'); ce(hd, 'h3', 'te-card-title', r.name);
+      const meta = ce(c, 'div', 'te-card-meta');
+      [['Type', r.type], ['Deity', r.deity], ['Domain', r.domain]].forEach(([k, v]) => { if (!v) return; const row = ce(meta, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', v); });
+      if (r.summary) ce(c, 'p', 'te-card-body', r.summary.slice(0, 120));
+    });
+  }
+}
+
+// ── HYBRID ANCESTRY (Phase 257) ───────────────────────────────────────────────
+function renderHybridAncestry(main, plugin) {
+  const state = plugin.state;
+  const isPC = state.mode === 'PLAYER';
+  const all = safeArr(state.entities.hybridAncestries);
+  const visible = isPC ? all.filter(h => h.visibility === 'player-visible') : all;
+  if (!isPC) {
+    pageHead(main, plugin, '🧬 Hybrid Ancestry Builder', 'Design and balance custom mixed-heritage ancestries for PCs and NPCs.', [
+      { label: '+ New Hybrid', primary: true, onClick: () => new HybridAncestryModal(plugin.app, plugin).open() },
+    ]);
+    const sg = ce(main, 'div', 'te-stat-grid');
+    const approved = all.filter(h => h.approvalStatus === 'DM Approved');
+    const pending = all.filter(h => !h.approvalStatus || h.approvalStatus === 'Pending Review');
+    [['Total Hybrids', all.length], ['DM Approved', approved.length], ['Pending Review', pending.length]].forEach(([l, v]) => {
+      const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', v); ce(sc, 'div', 'te-stat-label', l);
+    });
+  } else {
+    pageHead(main, plugin, '🧬 Hybrid Ancestry', 'Player-visible hybrid ancestries shared by your DM.');
+  }
+  sectionHead(main, isPC ? 'Available Ancestries' : 'All Hybrid Ancestries');
+  if (!visible.length) {
+    emptyState(main, 'No hybrid ancestries yet.', isPC ? 'Your DM will share ancestries here.' : 'Click "+ New Hybrid" to design your first hybrid ancestry.');
+    return;
+  }
+  const g = ce(main, 'div', 'te-grid');
+  visible.filter(h => matchesSearch(h, state.search)).forEach(h => {
+    const balance = computeHybridBalance(h);
+    const c = ce(g, 'div', 'te-card');
+    const hd = ce(c, 'div', 'te-card-head');
+    ce(hd, 'span', 'te-card-icon', '🧬');
+    ce(hd, 'h3', 'te-card-title', h.name || 'Untitled Hybrid');
+    if (!isPC && h.approvalStatus) {
+      const badge = ce(hd, 'span', 'te-chip', h.approvalStatus);
+      badge.style.cssText = 'margin-left:auto;font-size:.75rem;flex-shrink:0';
+    }
+    const meta = ce(c, 'div', 'te-card-meta');
+    const parents = [h.dominantAncestry, h.recessiveAncestry].filter(Boolean).join(' × ');
+    if (parents) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Parents'); ce(r, 'span', '', parents); }
+    [['Size', h.size], ['Type', h.creatureType]].forEach(([k, v]) => {
+      if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v);
+    });
+    // Balance bar
+    const bmRow = ce(c, 'div', 'te-balance-row');
+    const bmBar = ce(bmRow, 'div', 'te-balance-meter');
+    const pct = Math.min(100, Math.round((balance.score / 10) * 100));
+    const bmFill = ce(bmBar, 'div', 'te-balance-fill');
+    bmFill.style.width = pct + '%';
+    bmFill.classList.add({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[balance.rating] || '');
+    ce(bmRow, 'span', 'te-balance-label', `${balance.rating} (${balance.score})`);
+    if (!isPC && balance.warnings.length) {
+      const wEl = ce(c, 'div', 'te-hybrid-warning-badge');
+      wEl.title = balance.warnings.join('\n');
+      wEl.textContent = `⚠️ ${balance.warnings.length} warning${balance.warnings.length > 1 ? 's' : ''}`;
+    }
+    if (h.summary) ce(c, 'p', 'te-card-body', h.summary.slice(0, 120));
+    const acts = ce(c, 'div', 'te-card-actions');
+    if (!isPC) {
+      btn(acts, 'Edit', 'te-btn is-sm is-primary', () => new HybridAncestryModal(plugin.app, plugin, h).open());
+      btn(acts, 'Use as PC', 'te-btn is-sm', () => new CharacterModal(plugin.app, plugin, { race: h.name }).open());
+      btn(acts, 'Use as NPC', 'te-btn is-sm', () => new NPCModal(plugin.app, plugin, { race: h.name }).open());
+      btn(acts, '× Delete', 'te-btn is-sm is-danger', async () => {
+        removeItem(state, 'hybridAncestries', h.id);
+        await plugin.saveState();
+        new Notice(`"${h.name}" deleted.`);
+      });
+    }
+  });
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
@@ -3580,7 +4298,8 @@ class NPCModal extends Modal {
     const raceIn = new Setting(s1).setName('Race / Ancestry').addText(t => {
       const list = contentEl.createEl('datalist');
       list.id = `npc-race-${this.values.id}`;
-      ANCESTRIES.forEach(a => { const opt = list.createEl('option'); opt.value = a; });
+      const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
+      [...ANCESTRIES, ...hybridNames].forEach(a => { const opt = list.createEl('option'); opt.value = a; });
       t.inputEl.setAttribute('list', list.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
@@ -4333,6 +5052,7 @@ class CharacterModal extends Modal {
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
       skills: [], savingThrows: [], features: [], spells: [],
       equipment: [], currency: { gp: 0, sp: 0, cp: 0 },
+      xp: 0, spellSlots: {}, deathSaves: { successes: 0, failures: 0 },
       backstory: '', notes: '',
     }, this.item);
   }
@@ -4348,7 +5068,8 @@ class CharacterModal extends Modal {
     // Race datalist
     new Setting(s1).setName('Race / Ancestry').addText(t => {
       const dl = s1.createEl('datalist'); dl.id = 'char-race-dl';
-      ANCESTRIES.forEach(a => { const o = dl.createEl('option'); o.value = a; });
+      const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
+      [...ANCESTRIES, ...hybridNames].forEach(a => { const o = dl.createEl('option'); o.value = a; });
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
@@ -4394,6 +5115,7 @@ class CharacterModal extends Modal {
     addNumber(s3, 'Temp HP', this.values.tempHp, v => this.values.tempHp = v);
     addNumber(s3, 'AC', this.values.ac, v => this.values.ac = v);
     addField(s3, 'Speed', this.values.speed, v => this.values.speed = v);
+    addNumber(s3, 'Experience Points (XP)', this.values.xp || 0, v => this.values.xp = v);
 
     const s4 = ce(contentEl, 'div', 'te-modal-section');
     s4.createEl('h3', { text: 'Proficiencies & Features' });
@@ -4432,6 +5154,258 @@ class CharacterModal extends Modal {
       new Notice(`Character "${this.values.name}" saved.`);
       this.close();
     }, 'Save Character');
+  }
+}
+
+// ── HybridAncestryModal (Phase 257) ──────────────────────────────────────────
+class HybridAncestryModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('hybrid'), name: '', dominantAncestry: '', recessiveAncestry: '', thirdInfluence: '',
+      visibility: 'dm-only', status: 'Draft', approvalStatus: 'Pending Review',
+      size: 'Medium', speed: 30, ageNotes: '', creatureType: 'Humanoid',
+      languages: [], darkvision: 'None',
+      asiMethod: 'Flexible (+2/+1 or +1/+1/+1)', asi: {}, asiOverride: false,
+      traits: [], traitBudget: 6,
+      appearance: '', dominantCulture: '', recessiveCulture: '', raisedCulture: '', namingConventions: '',
+      playerNotes: '', summary: '',
+      dmNotes: '', balanceNotes: '', balanceRating: '', balanceScore: 0, warnings: [],
+      linkedNotePath: '', syncStatus: 'Local',
+      createdAt: new Date().toISOString(), updatedAt: '', archived: false,
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Hybrid Ancestry` });
+
+    // Section 1: Identity
+    const s1 = ce(contentEl, 'div', 'te-modal-section');
+    s1.createEl('h3', { text: 'Identity' });
+    addField(s1, 'Ancestry Name *', this.values.name, v => this.values.name = v);
+    const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries)
+      .filter(h => h.id !== this.values.id).map(h => h.name);
+    const allAncOptions = [...ANCESTRIES, ...hybridNames];
+    const makeAncDl = (suffix, val, setter) => {
+      new Setting(s1).setName(suffix).addText(t => {
+        const dl = s1.createEl('datalist'); dl.id = `hybrid-${this.values.id}-${suffix.toLowerCase().replace(/\s+/g,'-')}`;
+        allAncOptions.forEach(a => { const o = dl.createEl('option'); o.value = a; });
+        t.inputEl.setAttribute('list', dl.id);
+        t.setValue(val || '');
+        t.onChange(setter);
+      });
+    };
+    makeAncDl('Dominant Ancestry', this.values.dominantAncestry, v => this.values.dominantAncestry = v);
+    makeAncDl('Recessive Ancestry', this.values.recessiveAncestry, v => this.values.recessiveAncestry = v);
+    makeAncDl('Third Influence (optional)', this.values.thirdInfluence, v => this.values.thirdInfluence = v);
+    addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
+    addSelect(s1, 'Status', this.values.status, ['Draft','Active','Deprecated','Archived'], v => this.values.status = v);
+    addSelect(s1, 'Approval Status', this.values.approvalStatus, ['Pending Review','DM Approved','Player Approved','Rejected'], v => this.values.approvalStatus = v);
+
+    // Section 2: Parent Ancestry Reference
+    const s2 = ce(contentEl, 'div', 'te-modal-section');
+    s2.createEl('h3', { text: 'Parent Ancestry Reference' });
+    const refGrid = ce(s2, 'div', '');
+    refGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px';
+    ['dominant','recessive'].forEach(role => {
+      const key = role === 'dominant' ? this.values.dominantAncestry : this.values.recessiveAncestry;
+      const data = key ? ANCESTRY_DATA[key] : null;
+      const cell = ce(refGrid, 'div', 'te-card'); cell.style.cssText = 'padding:10px;font-size:.85rem';
+      ce(cell, 'strong', '', `${role.charAt(0).toUpperCase()+role.slice(1)}: ${key || '—'}`);
+      if (data) {
+        ce(cell, 'p', 'te-progress-label', `Size: ${data.size} • Speed: ${data.speed} ft • DV: ${data.darkvision ? data.darkvision+' ft' : 'None'}`);
+        if (data.resistance && data.resistance.length) ce(cell, 'p', 'te-progress-label', `Resistance: ${data.resistance.join(', ')}`);
+        if (data.traits && data.traits.length) ce(cell, 'p', 'te-progress-label', `Traits: ${data.traits.join(', ')}`);
+      } else {
+        ce(cell, 'p', 'te-progress-label', 'Enter an ancestry name above to see reference data.');
+      }
+    });
+    ce(s2, 'p', 'te-progress-label', 'Reference only. Actual mechanics are set in the sections below.');
+
+    // Section 3: Core Basics
+    const s3 = ce(contentEl, 'div', 'te-modal-section');
+    s3.createEl('h3', { text: 'Core Basics' });
+    addSelect(s3, 'Size', this.values.size, SIZES, v => this.values.size = v);
+    addNumber(s3, 'Speed (ft)', this.values.speed || 30, v => this.values.speed = v);
+    addSelect(s3, 'Creature Type', this.values.creatureType, CREATURE_TYPES, v => this.values.creatureType = v);
+    addSelect(s3, 'Darkvision', this.values.darkvision || 'None', ['None','30 ft','60 ft','90 ft','120 ft'], v => this.values.darkvision = v);
+    chipField(s3, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial'] });
+    addField(s3, 'Age & Lifespan Notes', this.values.ageNotes, v => this.values.ageNotes = v);
+
+    // Section 4: Ability Score Improvements
+    const s4 = ce(contentEl, 'div', 'te-modal-section');
+    s4.createEl('h3', { text: 'Ability Score Improvements' });
+    addSelect(s4, 'ASI Method', this.values.asiMethod, ['Flexible (+2/+1 or +1/+1/+1)','Standard (+2/+1)','Manual','Lineage Match'], v => this.values.asiMethod = v);
+    ce(s4, 'p', 'te-progress-label', 'Assign ASI bonuses below. Total should not exceed +3 without DM override (toggle below).');
+    const asiGrid = ce(s4, 'div', '');
+    asiGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
+    if (!this.values.asi) this.values.asi = {};
+    const asiVals = this.values.asi;
+    const asiTotalEl = ce(s4, 'p', 'te-progress-label', '');
+    // refreshBalance defined below s5; late-bind via closure so ASI inputs can call it
+    let refreshBalance = () => {};
+    const updateAsiTotal = () => {
+      const total = Object.values(asiVals).reduce((s, v) => s + (parseInt(v) || 0), 0);
+      asiTotalEl.textContent = `Current ASI total: +${total}${total > 3 ? ' ⚠️ Exceeds +3' : ' ✓'}`;
+      refreshBalance();
+    };
+    ['str','dex','con','int','wis','cha'].forEach(ab => {
+      const w = ce(asiGrid, 'div', '');
+      new Setting(w).setName(ab.toUpperCase()).addText(t => {
+        t.inputEl.type = 'number'; t.inputEl.min = '0'; t.inputEl.max = '4';
+        t.setValue(String(asiVals[ab] || 0));
+        t.onChange(v => { asiVals[ab] = parseInt(v) || 0; updateAsiTotal(); });
+      });
+    });
+    // Insert asiTotalEl after the grid (was created before grid to be appended after)
+    s4.appendChild(asiTotalEl);
+    updateAsiTotal();
+    new Setting(s4).setName('DM Override — allow ASI > +3').addToggle(t => {
+      t.setValue(this.values.asiOverride || false);
+      t.onChange(v => { this.values.asiOverride = v; refreshBalance(); });
+    });
+
+    // Section 5: Traits (with live balance refresh)
+    const s5 = ce(contentEl, 'div', 'te-modal-section');
+    s5.createEl('h3', { text: 'Traits' });
+    const bmWrap = ce(s5, 'div', 'te-balance-row'); bmWrap.style.marginBottom = '8px';
+    const bmBar = ce(bmWrap, 'div', 'te-balance-meter');
+    const bmFill = ce(bmBar, 'div', 'te-balance-fill');
+    const bmLabel = ce(bmWrap, 'span', 'te-balance-label', '');
+    const wBox = ce(s5, 'div', 'te-hybrid-warning-box'); wBox.style.display = 'none';
+    refreshBalance = () => {
+      const b = computeHybridBalance(this.values);
+      const pct = Math.min(100, Math.round((b.score / 10) * 100));
+      bmFill.style.width = pct + '%';
+      bmFill.className = 'te-balance-fill ' + ({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[b.rating] || '');
+      bmLabel.textContent = `Balance: ${b.rating} (${b.score}/10)`;
+      clear(wBox);
+      if (b.warnings.length) {
+        wBox.style.display = '';
+        b.warnings.forEach(w => { const d = ce(wBox, 'div', 'te-hybrid-warning-item'); d.textContent = `⚠️ ${w}`; });
+      } else { wBox.style.display = 'none'; }
+    };
+    refreshBalance();
+    ce(s5, 'p', 'te-progress-label', 'Tier 0 = cosmetic (0 pts) • Tier 1 = minor (1 pt) • Tier 2 = medium (2 pts) • Tier 3 = strong (3 pts). Balanced: 4–6 pts total.');
+    const tierNames = ['Tier 0 — Cosmetic / Flavour','Tier 1 — Minor','Tier 2 — Medium','Tier 3 — Strong'];
+    [0,1,2,3].forEach(tier => {
+      const tierTraits = HYBRID_TRAIT_LIBRARY.filter(t => t.tier === tier);
+      if (!tierTraits.length) return;
+      ce(s5, 'div', 'te-quest-status-head', tierNames[tier]);
+      const tGrid = ce(s5, 'div', 'te-trait-grid');
+      tierTraits.forEach(trait => {
+        const isOn = safeArr(this.values.traits).includes(trait.id);
+        const row = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
+        const cb = ce(row, 'input'); cb.type = 'checkbox'; cb.checked = isOn;
+        const lbl = ce(row, 'label', '');
+        lbl.style.cssText = 'cursor:pointer;margin-left:4px;font-size:.84rem;flex:1;min-width:0';
+        ce(lbl, 'strong', '', trait.name);
+        ce(lbl, 'span', 'te-muted-text', ` (+${tier})`);
+        ce(lbl, 'p', 'te-trait-desc', trait.desc);
+        const toggle = () => {
+          const cur = safeArr(this.values.traits);
+          if (cb.checked) { if (!cur.includes(trait.id)) this.values.traits = [...cur, trait.id]; }
+          else { this.values.traits = cur.filter(id => id !== trait.id); }
+          row.classList.toggle('is-active', cb.checked);
+          refreshBalance();
+        };
+        cb.addEventListener('change', toggle);
+        lbl.addEventListener('click', () => { cb.checked = !cb.checked; toggle(); });
+      });
+    });
+
+    // Section 6: Culture & Appearance
+    const s6 = ce(contentEl, 'div', 'te-modal-section');
+    s6.createEl('h3', { text: 'Culture & Appearance' });
+    addField(s6, 'Appearance', this.values.appearance, v => this.values.appearance = v, 'textarea');
+    addField(s6, 'Dominant Culture', this.values.dominantCulture, v => this.values.dominantCulture = v);
+    addField(s6, 'Recessive Culture', this.values.recessiveCulture, v => this.values.recessiveCulture = v);
+    addField(s6, 'Raised In', this.values.raisedCulture, v => this.values.raisedCulture = v);
+    addField(s6, 'Naming Conventions', this.values.namingConventions, v => this.values.namingConventions = v, 'textarea');
+
+    // Section 7: Player Notes
+    const s7 = ce(contentEl, 'div', 'te-modal-section');
+    s7.createEl('h3', { text: 'Player Notes' });
+    addField(s7, 'Summary / Lore Blurb (player-visible)', this.values.summary, v => this.values.summary = v, 'textarea');
+    addField(s7, 'Player Notes', this.values.playerNotes, v => this.values.playerNotes = v, 'textarea');
+
+    // Section 8: DM Notes
+    const s8 = ce(contentEl, 'div', 'te-modal-section');
+    s8.createEl('h3', { text: 'DM Notes' });
+    addField(s8, 'DM Notes (hidden from players)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
+    addField(s8, 'Balance Notes', this.values.balanceNotes, v => this.values.balanceNotes = v, 'textarea');
+    addField(s8, 'Linked Note Path', this.values.linkedNotePath, v => this.values.linkedNotePath = v);
+
+    // Action row
+    const actRow = ce(contentEl, 'div', 'te-card-actions');
+    actRow.style.cssText = 'flex-wrap:wrap;gap:6px;margin:12px 0';
+    btn(actRow, 'Use for New PC', 'te-btn is-sm', () => {
+      if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
+      new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+    });
+    btn(actRow, 'Use for New NPC', 'te-btn is-sm', () => {
+      if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
+      new NPCModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+    });
+    btn(actRow, 'Save as Homebrew', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
+      const hb = { id: uid('homebrew'), name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
+      upsert(this.plugin.state, 'homebrew', hb);
+      await this.plugin.saveState();
+      new Notice(`Homebrew entry "${hb.name}" created.`);
+    });
+    btn(actRow, 'Save as Compendium', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
+      const entry = { id: uid('comp'), name: this.values.name, category: 'Ancestry', content: this._toMarkdown(), tags: ['hybrid'], visibility: 'player-visible', createdAt: new Date().toISOString() };
+      upsert(this.plugin.state, 'compendium', entry);
+      await this.plugin.saveState();
+      new Notice(`Compendium entry "${entry.name}" created.`);
+    });
+    btn(actRow, 'Export Player-Safe', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Save the hybrid first.'); return; }
+      const folder = campaignFolder(this.plugin);
+      await ensureFolder(this.plugin.app, folder);
+      const fname = this.values.name.replace(/[\\/:*?"<>|]/g, '_');
+      await writeNote(this.plugin.app, `${folder}/${fname}-ancestry.md`, this._toMarkdown(true));
+      new Notice(`Player-safe ancestry note exported.`);
+    });
+
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Ancestry name is required.'); return; }
+      const b = computeHybridBalance(this.values);
+      this.values.balanceRating = b.rating;
+      this.values.balanceScore = b.score;
+      this.values.warnings = b.warnings;
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = new Date().toISOString();
+      upsert(this.plugin.state, 'hybridAncestries', this.values);
+      await this.plugin.saveState();
+      new Notice(`Hybrid ancestry "${this.values.name}" saved.`);
+      this.close();
+    }, 'Save Hybrid');
+  }
+  _toMarkdown(playerSafe) {
+    const v = this.values;
+    const traitObjs = safeArr(v.traits).map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+    let md = `# ${v.name || 'Hybrid Ancestry'}\n\n`;
+    md += `**Parents:** ${[v.dominantAncestry, v.recessiveAncestry].filter(Boolean).join(' × ')}`;
+    if (v.thirdInfluence) md += ` (with ${v.thirdInfluence} influence)`;
+    md += `\n\n**Size:** ${v.size} | **Speed:** ${v.speed} ft | **Type:** ${v.creatureType} | **Darkvision:** ${v.darkvision || 'None'}\n\n`;
+    const asiEntries = Object.entries(v.asi || {}).filter(([, val]) => parseInt(val) > 0);
+    if (asiEntries.length) md += `**ASI:** ${asiEntries.map(([k, val]) => `+${val} ${k.toUpperCase()}`).join(', ')}\n\n`;
+    if (safeArr(v.languages).length) md += `**Languages:** ${v.languages.join(', ')}\n\n`;
+    if (traitObjs.length) { md += `## Traits\n\n`; traitObjs.forEach(t => { md += `### ${t.name} *(Tier ${t.tier})*\n${t.desc}\n\n`; }); }
+    if (v.appearance) md += `## Appearance\n${v.appearance}\n\n`;
+    if (v.summary) md += `## Lore\n${v.summary}\n\n`;
+    if (v.playerNotes) md += `## Player Notes\n${v.playerNotes}\n\n`;
+    if (!playerSafe && v.dmNotes) md += `## DM Notes\n${v.dmNotes}\n\n`;
+    if (!playerSafe && v.balanceNotes) md += `## Balance Notes\n${v.balanceNotes}\n\n`;
+    if (!playerSafe) md += `## Balance Rating\n**${v.balanceRating}** (score: ${v.balanceScore}/10)\n\n`;
+    return md;
   }
 }
 

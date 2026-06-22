@@ -8,7 +8,7 @@ const PLUGIN_DIR = '.obsidian/plugins/ttrpg-engine';
 const KILL_SWITCH_FILES = [
   `${PLUGIN_DIR}/DISABLE_TTRPG_ENGINE.txt`,
   `${PLUGIN_DIR}/TTRPG_ENGINE_DISABLED.txt`,
-  `${PLUGIN_DIR}/SAFE_MODE.txt`,
+  // SAFE_MODE.txt is intentionally NOT a kill switch — it loads a recovery shell instead
 ];
 const BOOT_MARKER = `${PLUGIN_DIR}/TTRPG_ENGINE_BOOTING.txt`;
 const LOAD_FAILED = `${PLUGIN_DIR}/TTRPG_ENGINE_LOAD_FAILED.txt`;
@@ -1125,7 +1125,22 @@ function itemCards(parent, plugin, key, opts) {
   });
 }
 
+const RICH_EDIT_MAP = {
+  npcs:             (p, i) => new NPCModal(p.app, p, i).open(),
+  creatures:        (p, i) => new CreatureModal(p.app, p, i).open(),
+  bbegs:            (p, i) => new BBEGModal(p.app, p, i).open(),
+  factions:         (p, i) => new FactionModal(p.app, p, i).open(),
+  quests:           (p, i) => new QuestModal(p.app, p, i).open(),
+  encounters:       (p, i) => new EncounterModal(p.app, p, i).open(),
+  sessions:         (p, i) => new SessionModal(p.app, p, i).open(),
+  secrets:          (p, i) => new SecretModal(p.app, p, i).open(),
+  calendars:        (p, i) => new CalendarModal(p.app, p, i).open(),
+  homebrew:         (p, i) => new HomebrewModal(p.app, p, i).open(),
+  characters:       (p, i) => new CharacterModal(p.app, p, i).open(),
+  hybridAncestries: (p, i) => new HybridAncestryModal(p.app, p, i).open(),
+};
 function defaultEdit(plugin, key, item) {
+  if (RICH_EDIT_MAP[key]) { RICH_EDIT_MAP[key](plugin, item); return; }
   const fields = ENTITY_FIELD_SCHEMAS[key] || [];
   new GenericModal(plugin.app, plugin, key, item, fields).open();
 }
@@ -1145,6 +1160,20 @@ class TTRPGEnginePlugin extends Plugin {
     } catch (e) {
       await safeDisable(this.app, 'State load failed', e);
       new Notice('TTRPG Engine: state load failed — see crash report in plugin folder.', 10000);
+      return;
+    }
+
+    // Safe mode — register a minimal recovery shell so the DM can fix things without touching files
+    if (await safeModeActive(this.app)) {
+      this._safeMode = true;
+      this.registerView(VIEW_TYPE, leaf => new TTRPGMainView(leaf, this));
+      this.addRibbonIcon('castle', 'TTRPG Engine (Safe Mode)', () => this.activateView());
+      const scmd = (id, name, fn) => this.addCommand({ id, name, callback: fn });
+      scmd('open', 'Open (Safe Mode Recovery)', () => this.activateView());
+      scmd('disable-safe-mode', 'Disable safe mode', async () => { await disableSafeMode(this.app); new Notice('Safe mode disabled. Reload Obsidian to restore full operation.', 8000); });
+      scmd('backup', 'Backup Data', () => exportBackup(this));
+      scmd('repair', 'Repair / reindex data', async () => { migrateState(this.state); await this.saveState(); new Notice('Data repaired and reindexed.'); });
+      await endBoot(this);
       return;
     }
 
@@ -1307,6 +1336,7 @@ class TTRPGMainView extends ItemView {
   render() {
     const root = this.containerEl.children[1];
     clear(root);
+    if (this.plugin._safeMode) { renderSafeModeRecovery(root, this.plugin); return; }
     const state = this.plugin.state;
     root.className = 'ttrpg-shell' + (state.settings.compact ? ' is-compact' : '') + (state.sidebarCollapsed ? ' is-collapsed' : '');
 
@@ -1412,6 +1442,26 @@ class TTRPGMainView extends ItemView {
     const main = ce(body, 'main', 'te-main');
     renderSection(main, this.plugin, state.activeSection || (state.mode === 'PLAYER' ? 'pc-overview' : 'dashboard'));
   }
+}
+
+// ── Safe mode recovery splash ──────────────────────────────────────────────────
+function renderSafeModeRecovery(root, plugin) {
+  root.className = 'ttrpg-shell';
+  const main = ce(root, 'main', 'te-main');
+  const hd = ce(main, 'div', 'te-card'); hd.style.marginBottom = '16px';
+  const hh = ce(hd, 'div', 'te-card-head'); ce(hh, 'span', 'te-card-icon', '🔒'); ce(hh, 'h3', 'te-card-title', 'Safe Mode Active');
+  ce(hd, 'p', 'te-card-body', 'TTRPG Engine is running in safe mode. Normal plugin features are suspended. Your data is loaded — use the recovery options below, then reload Obsidian.');
+  const g = ce(main, 'div', 'te-grid');
+  const opt = (icon, title, desc, label, onClick) => {
+    const c = ce(g, 'div', 'te-card');
+    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', title);
+    ce(c, 'p', 'te-card-body', desc);
+    btn(ce(c, 'div', 'te-card-actions'), label, 'te-btn is-primary is-sm', onClick);
+  };
+  opt('✅', 'Disable Safe Mode', 'Re-enable the full plugin. Reload Obsidian after clicking.', 'Disable Safe Mode', async () => { await disableSafeMode(plugin.app); new Notice('Safe mode disabled. Please reload Obsidian to restore normal operation.', 8000); });
+  opt('💾', 'Backup Data', 'Export a full backup of your campaign data before making changes.', 'Backup Now', async () => exportBackup(plugin));
+  opt('🔧', 'Diagnostics', 'View crash reports, system health, and repair data.', 'Open Diagnostics', () => new DiagnosticsModal(plugin.app, plugin).open());
+  opt('🔓', 'Clear Crash Lock', 'Remove the crash-lock file that may be blocking normal operation.', 'Clear Lock', async () => { await clearCrashLock(plugin.app); new Notice('Crash lock cleared.'); });
 }
 
 // ── Section router ─────────────────────────────────────────────────────────────
@@ -3746,6 +3796,20 @@ const ENTITY_FIELD_SCHEMAS = {
     { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
     { key: 'summary', label: 'Summary', type: 'textarea' },
   ],
+  damageTypes: [
+    { key: 'name', label: 'Damage Type', type: 'text' },
+    { key: 'summary', label: 'Description', type: 'textarea' },
+    { key: 'immunity', label: 'Common Immunities', type: 'text' },
+    { key: 'resistance', label: 'Common Resistances', type: 'text' },
+    { key: 'notes', label: 'Notes', type: 'textarea' },
+  ],
+  tables: [
+    { key: 'name', label: 'Table Name', type: 'text' },
+    { key: 'category', label: 'Category', type: 'text' },
+    { key: 'content', label: 'Table Content (one entry per line)', type: 'textarea' },
+    { key: 'summary', label: 'Description', type: 'textarea' },
+    { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
+  ],
 };
 
 function renderPlayerLore(parent, plugin) {
@@ -4065,7 +4129,7 @@ function renderHybridAncestry(main, plugin) {
   const state = plugin.state;
   const isPC = state.mode === 'PLAYER';
   const all = safeArr(state.entities.hybridAncestries);
-  const visible = isPC ? all.filter(h => h.visibility !== 'dm-only') : all;
+  const visible = isPC ? all.filter(h => h.visibility === 'player-visible') : all;
   if (!isPC) {
     pageHead(main, plugin, '🧬 Hybrid Ancestry Builder', 'Design and balance custom mixed-heritage ancestries for PCs and NPCs.', [
       { label: '+ New Hybrid', primary: true, onClick: () => new HybridAncestryModal(plugin.app, plugin).open() },
@@ -5179,59 +5243,75 @@ class HybridAncestryModal extends Modal {
     ce(s4, 'p', 'te-progress-label', 'Assign ASI bonuses below. Total should not exceed +3 without DM override (toggle below).');
     const asiGrid = ce(s4, 'div', '');
     asiGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
-    const asiVals = this.values.asi || {};
+    if (!this.values.asi) this.values.asi = {};
+    const asiVals = this.values.asi;
+    const asiTotalEl = ce(s4, 'p', 'te-progress-label', '');
+    // refreshBalance defined below s5; late-bind via closure so ASI inputs can call it
+    let refreshBalance = () => {};
+    const updateAsiTotal = () => {
+      const total = Object.values(asiVals).reduce((s, v) => s + (parseInt(v) || 0), 0);
+      asiTotalEl.textContent = `Current ASI total: +${total}${total > 3 ? ' ⚠️ Exceeds +3' : ' ✓'}`;
+      refreshBalance();
+    };
     ['str','dex','con','int','wis','cha'].forEach(ab => {
       const w = ce(asiGrid, 'div', '');
       new Setting(w).setName(ab.toUpperCase()).addText(t => {
         t.inputEl.type = 'number'; t.inputEl.min = '0'; t.inputEl.max = '4';
         t.setValue(String(asiVals[ab] || 0));
-        t.onChange(v => { if (!this.values.asi) this.values.asi = {}; this.values.asi[ab] = parseInt(v) || 0; });
+        t.onChange(v => { asiVals[ab] = parseInt(v) || 0; updateAsiTotal(); });
       });
     });
-    const asiTotal = Object.values(asiVals).reduce((s, v) => s + (parseInt(v) || 0), 0);
-    ce(s4, 'p', 'te-progress-label', `Current ASI total: +${asiTotal}${asiTotal > 3 ? ' ⚠️ Exceeds +3' : ' ✓'}`);
+    // Insert asiTotalEl after the grid (was created before grid to be appended after)
+    s4.appendChild(asiTotalEl);
+    updateAsiTotal();
     new Setting(s4).setName('DM Override — allow ASI > +3').addToggle(t => {
       t.setValue(this.values.asiOverride || false);
-      t.onChange(v => this.values.asiOverride = v);
+      t.onChange(v => { this.values.asiOverride = v; refreshBalance(); });
     });
 
-    // Section 5: Traits
+    // Section 5: Traits (with live balance refresh)
     const s5 = ce(contentEl, 'div', 'te-modal-section');
     s5.createEl('h3', { text: 'Traits' });
-    const balance = computeHybridBalance(this.values);
     const bmWrap = ce(s5, 'div', 'te-balance-row'); bmWrap.style.marginBottom = '8px';
     const bmBar = ce(bmWrap, 'div', 'te-balance-meter');
-    const bPct = Math.min(100, Math.round((balance.score / 10) * 100));
     const bmFill = ce(bmBar, 'div', 'te-balance-fill');
-    bmFill.style.width = bPct + '%';
-    bmFill.classList.add({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[balance.rating] || '');
-    ce(bmWrap, 'span', 'te-balance-label', `Balance: ${balance.rating} (${balance.score}/10)`);
-    if (balance.warnings.length) {
-      const wBox = ce(s5, 'div', 'te-hybrid-warning-box');
-      balance.warnings.forEach(w => { const d = ce(wBox, 'div', 'te-hybrid-warning-item'); d.textContent = `⚠️ ${w}`; });
-    }
-    ce(s5, 'p', 'te-progress-label', 'Tier 0 = cosmetic (0 pts) • Tier 1 = minor (1 pt) • Tier 2 = medium (2 pts) • Tier 3 = strong (3 pts). Balanced: 4–6 pts total. Hover a trait for its description.');
+    const bmLabel = ce(bmWrap, 'span', 'te-balance-label', '');
+    const wBox = ce(s5, 'div', 'te-hybrid-warning-box'); wBox.style.display = 'none';
+    refreshBalance = () => {
+      const b = computeHybridBalance(this.values);
+      const pct = Math.min(100, Math.round((b.score / 10) * 100));
+      bmFill.style.width = pct + '%';
+      bmFill.className = 'te-balance-fill ' + ({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[b.rating] || '');
+      bmLabel.textContent = `Balance: ${b.rating} (${b.score}/10)`;
+      clear(wBox);
+      if (b.warnings.length) {
+        wBox.style.display = '';
+        b.warnings.forEach(w => { const d = ce(wBox, 'div', 'te-hybrid-warning-item'); d.textContent = `⚠️ ${w}`; });
+      } else { wBox.style.display = 'none'; }
+    };
+    refreshBalance();
+    ce(s5, 'p', 'te-progress-label', 'Tier 0 = cosmetic (0 pts) • Tier 1 = minor (1 pt) • Tier 2 = medium (2 pts) • Tier 3 = strong (3 pts). Balanced: 4–6 pts total.');
     const tierNames = ['Tier 0 — Cosmetic / Flavour','Tier 1 — Minor','Tier 2 — Medium','Tier 3 — Strong'];
     [0,1,2,3].forEach(tier => {
       const tierTraits = HYBRID_TRAIT_LIBRARY.filter(t => t.tier === tier);
       if (!tierTraits.length) return;
       ce(s5, 'div', 'te-quest-status-head', tierNames[tier]);
-      const tGrid = ce(s5, 'div', '');
-      tGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:10px';
+      const tGrid = ce(s5, 'div', 'te-trait-grid');
       tierTraits.forEach(trait => {
         const isOn = safeArr(this.values.traits).includes(trait.id);
         const row = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
-        row.title = trait.desc;
         const cb = ce(row, 'input'); cb.type = 'checkbox'; cb.checked = isOn;
         const lbl = ce(row, 'label', '');
-        lbl.style.cssText = 'cursor:pointer;margin-left:6px;font-size:.84rem;flex:1';
+        lbl.style.cssText = 'cursor:pointer;margin-left:4px;font-size:.84rem;flex:1;min-width:0';
         ce(lbl, 'strong', '', trait.name);
         ce(lbl, 'span', 'te-muted-text', ` (+${tier})`);
+        ce(lbl, 'p', 'te-trait-desc', trait.desc);
         const toggle = () => {
           const cur = safeArr(this.values.traits);
           if (cb.checked) { if (!cur.includes(trait.id)) this.values.traits = [...cur, trait.id]; }
           else { this.values.traits = cur.filter(id => id !== trait.id); }
           row.classList.toggle('is-active', cb.checked);
+          refreshBalance();
         };
         cb.addEventListener('change', toggle);
         lbl.addEventListener('click', () => { cb.checked = !cb.checked; toggle(); });
@@ -5263,8 +5343,14 @@ class HybridAncestryModal extends Modal {
     // Action row
     const actRow = ce(contentEl, 'div', 'te-card-actions');
     actRow.style.cssText = 'flex-wrap:wrap;gap:6px;margin:12px 0';
-    btn(actRow, 'Use for New PC', 'te-btn is-sm', () => new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name || 'Hybrid' }).open());
-    btn(actRow, 'Use for New NPC', 'te-btn is-sm', () => new NPCModal(this.plugin.app, this.plugin, { race: this.values.name || 'Hybrid' }).open());
+    btn(actRow, 'Use for New PC', 'te-btn is-sm', () => {
+      if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
+      new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+    });
+    btn(actRow, 'Use for New NPC', 'te-btn is-sm', () => {
+      if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
+      new NPCModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+    });
     btn(actRow, 'Save as Homebrew', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
       const hb = { id: uid('homebrew'), name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
