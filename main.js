@@ -208,6 +208,8 @@ const CONDITIONS_LIST = ['Blinded','Charmed','Deafened','Exhaustion (1)','Exhaus
   'Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified',
   'Poisoned','Prone','Restrained','Stunned','Unconscious'];
 const SPELLCASTING_CLASSES = ['Artificer','Bard','Cleric','Druid','Paladin','Ranger','Sorcerer','Warlock','Wizard'];
+// XP required to reach each level (index = level, so [1] = XP for level 2, etc.)
+const XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
 
 // ── Option banks (Phase 4) ────────────────────────────────────────────────────
 const OPTION_BANKS = {
@@ -3564,6 +3566,23 @@ function renderPCCharacter(main, plugin) {
   btn(hpWrap, '-1', 'te-btn is-sm is-danger', async () => { char.hp = Math.max(0, (parseInt(char.hp) || 0) - 1); upsert(state, 'characters', char); await plugin.saveState(); });
   btn(hpWrap, '+1', 'te-btn is-sm', async () => { char.hp = Math.min(parseInt(char.maxHp) || 999, (parseInt(char.hp) || 0) + 1); upsert(state, 'characters', char); await plugin.saveState(); });
 
+  // XP progress bar
+  if (typeof char.xp === 'number') {
+    const lvl = Math.max(1, Math.min(19, char.level || 1));
+    const curXp = char.xp;
+    const prevXp = XP_THRESHOLDS[lvl] || 0;
+    const nextXp = XP_THRESHOLDS[lvl + 1];
+    const xpWrap = ce(c, 'div', ''); xpWrap.style.padding = '6px 0';
+    if (nextXp && lvl < 20) {
+      const pct = Math.min(100, Math.max(0, Math.round(((curXp - prevXp) / Math.max(1, nextXp - prevXp)) * 100)));
+      ce(xpWrap, 'p', 'te-progress-label', `XP: ${curXp.toLocaleString()} / ${nextXp.toLocaleString()} — Level ${lvl} → ${lvl + 1}`);
+      const xpBar = ce(xpWrap, 'div', 'te-progress-bar');
+      const xpFill = ce(xpBar, 'div', 'te-progress-fill'); xpFill.style.width = pct + '%'; xpFill.style.background = 'var(--color-purple,#8b5cf6)';
+    } else {
+      ce(xpWrap, 'p', 'te-progress-label', `XP: ${curXp.toLocaleString()} — Max Level`);
+    }
+  }
+
   // Stat grid
   const sg = ce(c, 'div', 'te-stat-grid'); sg.style.marginTop = '8px';
   [['AC', char.ac], ['Speed', char.speed], ['Initiative', char.initiative], ['Prof.', char.level ? '+' + profBonus(char.level) : '']].forEach(([k, v]) => { if (!v) return; const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', String(v)); ce(sc, 'div', 'te-stat-label', k); });
@@ -3577,11 +3596,54 @@ function renderPCCharacter(main, plugin) {
     ce(box, 'div', 'te-ability-mod', modStr(char[ab] || 10));
   });
 
+  // Saving throws + passive perception
+  const ST_LABELS = ['STR','DEX','CON','INT','WIS','CHA'];
+  const ST_KEYS   = ['str','dex','con','int','wis','cha'];
+  const stHead = ce(c, 'div', ''); stHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin:var(--te-gap-sm) 0 4px';
+  ce(stHead, 'span', 'te-card-meta-label', 'Saving Throws');
+  const passPerc = 10 + modifier(char.wis || 10) + (safeArr(char.skills).includes('Perception') ? profBonus(char.level || 1) : 0);
+  ce(stHead, 'span', 'te-progress-label', `Passive Perception: ${passPerc}`);
+  const stGrid = ce(c, 'div', 'te-ability-grid');
+  ST_KEYS.forEach((ab, i) => {
+    const prof = safeArr(char.savingThrows).includes(ST_LABELS[i]);
+    const val  = modifier(char[ab] || 10) + (prof ? profBonus(char.level || 1) : 0);
+    const box  = ce(stGrid, 'div', 'te-ability-box' + (prof ? ' is-proficient' : ''));
+    ce(box, 'div', 'te-ability-label', ST_LABELS[i]);
+    ce(box, 'div', 'te-ability-score', (val >= 0 ? '+' : '') + val);
+    if (prof) ce(box, 'div', 'te-ability-mod', '●');
+  });
+
   const meta = ce(c, 'div', 'te-card-meta');
   [['Alignment', char.alignment], ['Background', char.background]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v); });
   if (safeArr(char.skills).length) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Skills'); ce(r, 'span', '', char.skills.join(', ')); }
   if (safeArr(char.features).length) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Features'); ce(r, 'span', '', char.features.join(', ')); }
   if (char.backstory) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Backstory'); ce(r, 'span', '', char.backstory.slice(0, 120)); }
+
+  // Death saves (only when HP = 0)
+  if ((parseInt(char.hp) || 0) === 0) {
+    const dsWrap = ce(c, 'div', ''); dsWrap.style.padding = '8px 0';
+    ce(dsWrap, 'div', 'te-card-meta-label', 'Death Saving Throws');
+    const ds = char.deathSaves || { successes: 0, failures: 0 };
+    const dsRow = ce(dsWrap, 'div', 'te-death-saves');
+    ['Successes','Failures'].forEach(kind => {
+      const row = ce(dsRow, 'div', 'te-death-save-row');
+      ce(row, 'span', 'te-death-save-label', kind === 'Successes' ? '✓ Successes' : '✗ Failures');
+      for (let i = 0; i < 3; i++) {
+        const count = kind === 'Successes' ? ds.successes : ds.failures;
+        const filled = i < count;
+        const b = ce(row, 'div', 'te-save-bubble' + (filled ? (kind === 'Successes' ? ' is-success' : ' is-failure') : ''));
+        b.addEventListener('click', async () => {
+          if (!char.deathSaves) char.deathSaves = { successes: 0, failures: 0 };
+          const cur = kind === 'Successes' ? char.deathSaves.successes : char.deathSaves.failures;
+          const next = i < cur ? i : i + 1;
+          if (kind === 'Successes') char.deathSaves.successes = next;
+          else char.deathSaves.failures = next;
+          upsert(state, 'characters', char); await plugin.saveState();
+        });
+      }
+    });
+    btn(dsWrap, 'Reset', 'te-btn is-sm is-danger', async () => { char.deathSaves = { successes: 0, failures: 0 }; upsert(state, 'characters', char); await plugin.saveState(); });
+  }
 
   const a = ce(c, 'div', 'te-card-actions');
   btn(a, 'Full Edit', 'te-btn is-sm is-primary', () => new CharacterModal(plugin.app, plugin, char).open());
@@ -3640,6 +3702,42 @@ function renderPCSpellbook(main, plugin) {
   const isSpellcaster = SPELLCASTING_CLASSES.includes(char.class);
   if (!isSpellcaster) { emptyState(main, `${char.name} is a ${char.class || 'non-spellcasting class'}.`, 'Spellbook is available for spellcasting classes.'); return; }
 
+  // Spell Slots Tracker
+  sectionHead(main, 'Spell Slots');
+  ce(main, 'p', 'te-progress-label', 'Click a bubble to mark it used. Set max slots for each level. Resets on rest.');
+  const slotWrap = ce(main, 'div', 'te-spell-slots');
+  for (let lvl = 1; lvl <= 9; lvl++) {
+    const slotData = (char.spellSlots || {})[lvl] || { max: 0, used: 0 };
+    if (lvl > 1 && slotData.max === 0) continue; // hide empty high levels
+    const row = ce(slotWrap, 'div', 'te-slot-row');
+    ce(row, 'span', 'te-slot-label', `Level ${lvl}`);
+    const bubbles = ce(row, 'div', 'te-slot-bubbles');
+    for (let i = 0; i < Math.max(slotData.max, 0); i++) {
+      const b = ce(bubbles, 'div', 'te-slot-bubble' + (i < slotData.used ? ' is-used' : ''));
+      b.addEventListener('click', async () => {
+        if (!char.spellSlots) char.spellSlots = {};
+        if (!char.spellSlots[lvl]) char.spellSlots[lvl] = { max: slotData.max, used: 0 };
+        const cur = char.spellSlots[lvl].used || 0;
+        char.spellSlots[lvl].used = i < cur ? i : Math.min(i + 1, char.spellSlots[lvl].max);
+        upsert(state, 'characters', char); await plugin.saveState();
+      });
+    }
+    const maxInp = ce(row, 'input'); maxInp.type = 'number'; maxInp.min = '0'; maxInp.max = '9'; maxInp.value = String(slotData.max || 0);
+    maxInp.title = 'Set maximum slots for this level';
+    maxInp.style.cssText = 'width:46px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:2px 6px;text-align:center';
+    maxInp.addEventListener('change', async () => {
+      if (!char.spellSlots) char.spellSlots = {};
+      const newMax = Math.max(0, Math.min(9, parseInt(maxInp.value) || 0));
+      char.spellSlots[lvl] = { max: newMax, used: Math.min(newMax, (char.spellSlots[lvl] || {}).used || 0) };
+      upsert(state, 'characters', char); await plugin.saveState();
+    });
+  }
+  const resetRow = ce(main, 'div', ''); resetRow.style.marginBottom = '16px';
+  btn(resetRow, '↺ Reset All Slots', 'te-btn is-sm', async () => {
+    if (char.spellSlots) { Object.keys(char.spellSlots).forEach(k => { char.spellSlots[k].used = 0; }); }
+    upsert(state, 'characters', char); await plugin.saveState(); new Notice('Spell slots reset.');
+  });
+
   sectionHead(main, `${char.name}'s Spells`);
   const spells = safeArr(char.spells);
   if (spells.length) {
@@ -3684,6 +3782,30 @@ function renderPCJournal(main, plugin) {
 function renderPCLore(main, plugin) {
   pageHead(main, plugin, '🌐 World Lore', 'Player-safe world information.');
   renderPlayerLore(main, plugin);
+  const nations = safeArr(plugin.state.entities.nations).filter(n => n.visibility !== 'dm-only' && n.visibility !== 'secret');
+  if (nations.length) {
+    sectionHead(main, 'Nations');
+    const ng = ce(main, 'div', 'te-grid');
+    nations.forEach(n => {
+      const c = ce(ng, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '👑'); ce(hd, 'h3', 'te-card-title', n.name);
+      const meta = ce(c, 'div', 'te-card-meta');
+      [['Type', n.type], ['Ruler', n.ruler], ['Capital', n.capital]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v); });
+      if (n.summary) ce(c, 'p', 'te-card-body', n.summary.slice(0, 120));
+    });
+  }
+  const religions = safeArr(plugin.state.entities.religions).filter(r => r.visibility !== 'dm-only' && r.visibility !== 'secret');
+  if (religions.length) {
+    sectionHead(main, 'Religions');
+    const rg = ce(main, 'div', 'te-grid');
+    religions.forEach(r => {
+      const c = ce(rg, 'div', 'te-card');
+      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '🕍'); ce(hd, 'h3', 'te-card-title', r.name);
+      const meta = ce(c, 'div', 'te-card-meta');
+      [['Type', r.type], ['Deity', r.deity], ['Domain', r.domain]].forEach(([k, v]) => { if (!v) return; const row = ce(meta, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', v); });
+      if (r.summary) ce(c, 'p', 'te-card-body', r.summary.slice(0, 120));
+    });
+  }
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
@@ -4544,6 +4666,7 @@ class CharacterModal extends Modal {
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
       skills: [], savingThrows: [], features: [], spells: [],
       equipment: [], currency: { gp: 0, sp: 0, cp: 0 },
+      xp: 0, spellSlots: {}, deathSaves: { successes: 0, failures: 0 },
       backstory: '', notes: '',
     }, this.item);
   }
@@ -4605,6 +4728,7 @@ class CharacterModal extends Modal {
     addNumber(s3, 'Temp HP', this.values.tempHp, v => this.values.tempHp = v);
     addNumber(s3, 'AC', this.values.ac, v => this.values.ac = v);
     addField(s3, 'Speed', this.values.speed, v => this.values.speed = v);
+    addNumber(s3, 'Experience Points (XP)', this.values.xp || 0, v => this.values.xp = v);
 
     const s4 = ce(contentEl, 'div', 'te-modal-section');
     s4.createEl('h3', { text: 'Proficiencies & Features' });

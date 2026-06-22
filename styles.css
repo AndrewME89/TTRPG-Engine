@@ -236,6 +236,21 @@
 .te-diag-badge { font-size:.9rem; flex-shrink:0; }
 .te-modal-actions { display:flex; gap:var(--te-gap-sm); flex-wrap:wrap; margin-top:var(--te-gap-sm); }
 
+/* ── PC Companion — Phase 255 ────────────────────────────────────────────── */
+.te-ability-box.is-proficient { border-color:var(--te-accent); }
+.te-death-saves { display:flex; flex-direction:column; gap:8px; margin:6px 0 10px; }
+.te-death-save-row { display:flex; align-items:center; gap:8px; }
+.te-death-save-label { font-size:.82rem; color:var(--te-muted); min-width:96px; }
+.te-save-bubble { width:20px; height:20px; border-radius:50%; border:2px solid var(--te-border); cursor:pointer; transition:background 120ms,border-color 120ms; flex-shrink:0; }
+.te-save-bubble.is-success { background:var(--te-accent); border-color:var(--te-accent); }
+.te-save-bubble.is-failure { background:var(--te-danger); border-color:var(--te-danger); }
+.te-spell-slots { display:flex; flex-direction:column; gap:8px; margin-bottom:var(--te-gap-lg); }
+.te-slot-row { display:flex; align-items:center; gap:10px; }
+.te-slot-label { font-size:.82rem; color:var(--te-muted); min-width:54px; }
+.te-slot-bubbles { display:flex; gap:5px; flex:1; }
+.te-slot-bubble { width:18px; height:18px; border-radius:50%; border:2px solid var(--te-border); cursor:pointer; transition:background 120ms,border-color 120ms; }
+.te-slot-bubble.is-used { background:var(--te-accent); border-color:var(--te-accent); }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media(max-width:800px){
   .te-body { flex-direction:column; }

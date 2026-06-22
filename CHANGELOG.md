@@ -6,6 +6,18 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 255
+
+### Added
+- **XP Tracker**: `XP_THRESHOLDS` constant (D&D 5e standard); `xp` field added to `CharacterModal` defaults and combat stats section; XP progress bar shows current/next-level XP with purple fill in Character Sheet
+- **Saving Throws**: calculated display below ability scores in Character Sheet — STR through CHA saves with modifier + proficiency bonus; proficient saves highlighted with accent border (`.te-ability-box.is-proficient`) and ● indicator; Passive Perception shown alongside
+- **Death Saves Tracker**: shown only when HP = 0; 3 clickable success bubbles (accent) + 3 failure bubbles (danger); click toggles individual checkmarks; Reset button clears all; data stored in `char.deathSaves`
+- **Spell Slots Tracker**: new section above spell list in Spellbook; levels 1–9 shown (empty high levels hidden); bubble-per-slot click marks used; editable max-per-level input; Reset All Slots button; data stored in `char.spellSlots`
+- **PC Lore expansion**: `renderPCLore()` now shows player-visible `nations` and `religions` (Phase 254 entities) below worlds and cultures
+- **CSS** (styles.css): `.te-ability-box.is-proficient`, `.te-death-saves`, `.te-death-save-row`, `.te-death-save-label`, `.te-save-bubble` (`.is-success`, `.is-failure`), `.te-spell-slots`, `.te-slot-row`, `.te-slot-label`, `.te-slot-bubbles`, `.te-slot-bubble` (`.is-used`)
+
+---
+
 ## [Unreleased] — Phase 254
 
 ### Added
