@@ -213,6 +213,107 @@ const XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 6
 // D&D 5e encounter XP thresholds per character by level [easy, medium, hard, deadly]
 const ENCOUNTER_XP_THRESHOLDS = [null,[25,50,75,100],[50,100,150,200],[75,150,225,400],[125,250,375,500],[250,500,750,1100],[300,600,900,1400],[350,750,1100,1700],[450,900,1400,2100],[550,1100,1600,2400],[600,1200,1900,2800],[800,1600,2400,3600],[1000,2000,3000,4500],[1100,2200,3400,5100],[1250,2500,3800,5700],[1400,2800,4300,6400],[1600,3200,4800,7200],[2000,3900,5900,8800],[2100,4200,6300,9500],[2400,4900,7300,10900],[2800,5700,8500,12700]];
 
+// ── Ancestry Hybridiser data ──────────────────────────────────────────────────
+const ANCESTRY_DATA = {
+  'Dragonborn':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:['Fire'],              traits:['Draconic Ancestry','Breath Weapon','Damage Resistance'] },
+  'Dwarf':            { size:'Medium', speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],            traits:['Darkvision','Dwarven Resilience','Stonecunning'] },
+  'Elf':              { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Keen Senses','Fey Ancestry','Trance'] },
+  'Gnome':            { size:'Small',  speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Gnome Cunning'] },
+  'Half-Elf':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Fey Ancestry','Skill Versatility'] },
+  'Half-Orc':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Menacing','Relentless Endurance','Savage Attacks'] },
+  'Halfling':         { size:'Small',  speed:25,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Lucky','Brave','Halfling Nimbleness'] },
+  'Human':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Extra Language','Skill or Feat'] },
+  'Tiefling':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Fire'],              traits:['Darkvision','Hellish Resistance','Infernal Legacy'] },
+  'Aasimar':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Necrotic','Radiant'],traits:['Darkvision','Celestial Resistance','Healing Hands','Light Bearer'] },
+  'Genasi':           { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Elemental Heritage'] },
+  'Goliath':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:["Natural Athlete","Stone's Endurance",'Powerful Build'] },
+  'Tabaxi':           { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Feline Agility',"Cat's Claws"] },
+  'Kenku':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Expert Forgery','Kenku Training','Mimicry'] },
+  'Lizardfolk':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Hold Breath','Natural Armor','Hungry Jaws'] },
+  'Triton':           { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Cold'],              traits:['Amphibious','Control Air and Water','Guardian of the Depths'] },
+  'Yuan-ti Pureblood':{ size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],           traits:['Darkvision','Innate Spellcasting','Magic Resistance'] },
+  'Firbolg':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Firbolg Magic','Hidden Step','Powerful Build'] },
+  'Bugbear':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Long-Limbed','Sneaky','Surprise Attack'] },
+  'Goblin':           { size:'Small',  speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Fury of the Small','Nimble Escape'] },
+  'Hobgoblin':        { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Martial Training','Saving Face'] },
+  'Kobold':           { size:'Small',  speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Pack Tactics','Sunlight Sensitivity'] },
+  'Orc':              { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Aggressive','Menacing','Powerful Build'] },
+  'Tortle':           { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Claws','Hold Breath','Natural Armor','Shell Defense'] },
+  'Changeling':       { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Shapechanger','Changeling Instincts'] },
+  'Kalashtar':        { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:['Psychic'],          traits:['Dual Mind','Mental Discipline','Mind Link'] },
+  'Shifter':          { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Shifting'] },
+  'Warforged':        { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:["Constructed Resilience","Sentry's Rest",'Integrated Protection'] },
+  'Centaur':          { size:'Medium', speed:40,  darkvision:0,   creatureType:'Fey',      resistance:[],                   traits:['Charge','Hooves','Equine Build'] },
+  'Loxodon':          { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Natural Armor','Powerful Build','Trunk'] },
+  'Minotaur':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Horns','Goring Rush','Hammering Horns'] },
+  'Simic Hybrid':     { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Animal Enhancement'] },
+  'Vedalken':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Tireless Precision','Partially Amphibious'] },
+  'Other':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:[] },
+};
+
+const HYBRID_TRAIT_LIBRARY = [
+  // Tier 0 — cosmetic / flavour (score 0)
+  { id:'cosmetic-feature',  name:'Distinctive Feature',   tier:0, desc:'A cosmetic heritage feature (e.g. pointed ears, scaled skin, unusual eyes). No mechanical effect.' },
+  { id:'extra-language',    name:'Extra Language',         tier:0, desc:"Know one additional language from a parent ancestry's cultural heritage." },
+  { id:'tool-proficiency',  name:'Tool Proficiency',       tier:0, desc:"Proficiency with one tool from a parent ancestry." },
+  // Tier 1 — minor (score 1)
+  { id:'skill-proficiency', name:'Skill Proficiency',      tier:1, desc:'Proficiency in one skill relevant to a parent ancestry.' },
+  { id:'keen-senses',       name:'Keen Senses',            tier:1, desc:'Proficiency in Perception.' },
+  { id:'brave',             name:'Brave',                  tier:1, desc:'Advantage on saving throws against being frightened.' },
+  { id:'lucky',             name:'Lucky',                  tier:1, desc:'When you roll a 1 on a d20 attack, check, or save, re-roll and use the new result.' },
+  { id:'powerful-build',    name:'Powerful Build',         tier:1, desc:'Count as one size larger for carrying capacity and push/drag/lift.' },
+  { id:'natural-weapon',    name:'Natural Weapon',         tier:1, desc:'Unarmed strikes deal 1d4 + STR (slashing or piercing); counts as a simple melee weapon.' },
+  { id:'hold-breath',       name:'Hold Breath',            tier:1, desc:'Can hold breath for up to 15 minutes.' },
+  { id:'minor-cantrip',     name:'Cantrip',                tier:1, desc:"Know one cantrip from a parent ancestry's spell list (spellcasting ability: INT, WIS, or CHA)." },
+  { id:'tough-hide',        name:'Tough Hide',             tier:1, desc:'Natural armour: AC equals 13 + DEX modifier when not wearing armour.' },
+  // Tier 2 — medium (score 2)
+  { id:'darkvision-60',     name:'Darkvision 60 ft',       tier:2, desc:'See in dim light as bright light and darkness as dim light out to 60 ft.' },
+  { id:'damage-resistance', name:'Damage Resistance',      tier:2, desc:'Resistance to one damage type (fire, cold, poison, necrotic, radiant, psychic, lightning, thunder, or acid).' },
+  { id:'fey-ancestry',      name:'Fey Ancestry',           tier:2, desc:'Advantage on saves against charm; magic cannot put you to sleep.' },
+  { id:'relentless-endurance', name:'Relentless Endurance',tier:2, desc:'When reduced to 0 HP but not killed outright, drop to 1 HP instead (long rest recharge).' },
+  { id:'nimble-escape',     name:'Nimble Escape',          tier:2, desc:'You can take the Disengage or Hide action as a bonus action.' },
+  { id:'savage-attacks',    name:'Savage Attacks',         tier:2, desc:'On a critical hit with a melee weapon, roll one extra damage die and add it to the damage.' },
+  { id:'aggressive',        name:'Aggressive',             tier:2, desc:'As a bonus action, move up to your speed toward a hostile creature you can see or hear.' },
+  { id:'innate-spell',      name:'Innate Spellcasting',    tier:2, desc:"Know one 1st-level spell from a parent ancestry; cast it once per long rest without a spell slot." },
+  { id:'shifting',          name:'Shifting',               tier:2, desc:'As a bonus action, assume a bestial form for 1 min and gain temp HP equal to your CON modifier.' },
+  { id:'poison-resilience', name:'Dwarven Resilience',     tier:2, desc:'Advantage on saves against poison; resistance to poison damage.' },
+  { id:'magic-resistance',  name:'Magic Resistance',       tier:2, desc:'Advantage on saving throws against spells and other magical effects.' },
+  // Tier 3 — strong (score 3)
+  { id:'flight-30',         name:'Flight Speed 30 ft',     tier:3, desc:'Flying speed of 30 ft. Cannot fly in medium or heavy armour.' },
+  { id:'darkvision-120',    name:'Darkvision 120 ft',      tier:3, desc:'See in darkness as dim light out to 120 ft.' },
+  { id:'dual-resistance',   name:'Dual Damage Resistance', tier:3, desc:"Resistance to two damage types, each from a parent ancestry's heritage." },
+  { id:'moderate-spellcasting', name:'Moderate Innate Spellcasting', tier:3, desc:'Know one 1st-level and one 2nd-level spell; cast each once per long rest without a slot.' },
+  { id:'pack-tactics',      name:'Pack Tactics',           tier:3, desc:'Advantage on attack rolls against a creature if at least one ally is adjacent to it and not incapacitated.' },
+  { id:'constructed-resilience', name:'Constructed Resilience', tier:3, desc:'Advantage vs. poison; resistance to poison; immune to disease; no food/drink/air required; immune to magical sleep.' },
+  { id:'divine-heritage',   name:'Divine Heritage',        tier:3, desc:'Celestial/fiendish lineage: advantage on saves against divine effects; healing dice treat 1s as 2s.' },
+];
+
+function computeHybridBalance(values) {
+  const traitIds = safeArr(values.traits);
+  const traitObjs = traitIds.map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+  const score = traitObjs.reduce((s, t) => s + (t.tier || 0), 0);
+  let rating;
+  if (score <= 3) rating = 'Underpowered';
+  else if (score <= 6) rating = 'Balanced';
+  else if (score <= 8) rating = 'Strong';
+  else rating = 'Overpowered';
+  const warnings = [];
+  const dvTraits = traitObjs.filter(t => t.id === 'darkvision-60' || t.id === 'darkvision-120');
+  const parentDv = [values.dominantAncestry, values.recessiveAncestry, values.thirdInfluence].filter(Boolean)
+    .some(a => (ANCESTRY_DATA[a] || {}).darkvision > 0);
+  if (dvTraits.length > 1) warnings.push('Multiple darkvision traits selected (redundant).');
+  if (dvTraits.length && parentDv) warnings.push('Darkvision trait selected but a parent ancestry already grants darkvision — consider removing.');
+  const resistTraits = traitObjs.filter(t => t.id === 'damage-resistance' || t.id === 'dual-resistance' || t.id === 'poison-resilience');
+  if (resistTraits.length > 1) warnings.push('Multiple damage resistance traits selected.');
+  const spellTraits = traitObjs.filter(t => t.id === 'minor-cantrip' || t.id === 'innate-spell' || t.id === 'moderate-spellcasting');
+  if (spellTraits.length > 1) warnings.push('Multiple innate spellcasting traits selected.');
+  if (traitIds.includes('flight-30')) warnings.push('Flight is a very strong trait — recommend DM approval before level 5.');
+  if (values.creatureType && values.creatureType !== 'Humanoid') warnings.push(`Non-humanoid type (${values.creatureType}) may affect spells and class features.`);
+  const asiTotal = Object.values(values.asi || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+  if (asiTotal > 3 && !values.asiOverride) warnings.push(`ASI total is +${asiTotal} — exceeds +3 without DM override.`);
+  return { score, rating, warnings };
+}
+
 // ── Option banks (Phase 4) ────────────────────────────────────────────────────
 const OPTION_BANKS = {
   tones:        ['Heroic','Dark & Gritty','Epic','Political Intrigue','Horror','Mystery','Comedic','Survival','Heist','Exploration','War','Redemption Arc'],
@@ -385,6 +486,7 @@ function createDefaultState() {
       timelines: [],
       reveals: [],
       loot: [],
+      hybridAncestries: [],
     },
     relationships: [],
     generatorHistory: [],
@@ -709,6 +811,19 @@ async function exportPlayerSafePacket(plugin) {
   if (visQ.length) { md += '## Active Quests\n\n'; visQ.forEach(q => { md += `### ${q.name}\n${q.playerSummary || q.summary || ''}\n\n`; }); }
   const visH = safeArr(state.entities.handouts).filter(h => h.visibility === 'player-visible');
   if (visH.length) { md += '## Handouts\n\n'; visH.forEach(h => { md += `### ${h.name}\n${h.content || h.summary || ''}\n\n`; }); }
+  const visHybrids = safeArr(state.entities.hybridAncestries).filter(h => h.visibility === 'player-visible');
+  if (visHybrids.length) {
+    md += '## Hybrid Ancestries\n\n';
+    visHybrids.forEach(h => {
+      const traitObjs = safeArr(h.traits).map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+      md += `### ${h.name}\n`;
+      md += `**Parents:** ${[h.dominantAncestry, h.recessiveAncestry].filter(Boolean).join(' × ')}\n`;
+      md += `**Size:** ${h.size || 'Medium'} | **Speed:** ${h.speed || 30} ft | **Type:** ${h.creatureType || 'Humanoid'} | **Darkvision:** ${h.darkvision || 'None'}\n`;
+      if (traitObjs.length) { md += `**Traits:** ${traitObjs.map(t => t.name).join(', ')}\n`; }
+      if (h.summary) md += `${h.summary}\n`;
+      md += '\n';
+    });
+  }
   await writeNote(plugin.app, `${dir}/player-packet.md`, md);
   new Notice(`Player packet exported to ${dir}`);
 }
@@ -956,6 +1071,7 @@ const ENTITY_ICONS = {
   maps:'🗺️', dungeons:'🕳️', timers:'⏱️', enemyTemplates:'⚔️',
   reputations:'⭐', warFronts:'🚩', incursions:'🌊', endgameStates:'🌋',
   nations:'👑', religions:'🕍', districts:'🏙️', rooms:'🚪', timelines:'📅', reveals:'💡', loot:'💰',
+  hybridAncestries:'🧬',
 };
 const ENTITY_LABELS = {
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
@@ -970,6 +1086,7 @@ const ENTITY_LABELS = {
   maps:'Map', dungeons:'Dungeon', timers:'Escalation Timer', enemyTemplates:'Enemy Template',
   reputations:'Reputation', warFronts:'War Front', incursions:'Realm Incursion', endgameStates:'Ending State',
   nations:'Nation', religions:'Religion', districts:'District', rooms:'Room', timelines:'Timeline Event', reveals:'Reveal', loot:'Loot Entry',
+  hybridAncestries:'Hybrid Ancestry',
 };
 
 function itemCards(parent, plugin, key, opts) {
@@ -1243,6 +1360,7 @@ class TTRPGMainView extends ItemView {
         { id: 'faction-matrix', icon: '🕸️', label: 'Faction Matrix' },
         { id: 'adventure',   icon: '📝', label: 'Adventures & Quests' },
         { id: 'encounters',  icon: '🎯', label: 'Encounters & Combat' },
+        { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
       ]},
       { label: 'Campaign Ops', items: [
         { id: 'rules',       icon: '⚙️', label: 'Rules & Mechanics' },
@@ -1265,6 +1383,7 @@ class TTRPGMainView extends ItemView {
         { id: 'pc-character',  icon: '📊', label: 'Character Sheet' },
         { id: 'pc-inventory',  icon: '🎒', label: 'Inventory' },
         { id: 'pc-spellbook',  icon: '📕', label: 'Spellbook' },
+        { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
       ]},
       { label: 'Campaign', items: [
         { id: 'pc-quests',     icon: '📋', label: 'Quest Log' },
@@ -1332,6 +1451,7 @@ function renderSection(main, plugin, section) {
     'pc-handouts':   renderPCHandouts,
     'pc-journal':    renderPCJournal,
     'pc-lore':       renderPCLore,
+    'hybrid-ancestry': renderHybridAncestry,
   };
   (map[section] || renderDashboard)(main, plugin);
 }
@@ -3617,6 +3737,15 @@ const ENTITY_FIELD_SCHEMAS = {
   timelines: timelineFields,
   reveals: revealFields,
   loot: lootFields,
+  hybridAncestries: [
+    { key: 'name', label: 'Name', type: 'text' },
+    { key: 'dominantAncestry', label: 'Dominant Ancestry', type: 'text' },
+    { key: 'recessiveAncestry', label: 'Recessive Ancestry', type: 'text' },
+    { key: 'size', label: 'Size', type: 'select', options: ['Tiny','Small','Medium','Large','Huge','Gargantuan'] },
+    { key: 'creatureType', label: 'Creature Type', type: 'text' },
+    { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
+    { key: 'summary', label: 'Summary', type: 'textarea' },
+  ],
 };
 
 function renderPlayerLore(parent, plugin) {
@@ -3931,6 +4060,75 @@ function renderPCLore(main, plugin) {
   }
 }
 
+// ── HYBRID ANCESTRY (Phase 257) ───────────────────────────────────────────────
+function renderHybridAncestry(main, plugin) {
+  const state = plugin.state;
+  const isPC = state.mode === 'PLAYER';
+  const all = safeArr(state.entities.hybridAncestries);
+  const visible = isPC ? all.filter(h => h.visibility !== 'dm-only') : all;
+  if (!isPC) {
+    pageHead(main, plugin, '🧬 Hybrid Ancestry Builder', 'Design and balance custom mixed-heritage ancestries for PCs and NPCs.', [
+      { label: '+ New Hybrid', primary: true, onClick: () => new HybridAncestryModal(plugin.app, plugin).open() },
+    ]);
+    const sg = ce(main, 'div', 'te-stat-grid');
+    const approved = all.filter(h => h.approvalStatus === 'DM Approved');
+    const pending = all.filter(h => !h.approvalStatus || h.approvalStatus === 'Pending Review');
+    [['Total Hybrids', all.length], ['DM Approved', approved.length], ['Pending Review', pending.length]].forEach(([l, v]) => {
+      const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', v); ce(sc, 'div', 'te-stat-label', l);
+    });
+  } else {
+    pageHead(main, plugin, '🧬 Hybrid Ancestry', 'Player-visible hybrid ancestries shared by your DM.');
+  }
+  sectionHead(main, isPC ? 'Available Ancestries' : 'All Hybrid Ancestries');
+  if (!visible.length) {
+    emptyState(main, 'No hybrid ancestries yet.', isPC ? 'Your DM will share ancestries here.' : 'Click "+ New Hybrid" to design your first hybrid ancestry.');
+    return;
+  }
+  const g = ce(main, 'div', 'te-grid');
+  visible.filter(h => matchesSearch(h, state.search)).forEach(h => {
+    const balance = computeHybridBalance(h);
+    const c = ce(g, 'div', 'te-card');
+    const hd = ce(c, 'div', 'te-card-head');
+    ce(hd, 'span', 'te-card-icon', '🧬');
+    ce(hd, 'h3', 'te-card-title', h.name || 'Untitled Hybrid');
+    if (!isPC && h.approvalStatus) {
+      const badge = ce(hd, 'span', 'te-chip', h.approvalStatus);
+      badge.style.cssText = 'margin-left:auto;font-size:.75rem;flex-shrink:0';
+    }
+    const meta = ce(c, 'div', 'te-card-meta');
+    const parents = [h.dominantAncestry, h.recessiveAncestry].filter(Boolean).join(' × ');
+    if (parents) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Parents'); ce(r, 'span', '', parents); }
+    [['Size', h.size], ['Type', h.creatureType]].forEach(([k, v]) => {
+      if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v);
+    });
+    // Balance bar
+    const bmRow = ce(c, 'div', 'te-balance-row');
+    const bmBar = ce(bmRow, 'div', 'te-balance-meter');
+    const pct = Math.min(100, Math.round((balance.score / 10) * 100));
+    const bmFill = ce(bmBar, 'div', 'te-balance-fill');
+    bmFill.style.width = pct + '%';
+    bmFill.classList.add({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[balance.rating] || '');
+    ce(bmRow, 'span', 'te-balance-label', `${balance.rating} (${balance.score})`);
+    if (!isPC && balance.warnings.length) {
+      const wEl = ce(c, 'div', 'te-hybrid-warning-badge');
+      wEl.title = balance.warnings.join('\n');
+      wEl.textContent = `⚠️ ${balance.warnings.length} warning${balance.warnings.length > 1 ? 's' : ''}`;
+    }
+    if (h.summary) ce(c, 'p', 'te-card-body', h.summary.slice(0, 120));
+    const acts = ce(c, 'div', 'te-card-actions');
+    if (!isPC) {
+      btn(acts, 'Edit', 'te-btn is-sm is-primary', () => new HybridAncestryModal(plugin.app, plugin, h).open());
+      btn(acts, 'Use as PC', 'te-btn is-sm', () => new CharacterModal(plugin.app, plugin, { race: h.name }).open());
+      btn(acts, 'Use as NPC', 'te-btn is-sm', () => new NPCModal(plugin.app, plugin, { race: h.name }).open());
+      btn(acts, '× Delete', 'te-btn is-sm is-danger', async () => {
+        removeItem(state, 'hybridAncestries', h.id);
+        await plugin.saveState();
+        new Notice(`"${h.name}" deleted.`);
+      });
+    }
+  });
+}
+
 // ── MODALS ────────────────────────────────────────────────────────────────────
 
 // GenericModal — driven by a field definition array
@@ -4036,7 +4234,8 @@ class NPCModal extends Modal {
     const raceIn = new Setting(s1).setName('Race / Ancestry').addText(t => {
       const list = contentEl.createEl('datalist');
       list.id = `npc-race-${this.values.id}`;
-      ANCESTRIES.forEach(a => { const opt = list.createEl('option'); opt.value = a; });
+      const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
+      [...ANCESTRIES, ...hybridNames].forEach(a => { const opt = list.createEl('option'); opt.value = a; });
       t.inputEl.setAttribute('list', list.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
@@ -4805,7 +5004,8 @@ class CharacterModal extends Modal {
     // Race datalist
     new Setting(s1).setName('Race / Ancestry').addText(t => {
       const dl = s1.createEl('datalist'); dl.id = 'char-race-dl';
-      ANCESTRIES.forEach(a => { const o = dl.createEl('option'); o.value = a; });
+      const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
+      [...ANCESTRIES, ...hybridNames].forEach(a => { const o = dl.createEl('option'); o.value = a; });
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
@@ -4890,6 +5090,236 @@ class CharacterModal extends Modal {
       new Notice(`Character "${this.values.name}" saved.`);
       this.close();
     }, 'Save Character');
+  }
+}
+
+// ── HybridAncestryModal (Phase 257) ──────────────────────────────────────────
+class HybridAncestryModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('hybrid'), name: '', dominantAncestry: '', recessiveAncestry: '', thirdInfluence: '',
+      visibility: 'dm-only', status: 'Draft', approvalStatus: 'Pending Review',
+      size: 'Medium', speed: 30, ageNotes: '', creatureType: 'Humanoid',
+      languages: [], darkvision: 'None',
+      asiMethod: 'Flexible (+2/+1 or +1/+1/+1)', asi: {}, asiOverride: false,
+      traits: [], traitBudget: 6,
+      appearance: '', dominantCulture: '', recessiveCulture: '', raisedCulture: '', namingConventions: '',
+      playerNotes: '', summary: '',
+      dmNotes: '', balanceNotes: '', balanceRating: '', balanceScore: 0, warnings: [],
+      linkedNotePath: '', syncStatus: 'Local',
+      createdAt: new Date().toISOString(), updatedAt: '', archived: false,
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Hybrid Ancestry` });
+
+    // Section 1: Identity
+    const s1 = ce(contentEl, 'div', 'te-modal-section');
+    s1.createEl('h3', { text: 'Identity' });
+    addField(s1, 'Ancestry Name *', this.values.name, v => this.values.name = v);
+    const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries)
+      .filter(h => h.id !== this.values.id).map(h => h.name);
+    const allAncOptions = [...ANCESTRIES, ...hybridNames];
+    const makeAncDl = (suffix, val, setter) => {
+      new Setting(s1).setName(suffix).addText(t => {
+        const dl = s1.createEl('datalist'); dl.id = `hybrid-${this.values.id}-${suffix.toLowerCase().replace(/\s+/g,'-')}`;
+        allAncOptions.forEach(a => { const o = dl.createEl('option'); o.value = a; });
+        t.inputEl.setAttribute('list', dl.id);
+        t.setValue(val || '');
+        t.onChange(setter);
+      });
+    };
+    makeAncDl('Dominant Ancestry', this.values.dominantAncestry, v => this.values.dominantAncestry = v);
+    makeAncDl('Recessive Ancestry', this.values.recessiveAncestry, v => this.values.recessiveAncestry = v);
+    makeAncDl('Third Influence (optional)', this.values.thirdInfluence, v => this.values.thirdInfluence = v);
+    addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
+    addSelect(s1, 'Status', this.values.status, ['Draft','Active','Deprecated','Archived'], v => this.values.status = v);
+    addSelect(s1, 'Approval Status', this.values.approvalStatus, ['Pending Review','DM Approved','Player Approved','Rejected'], v => this.values.approvalStatus = v);
+
+    // Section 2: Parent Ancestry Reference
+    const s2 = ce(contentEl, 'div', 'te-modal-section');
+    s2.createEl('h3', { text: 'Parent Ancestry Reference' });
+    const refGrid = ce(s2, 'div', '');
+    refGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px';
+    ['dominant','recessive'].forEach(role => {
+      const key = role === 'dominant' ? this.values.dominantAncestry : this.values.recessiveAncestry;
+      const data = key ? ANCESTRY_DATA[key] : null;
+      const cell = ce(refGrid, 'div', 'te-card'); cell.style.cssText = 'padding:10px;font-size:.85rem';
+      ce(cell, 'strong', '', `${role.charAt(0).toUpperCase()+role.slice(1)}: ${key || '—'}`);
+      if (data) {
+        ce(cell, 'p', 'te-progress-label', `Size: ${data.size} • Speed: ${data.speed} ft • DV: ${data.darkvision ? data.darkvision+' ft' : 'None'}`);
+        if (data.resistance && data.resistance.length) ce(cell, 'p', 'te-progress-label', `Resistance: ${data.resistance.join(', ')}`);
+        if (data.traits && data.traits.length) ce(cell, 'p', 'te-progress-label', `Traits: ${data.traits.join(', ')}`);
+      } else {
+        ce(cell, 'p', 'te-progress-label', 'Enter an ancestry name above to see reference data.');
+      }
+    });
+    ce(s2, 'p', 'te-progress-label', 'Reference only. Actual mechanics are set in the sections below.');
+
+    // Section 3: Core Basics
+    const s3 = ce(contentEl, 'div', 'te-modal-section');
+    s3.createEl('h3', { text: 'Core Basics' });
+    addSelect(s3, 'Size', this.values.size, SIZES, v => this.values.size = v);
+    addNumber(s3, 'Speed (ft)', this.values.speed || 30, v => this.values.speed = v);
+    addSelect(s3, 'Creature Type', this.values.creatureType, CREATURE_TYPES, v => this.values.creatureType = v);
+    addSelect(s3, 'Darkvision', this.values.darkvision || 'None', ['None','30 ft','60 ft','90 ft','120 ft'], v => this.values.darkvision = v);
+    chipField(s3, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial'] });
+    addField(s3, 'Age & Lifespan Notes', this.values.ageNotes, v => this.values.ageNotes = v);
+
+    // Section 4: Ability Score Improvements
+    const s4 = ce(contentEl, 'div', 'te-modal-section');
+    s4.createEl('h3', { text: 'Ability Score Improvements' });
+    addSelect(s4, 'ASI Method', this.values.asiMethod, ['Flexible (+2/+1 or +1/+1/+1)','Standard (+2/+1)','Manual','Lineage Match'], v => this.values.asiMethod = v);
+    ce(s4, 'p', 'te-progress-label', 'Assign ASI bonuses below. Total should not exceed +3 without DM override (toggle below).');
+    const asiGrid = ce(s4, 'div', '');
+    asiGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
+    const asiVals = this.values.asi || {};
+    ['str','dex','con','int','wis','cha'].forEach(ab => {
+      const w = ce(asiGrid, 'div', '');
+      new Setting(w).setName(ab.toUpperCase()).addText(t => {
+        t.inputEl.type = 'number'; t.inputEl.min = '0'; t.inputEl.max = '4';
+        t.setValue(String(asiVals[ab] || 0));
+        t.onChange(v => { if (!this.values.asi) this.values.asi = {}; this.values.asi[ab] = parseInt(v) || 0; });
+      });
+    });
+    const asiTotal = Object.values(asiVals).reduce((s, v) => s + (parseInt(v) || 0), 0);
+    ce(s4, 'p', 'te-progress-label', `Current ASI total: +${asiTotal}${asiTotal > 3 ? ' ⚠️ Exceeds +3' : ' ✓'}`);
+    new Setting(s4).setName('DM Override — allow ASI > +3').addToggle(t => {
+      t.setValue(this.values.asiOverride || false);
+      t.onChange(v => this.values.asiOverride = v);
+    });
+
+    // Section 5: Traits
+    const s5 = ce(contentEl, 'div', 'te-modal-section');
+    s5.createEl('h3', { text: 'Traits' });
+    const balance = computeHybridBalance(this.values);
+    const bmWrap = ce(s5, 'div', 'te-balance-row'); bmWrap.style.marginBottom = '8px';
+    const bmBar = ce(bmWrap, 'div', 'te-balance-meter');
+    const bPct = Math.min(100, Math.round((balance.score / 10) * 100));
+    const bmFill = ce(bmBar, 'div', 'te-balance-fill');
+    bmFill.style.width = bPct + '%';
+    bmFill.classList.add({ Underpowered:'is-weak', Balanced:'is-balanced', Strong:'is-strong', Overpowered:'is-over' }[balance.rating] || '');
+    ce(bmWrap, 'span', 'te-balance-label', `Balance: ${balance.rating} (${balance.score}/10)`);
+    if (balance.warnings.length) {
+      const wBox = ce(s5, 'div', 'te-hybrid-warning-box');
+      balance.warnings.forEach(w => { const d = ce(wBox, 'div', 'te-hybrid-warning-item'); d.textContent = `⚠️ ${w}`; });
+    }
+    ce(s5, 'p', 'te-progress-label', 'Tier 0 = cosmetic (0 pts) • Tier 1 = minor (1 pt) • Tier 2 = medium (2 pts) • Tier 3 = strong (3 pts). Balanced: 4–6 pts total. Hover a trait for its description.');
+    const tierNames = ['Tier 0 — Cosmetic / Flavour','Tier 1 — Minor','Tier 2 — Medium','Tier 3 — Strong'];
+    [0,1,2,3].forEach(tier => {
+      const tierTraits = HYBRID_TRAIT_LIBRARY.filter(t => t.tier === tier);
+      if (!tierTraits.length) return;
+      ce(s5, 'div', 'te-quest-status-head', tierNames[tier]);
+      const tGrid = ce(s5, 'div', '');
+      tGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:10px';
+      tierTraits.forEach(trait => {
+        const isOn = safeArr(this.values.traits).includes(trait.id);
+        const row = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
+        row.title = trait.desc;
+        const cb = ce(row, 'input'); cb.type = 'checkbox'; cb.checked = isOn;
+        const lbl = ce(row, 'label', '');
+        lbl.style.cssText = 'cursor:pointer;margin-left:6px;font-size:.84rem;flex:1';
+        ce(lbl, 'strong', '', trait.name);
+        ce(lbl, 'span', 'te-muted-text', ` (+${tier})`);
+        const toggle = () => {
+          const cur = safeArr(this.values.traits);
+          if (cb.checked) { if (!cur.includes(trait.id)) this.values.traits = [...cur, trait.id]; }
+          else { this.values.traits = cur.filter(id => id !== trait.id); }
+          row.classList.toggle('is-active', cb.checked);
+        };
+        cb.addEventListener('change', toggle);
+        lbl.addEventListener('click', () => { cb.checked = !cb.checked; toggle(); });
+      });
+    });
+
+    // Section 6: Culture & Appearance
+    const s6 = ce(contentEl, 'div', 'te-modal-section');
+    s6.createEl('h3', { text: 'Culture & Appearance' });
+    addField(s6, 'Appearance', this.values.appearance, v => this.values.appearance = v, 'textarea');
+    addField(s6, 'Dominant Culture', this.values.dominantCulture, v => this.values.dominantCulture = v);
+    addField(s6, 'Recessive Culture', this.values.recessiveCulture, v => this.values.recessiveCulture = v);
+    addField(s6, 'Raised In', this.values.raisedCulture, v => this.values.raisedCulture = v);
+    addField(s6, 'Naming Conventions', this.values.namingConventions, v => this.values.namingConventions = v, 'textarea');
+
+    // Section 7: Player Notes
+    const s7 = ce(contentEl, 'div', 'te-modal-section');
+    s7.createEl('h3', { text: 'Player Notes' });
+    addField(s7, 'Summary / Lore Blurb (player-visible)', this.values.summary, v => this.values.summary = v, 'textarea');
+    addField(s7, 'Player Notes', this.values.playerNotes, v => this.values.playerNotes = v, 'textarea');
+
+    // Section 8: DM Notes
+    const s8 = ce(contentEl, 'div', 'te-modal-section');
+    s8.createEl('h3', { text: 'DM Notes' });
+    addField(s8, 'DM Notes (hidden from players)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
+    addField(s8, 'Balance Notes', this.values.balanceNotes, v => this.values.balanceNotes = v, 'textarea');
+    addField(s8, 'Linked Note Path', this.values.linkedNotePath, v => this.values.linkedNotePath = v);
+
+    // Action row
+    const actRow = ce(contentEl, 'div', 'te-card-actions');
+    actRow.style.cssText = 'flex-wrap:wrap;gap:6px;margin:12px 0';
+    btn(actRow, 'Use for New PC', 'te-btn is-sm', () => new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name || 'Hybrid' }).open());
+    btn(actRow, 'Use for New NPC', 'te-btn is-sm', () => new NPCModal(this.plugin.app, this.plugin, { race: this.values.name || 'Hybrid' }).open());
+    btn(actRow, 'Save as Homebrew', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
+      const hb = { id: uid('homebrew'), name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
+      upsert(this.plugin.state, 'homebrew', hb);
+      await this.plugin.saveState();
+      new Notice(`Homebrew entry "${hb.name}" created.`);
+    });
+    btn(actRow, 'Save as Compendium', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
+      const entry = { id: uid('comp'), name: this.values.name, category: 'Ancestry', content: this._toMarkdown(), tags: ['hybrid'], visibility: 'player-visible', createdAt: new Date().toISOString() };
+      upsert(this.plugin.state, 'compendium', entry);
+      await this.plugin.saveState();
+      new Notice(`Compendium entry "${entry.name}" created.`);
+    });
+    btn(actRow, 'Export Player-Safe', 'te-btn is-sm', async () => {
+      if (!this.values.name.trim()) { new Notice('Save the hybrid first.'); return; }
+      const folder = campaignFolder(this.plugin);
+      await ensureFolder(this.plugin.app, folder);
+      const fname = this.values.name.replace(/[\\/:*?"<>|]/g, '_');
+      await writeNote(this.plugin.app, `${folder}/${fname}-ancestry.md`, this._toMarkdown(true));
+      new Notice(`Player-safe ancestry note exported.`);
+    });
+
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Ancestry name is required.'); return; }
+      const b = computeHybridBalance(this.values);
+      this.values.balanceRating = b.rating;
+      this.values.balanceScore = b.score;
+      this.values.warnings = b.warnings;
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = new Date().toISOString();
+      upsert(this.plugin.state, 'hybridAncestries', this.values);
+      await this.plugin.saveState();
+      new Notice(`Hybrid ancestry "${this.values.name}" saved.`);
+      this.close();
+    }, 'Save Hybrid');
+  }
+  _toMarkdown(playerSafe) {
+    const v = this.values;
+    const traitObjs = safeArr(v.traits).map(id => HYBRID_TRAIT_LIBRARY.find(t => t.id === id)).filter(Boolean);
+    let md = `# ${v.name || 'Hybrid Ancestry'}\n\n`;
+    md += `**Parents:** ${[v.dominantAncestry, v.recessiveAncestry].filter(Boolean).join(' × ')}`;
+    if (v.thirdInfluence) md += ` (with ${v.thirdInfluence} influence)`;
+    md += `\n\n**Size:** ${v.size} | **Speed:** ${v.speed} ft | **Type:** ${v.creatureType} | **Darkvision:** ${v.darkvision || 'None'}\n\n`;
+    const asiEntries = Object.entries(v.asi || {}).filter(([, val]) => parseInt(val) > 0);
+    if (asiEntries.length) md += `**ASI:** ${asiEntries.map(([k, val]) => `+${val} ${k.toUpperCase()}`).join(', ')}\n\n`;
+    if (safeArr(v.languages).length) md += `**Languages:** ${v.languages.join(', ')}\n\n`;
+    if (traitObjs.length) { md += `## Traits\n\n`; traitObjs.forEach(t => { md += `### ${t.name} *(Tier ${t.tier})*\n${t.desc}\n\n`; }); }
+    if (v.appearance) md += `## Appearance\n${v.appearance}\n\n`;
+    if (v.summary) md += `## Lore\n${v.summary}\n\n`;
+    if (v.playerNotes) md += `## Player Notes\n${v.playerNotes}\n\n`;
+    if (!playerSafe && v.dmNotes) md += `## DM Notes\n${v.dmNotes}\n\n`;
+    if (!playerSafe && v.balanceNotes) md += `## Balance Notes\n${v.balanceNotes}\n\n`;
+    if (!playerSafe) md += `## Balance Rating\n**${v.balanceRating}** (score: ${v.balanceScore}/10)\n\n`;
+    return md;
   }
 }
 

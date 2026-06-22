@@ -254,6 +254,24 @@
 .te-slot-bubble { width:18px; height:18px; border-radius:50%; border:2px solid var(--te-border); cursor:pointer; transition:background 120ms,border-color 120ms; }
 .te-slot-bubble.is-used { background:var(--te-accent); border-color:var(--te-accent); }
 
+/* ── Hybrid Ancestry — Phase 257 ─────────────────────────────────────────── */
+.te-balance-row { display:flex; align-items:center; gap:10px; margin:6px 0; }
+.te-balance-meter { flex:1; height:8px; background:var(--te-border); border-radius:4px; overflow:hidden; }
+.te-balance-fill { height:100%; border-radius:4px; transition:width 200ms; background:var(--te-muted); }
+.te-balance-fill.is-weak     { background:var(--te-muted); }
+.te-balance-fill.is-balanced { background:var(--te-success); }
+.te-balance-fill.is-strong   { background:var(--color-yellow, #f5a623); }
+.te-balance-fill.is-over     { background:var(--te-danger); }
+.te-balance-label { font-size:.82rem; color:var(--te-muted); white-space:nowrap; }
+.te-trait-chip { display:flex; align-items:flex-start; gap:4px; padding:6px 8px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); cursor:pointer; transition:border-color 120ms,background 120ms; }
+.te-trait-chip:hover { border-color:var(--te-accent); }
+.te-trait-chip.is-active { border-color:var(--te-accent); background:color-mix(in srgb, var(--te-accent) 10%, transparent); }
+.te-muted-text { color:var(--te-muted); font-weight:400; }
+.te-hybrid-warning-box { background:color-mix(in srgb, var(--te-danger) 8%, transparent); border:1px solid var(--te-danger); border-radius:var(--te-r-sm); padding:8px 10px; margin:6px 0; }
+.te-hybrid-warning-item { font-size:.83rem; color:var(--te-danger); margin-bottom:3px; }
+.te-hybrid-warning-item:last-child { margin-bottom:0; }
+.te-hybrid-warning-badge { font-size:.8rem; color:var(--te-danger); padding:2px 6px; border:1px solid var(--te-danger); border-radius:var(--te-r-sm); display:inline-block; margin:4px 0; }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media(max-width:800px){
   .te-body { flex-direction:column; }

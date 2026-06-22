@@ -6,6 +6,17 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 257
+
+### Added
+- **Race/Ancestry Hybridiser**: `hybridAncestries` entity; `ANCESTRY_DATA` constant (size, speed, darkvision, creature type, resistance, and traits for all 34 built-in ancestries); `HYBRID_TRAIT_LIBRARY` (30 traits across 4 tiers: cosmetic, minor, medium, strong); `computeHybridBalance()` (score 0–10, ratings: Underpowered / Balanced / Strong / Overpowered, auto-generates warnings for duplicate darkvision, stacked resistances, multiple spellcasting, flight, non-humanoid type, and ASI > +3)
+- **Hybrid Ancestry page**: Available in both DM Engine (World & Story nav group) and PC Companion (Character nav group) as `hybrid-ancestry` section; DM view shows stat summary (total/approved/pending) and full card grid with balance bar + warning badge; PC view shows player-visible ancestries only
+- **HybridAncestryModal**: 8-section form — Identity (name, parent ancestries, third influence, visibility, status, approval status), Parent Ancestry Reference (auto-populated ANCESTRY_DATA cards for dominant and recessive parents), Core Basics (size, speed, creature type, darkvision, languages, age notes), Ability Score Improvements (method select, per-score inputs, total counter, DM override toggle), Traits (tiered checkbox picker with live balance bar and warning box), Culture & Appearance, Player Notes, DM Notes; action buttons: Use for New PC, Use for New NPC, Save as Homebrew, Save as Compendium, Export Player-Safe (writes Markdown note)
+- **Integration**: `CharacterModal` and `NPCModal` ancestry datalists now include names of saved hybrid ancestries; `exportPlayerSafePacket` includes player-visible hybrids section with trait list and summary
+- **CSS**: `.te-balance-row`, `.te-balance-meter`, `.te-balance-fill` (`.is-weak`, `.is-balanced`, `.is-strong`, `.is-over`), `.te-balance-label`, `.te-trait-chip` (`.is-active`), `.te-muted-text`, `.te-hybrid-warning-box`, `.te-hybrid-warning-item`, `.te-hybrid-warning-badge`
+
+---
+
 ## [Unreleased] — Phase 256
 
 ### Added
