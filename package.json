@@ -7,9 +7,14 @@
   "author": "Andrew Edwards",
   "license": "MIT",
   "scripts": {
+    "check": "node --check main.js",
     "lint": "eslint main.js",
     "lint:fix": "eslint main.js --fix",
-    "check": "node --check main.js"
+    "validate": "node scripts/validate-manifest.mjs",
+    "check-release": "node scripts/check-release-files.mjs",
+    "test": "node tests/tile-map.test.js",
+    "release": "npm run check && npm run check-release && node scripts/package-release.mjs",
+    "version-bump": "node scripts/version-bump.mjs"
   },
   "keywords": [
     "obsidian",
