@@ -6,6 +6,21 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 254
+
+### Added
+- 7 new entity types: `nations`, `religions`, `districts`, `rooms`, `timelines`, `reveals`, `loot`
+- All 7 entities added to `createDefaultState()` (auto-migrated via existing `migrateState` loop)
+- Full field schema arrays for each entity, registered in `ENTITY_FIELD_SCHEMAS`
+- `ENTITY_ICONS` and `ENTITY_LABELS` entries for all 7 types (card rendering, empty-state labels)
+- **World & Lore**: Nations and Religions sections; `+ Nation` / `+ Religion` pageHead buttons
+- **Geography & Maps**: Districts (under Settlements) and Rooms (under Locations) sections with pageHead buttons
+- **Sessions & Timeline**: Timeline Events section; `+ Timeline Event` pageHead button
+- **Secrets & Reveals**: Reveals section between Secrets and Handouts; `+ Reveal` pageHead button
+- **Encounters & Combat**: Loot section below Encounters; `+ Loot` pageHead button
+
+---
+
 ## [Unreleased] — Phase 253
 
 ### Fixed

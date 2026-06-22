@@ -373,6 +373,14 @@ function createDefaultState() {
       warFronts: [],
       incursions: [],
       endgameStates: [],
+      // Phase 254 entity types
+      nations: [],
+      religions: [],
+      districts: [],
+      rooms: [],
+      timelines: [],
+      reveals: [],
+      loot: [],
     },
     relationships: [],
     generatorHistory: [],
@@ -909,6 +917,7 @@ const ENTITY_ICONS = {
   characters:'🧙', calendars:'📆', journals:'📓',
   maps:'🗺️', dungeons:'🕳️', timers:'⏱️', enemyTemplates:'⚔️',
   reputations:'⭐', warFronts:'🚩', incursions:'🌊', endgameStates:'🌋',
+  nations:'👑', religions:'🕍', districts:'🏙️', rooms:'🚪', timelines:'📅', reveals:'💡', loot:'💰',
 };
 const ENTITY_LABELS = {
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
@@ -922,6 +931,7 @@ const ENTITY_LABELS = {
   tables:'Table', characters:'Character', calendars:'Calendar', journals:'Journal',
   maps:'Map', dungeons:'Dungeon', timers:'Escalation Timer', enemyTemplates:'Enemy Template',
   reputations:'Reputation', warFronts:'War Front', incursions:'Realm Incursion', endgameStates:'Ending State',
+  nations:'Nation', religions:'Religion', districts:'District', rooms:'Room', timelines:'Timeline Event', reveals:'Reveal', loot:'Loot Entry',
 };
 
 function itemCards(parent, plugin, key, opts) {
@@ -1554,6 +1564,8 @@ function renderWorld(main, plugin) {
     { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
     { label: '+ Culture', onClick: () => new GenericModal(plugin.app, plugin, 'cultures', null, cultureFields).open() },
     { label: '+ Language', onClick: () => new GenericModal(plugin.app, plugin, 'languages', null, langFields).open() },
+    { label: '+ Nation', onClick: () => new GenericModal(plugin.app, plugin, 'nations', null, nationFields).open() },
+    { label: '+ Religion', onClick: () => new GenericModal(plugin.app, plugin, 'religions', null, religionFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
   ]);
 
@@ -1573,6 +1585,10 @@ function renderWorld(main, plugin) {
   const cals = safeArr(plugin.state.entities.calendars).concat(plugin.state.calendar && plugin.state.calendar.name ? [plugin.state.calendar] : []);
   if (!cals.length) { emptyState(main, 'No calendars yet.', 'Use the Calendar button above to create one.'); }
   else itemCards(main, plugin, 'calendars', { meta: ['year', 'month', 'day'] });
+  sectionHead(main, 'Nations');
+  itemCards(main, plugin, 'nations', { meta: ['type', 'ruler', 'capital'] });
+  sectionHead(main, 'Religions');
+  itemCards(main, plugin, 'religions', { meta: ['type', 'deity', 'alignment'] });
 }
 
 // Field definitions for generic modals
@@ -1642,6 +1658,8 @@ function renderGeography(main, plugin) {
     { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Location', onClick: () => new GenericModal(plugin.app, plugin, 'locations', null, locationFields).open() },
+    { label: '+ District', onClick: () => new GenericModal(plugin.app, plugin, 'districts', null, districtFields).open() },
+    { label: '+ Room', onClick: () => new GenericModal(plugin.app, plugin, 'rooms', null, roomFields).open() },
     { label: '+ POI', onClick: () => new GenericModal(plugin.app, plugin, 'pois', null, poiFields).open() },
     { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
   ]);
@@ -1694,8 +1712,12 @@ function renderGeography(main, plugin) {
   itemCards(main, plugin, 'regions', { meta: ['terrain', 'climate', 'population'] });
   sectionHead(main, 'Settlements');
   itemCards(main, plugin, 'settlements', { meta: ['type', 'population', 'region'] });
+  sectionHead(main, 'Districts');
+  itemCards(main, plugin, 'districts', { meta: ['type', 'settlementId', 'atmosphere'] });
   sectionHead(main, 'Locations');
   itemCards(main, plugin, 'locations', { meta: ['type', 'parent'] });
+  sectionHead(main, 'Rooms');
+  itemCards(main, plugin, 'rooms', { meta: ['type', 'locationId'] });
   sectionHead(main, 'Points of Interest');
   itemCards(main, plugin, 'pois', { meta: ['type', 'location'] });
   sectionHead(main, 'Routes');
@@ -2404,6 +2426,7 @@ const adventureFields = [
 function renderEncounters(main, plugin) {
   pageHead(main, plugin, 'Encounters & Combat', 'Encounter builder, initiative tracker, and combat tools.', [
     { label: '+ Encounter', primary: true, onClick: () => new EncounterModal(plugin.app, plugin).open() },
+    { label: '+ Loot', onClick: () => new GenericModal(plugin.app, plugin, 'loot', null, lootFields).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
 
@@ -2413,6 +2436,8 @@ function renderEncounters(main, plugin) {
 
   sectionHead(main, 'Encounters');
   itemCards(main, plugin, 'encounters', { meta: ['type', 'difficulty', 'location', 'linkedQuest'] });
+  sectionHead(main, 'Loot');
+  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status'] });
 }
 
 function renderInitiativeTracker(parent, plugin) {
@@ -2567,6 +2592,7 @@ function renderSessions(main, plugin) {
     { label: '+ Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '▶ Run / Resume', run: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones', null, milestoneFields).open() },
+    { label: '+ Timeline Event', onClick: () => new GenericModal(plugin.app, plugin, 'timelines', null, timelineFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
   ]);
 
@@ -2594,6 +2620,8 @@ function renderSessions(main, plugin) {
   });
   sectionHead(main, 'Milestones');
   itemCards(main, plugin, 'milestones', { meta: ['type', 'achieved'] });
+  sectionHead(main, 'Timeline Events');
+  itemCards(main, plugin, 'timelines', { meta: ['date', 'era', 'type'] });
 }
 
 const milestoneFields = [
@@ -2608,11 +2636,14 @@ const milestoneFields = [
 function renderSecrets(main, plugin) {
   pageHead(main, plugin, 'Secrets & Reveals', 'DM-only secrets, reveal tracking, and player-safe handouts.', [
     { label: '+ Secret', primary: true, onClick: () => new SecretModal(plugin.app, plugin).open() },
+    { label: '+ Reveal', onClick: () => new GenericModal(plugin.app, plugin, 'reveals', null, revealFields).open() },
     { label: '+ Handout', onClick: () => new GenericModal(plugin.app, plugin, 'handouts', null, handoutFields).open() },
     { label: '📤 Export Player Packet', onClick: () => exportPlayerSafePacket(plugin) },
   ]);
   sectionHead(main, 'Secrets (DM Only)');
   itemCards(main, plugin, 'secrets', { meta: ['secretType', 'revealStatus', 'revealTrigger'] });
+  sectionHead(main, 'Reveals');
+  itemCards(main, plugin, 'reveals', { meta: ['status', 'session', 'secretId'] });
   sectionHead(main, 'Handouts');
   itemCards(main, plugin, 'handouts', {
     meta: ['type', 'visibility', 'linkedSession'],
@@ -3346,6 +3377,88 @@ const endgameStateFields = [
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
+const nationFields = [
+  { key: 'name', label: 'Nation Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Empire','Kingdom','Republic','City-State','Confederation','Theocracy','Tribal Land','Occupied Territory','Other'] },
+  { key: 'ruler', label: 'Ruler / Leader', type: 'text' },
+  { key: 'capital', label: 'Capital', type: 'text' },
+  { key: 'government', label: 'Government', type: 'text' },
+  { key: 'population', label: 'Population', type: 'text' },
+  { key: 'military', label: 'Military Strength', type: 'text' },
+  { key: 'economy', label: 'Economy', type: 'text' },
+  { key: 'allies', label: 'Allies (chip)', type: 'chip' },
+  { key: 'enemies', label: 'Enemies (chip)', type: 'chip' },
+  { key: 'history', label: 'History', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const religionFields = [
+  { key: 'name', label: 'Religion Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Monotheistic','Polytheistic','Animistic','Druidic','Ancestor Worship','Cult','Secret Society','Philosophical','Other'] },
+  { key: 'deity', label: 'Primary Deity / Focus', type: 'text' },
+  { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
+  { key: 'domain', label: 'Domain / Aspect', type: 'text' },
+  { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
+  { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
+  { key: 'holyDays', label: 'Holy Days', type: 'text' },
+  { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
+  { key: 'temples', label: 'Temples / Holy Sites (chip)', type: 'chip' },
+  { key: 'restrictions', label: 'Taboos & Restrictions', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const districtFields = [
+  { key: 'name', label: 'District Name', type: 'text' },
+  { key: 'settlementId', label: 'Settlement', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Market','Residential','Noble Quarter','Docks','Temple District','Slums','Military','Industrial','Foreign Quarter','Ruined','Underground','Other'] },
+  { key: 'population', label: 'Population', type: 'text' },
+  { key: 'atmosphere', label: 'Atmosphere', type: 'text' },
+  { key: 'notableLocations', label: 'Notable Locations (chip)', type: 'chip' },
+  { key: 'factions', label: 'Active Factions (chip)', type: 'chip' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const roomFields = [
+  { key: 'name', label: 'Room Name', type: 'text' },
+  { key: 'locationId', label: 'Location / Dungeon', type: 'text' },
+  { key: 'type', label: 'Room Type', type: 'select', options: ['Entrance','Corridor','Chamber','Guard Post','Secret Room','Boss Chamber','Treasure Room','Trap Room','Rest Area','Shrine','Prison','Workshop','Library','Other'] },
+  { key: 'features', label: 'Features (chip)', type: 'chip' },
+  { key: 'traps', label: 'Traps', type: 'textarea' },
+  { key: 'loot', label: 'Loot / Treasure', type: 'textarea' },
+  { key: 'connections', label: 'Connected Rooms (chip)', type: 'chip' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const timelineFields = [
+  { key: 'name', label: 'Event Name', type: 'text' },
+  { key: 'date', label: 'In-World Date', type: 'text' },
+  { key: 'era', label: 'Era / Age', type: 'text' },
+  { key: 'type', label: 'Event Type', type: 'select', options: ['World Event','Campaign Event','Session Event','Character Event','Faction Event','Discovery','Battle','Political','Catastrophe','Other'] },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'impact', label: 'World Impact', type: 'textarea' },
+  { key: 'linkedSessionId', label: 'Linked Session', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const revealFields = [
+  { key: 'name', label: 'Reveal Name', type: 'text' },
+  { key: 'secretId', label: 'Related Secret', type: 'text' },
+  { key: 'status', label: 'Status', type: 'select', options: ['Pending','Delivered','Deflected','Spoiled','Skipped'] },
+  { key: 'session', label: 'Delivery Session', type: 'text' },
+  { key: 'trigger', label: 'Trigger / Method', type: 'textarea' },
+  { key: 'effect', label: 'Story Effect', type: 'textarea' },
+  { key: 'playerReaction', label: 'Player Reaction', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const lootFields = [
+  { key: 'name', label: 'Item Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Weapon','Armour','Magic Item','Consumable','Valuables','Currency','Trade Good','Mundane','Other'] },
+  { key: 'rarity', label: 'Rarity', type: 'select', options: ['Common','Uncommon','Rare','Very Rare','Legendary','Artifact'] },
+  { key: 'value', label: 'Value (gp)', type: 'text' },
+  { key: 'description', label: 'Description', type: 'textarea' },
+  { key: 'encounterId', label: 'Source Encounter', type: 'text' },
+  { key: 'status', label: 'Status', type: 'select', options: ['Available','Claimed','Sold','Lost','Destroyed'] },
+  { key: 'claimedBy', label: 'Claimed By', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+
 // Central schema lookup — maps every entity key to its GenericModal field array.
 // Used by defaultEdit() so every Edit button opens a schema-aware form.
 const ENTITY_FIELD_SCHEMAS = {
@@ -3372,6 +3485,13 @@ const ENTITY_FIELD_SCHEMAS = {
   warFronts: warFrontFields,
   incursions: incursionFields,
   endgameStates: endgameStateFields,
+  nations: nationFields,
+  religions: religionFields,
+  districts: districtFields,
+  rooms: roomFields,
+  timelines: timelineFields,
+  reveals: revealFields,
+  loot: lootFields,
 };
 
 function renderPlayerLore(parent, plugin) {
