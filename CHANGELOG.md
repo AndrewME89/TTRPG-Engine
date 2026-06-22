@@ -6,6 +6,16 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 253
+
+### Fixed
+- DM Screen: added `sectionHead('Quick Reference')` above the reference card grid — the only page that previously lacked a section heading
+- `styles.css`: `.ttrpg-shell.is-collapsed .te-nav-group-label` changed from `visibility:hidden` to `display:none` — eliminates the invisible dead-space gap in the collapsed sidebar
+- `styles.css`: `.te-condition-card` padding increased from `var(--te-gap-md)` to `var(--te-gap-lg)` — now matches the standard `.te-card` padding
+- `styles.css`: added `.te-field-ta` rule (`width:100%; resize:vertical; min-height:60px`) — textarea fields in modals now have explicit min-height and vertical-resize affordance
+
+---
+
 ## [Unreleased] — Phase 252
 
 ### Added

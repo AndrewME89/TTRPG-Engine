@@ -1416,6 +1416,7 @@ function renderDmScreen(main, plugin) {
     { label: '+ New Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
+  sectionHead(main, 'Quick Reference');
   const g = ce(main, 'div', 'te-grid');
 
   // Core References card

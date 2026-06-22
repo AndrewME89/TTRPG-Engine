@@ -48,7 +48,7 @@
 .te-collapse-btn { background:transparent; border:1px solid var(--te-border); border-radius:var(--te-r-sm); color:var(--te-muted); padding:3px 7px; cursor:pointer; font-size:.82rem; line-height:1; }
 .te-nav-group { margin-bottom:var(--te-gap-sm); }
 .te-nav-group-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--te-faint); padding:8px var(--te-gap-sm) 2px; white-space:nowrap; overflow:hidden; display:block; }
-.ttrpg-shell.is-collapsed .te-nav-group-label { visibility:hidden; }
+.ttrpg-shell.is-collapsed .te-nav-group-label { display:none; }
 .te-nav-btn { display:flex; width:100%; align-items:center; gap:var(--te-gap-sm); margin:2px 0; padding:8px var(--te-gap-sm); border:1px solid transparent; border-radius:var(--te-r-md); background:transparent; color:var(--te-text); text-align:left; cursor:pointer; font-size:.88rem; white-space:nowrap; overflow:hidden; transition:background 120ms,border-color 120ms; }
 .te-nav-btn:hover { background:var(--te-bg-soft); border-color:var(--te-border); }
 .te-nav-btn.is-active { background:var(--background-modifier-active-hover,var(--te-bg-soft)); border-color:var(--te-accent); color:var(--te-accent); font-weight:700; }
@@ -120,6 +120,7 @@
 .te-modal h2 { margin:0 0 var(--te-gap-lg); font-size:1.2rem; font-weight:800; color:var(--te-text); }
 .te-modal .setting-item { align-items:flex-start; border-top:1px solid var(--te-border); }
 .te-modal input,.te-modal textarea,.te-modal select { width:100%; }
+.te-field-ta { width:100%; resize:vertical; min-height:60px; }
 .te-modal-buttons { display:flex; gap:var(--te-gap-sm); justify-content:flex-end; margin-top:var(--te-gap-lg); padding-top:var(--te-gap-md); border-top:1px solid var(--te-border); flex-wrap:wrap; }
 .te-modal-section { border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-md); margin:var(--te-gap-md) 0; background:var(--te-bg-alt); }
 .te-modal-section h3 { margin:0 0 var(--te-gap-sm); font-size:.88rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--te-muted); }
@@ -128,7 +129,7 @@
 /* ── Conditions two-column ───────────────────────────────────────────────── */
 .te-conditions-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:var(--te-gap-sm); }
 @media(max-width:600px){ .te-conditions-grid { grid-template-columns:1fr; } }
-.te-condition-card { background:var(--te-card); border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-md); }
+.te-condition-card { background:var(--te-card); border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-lg); }
 .te-condition-name { font-weight:700; font-size:.9rem; color:var(--te-text); margin-bottom:3px; }
 .te-condition-summary { font-size:.82rem; color:var(--te-muted); }
 
