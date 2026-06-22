@@ -50,7 +50,13 @@ async function beginBoot(plugin) {
     const report = await adapterRead(app, lf);
     return { ok: false, reason: `Previous crash detected. Delete ${LOAD_FAILED} to re-enable.\n\n${report}` };
   }
-  await adapterRemove(app, BOOT_MARKER);
+  // Stale boot marker means the previous boot started but never completed (crash/force-close).
+  if (await adapterExists(app, BOOT_MARKER)) {
+    const stamp = new Date().toISOString();
+    const staleMsg = `TTRPG Engine detected a stale boot marker at ${stamp}.\nThe previous load cycle started but did not complete cleanly — Obsidian may have crashed or the plugin was force-closed.\nUse the "Clear Crash Lock" command to re-enable the plugin after investigation.`;
+    await safeDisable(app, 'Stale boot marker — previous load did not complete', new Error(staleMsg));
+    return { ok: false, reason: 'Stale boot marker detected — the previous load did not complete cleanly. Plugin blocked for safety.\nUse the "Clear Crash Lock" command to re-enable.' };
+  }
   await adapterWrite(app, BOOT_MARKER, `Boot started ${new Date().toISOString()}`);
   return { ok: true };
 }
@@ -276,6 +282,7 @@ const OPTION_BANKS = {
   incursionTypes:['Raid','Occupation','Corruption Spread','Portal Opening','Army Advance','Arcane Storm','Custom'],
   secretTypes:  ['Character Secret','Faction Secret','World Secret','NPC Secret','Location Secret','Item Secret','Prophecy','Custom'],
   handoutTypes: ['Document','Map','Item','Letter','Clue','Image','Custom'],
+  sessionZeroTopics: ['Safety Tools','Tone & Themes','Character Concepts','Party Composition','Table Expectations','Scheduling & Frequency','Absence Policy','Between-Session Communication','Content Lines & Veils','Mature Content','Player vs Player','Character Death','Romance','Retirement Conditions','PvP Combat','Out-of-Character Communication','Custom'],
 };
 
 // ── Seed data ────────────────────────────────────────────────────────────────
@@ -943,7 +950,8 @@ function itemCards(parent, plugin, key, opts) {
 }
 
 function defaultEdit(plugin, key, item) {
-  new GenericModal(plugin.app, plugin, key, item).open();
+  const fields = ENTITY_FIELD_SCHEMAS[key] || [];
+  new GenericModal(plugin.app, plugin, key, item, fields).open();
 }
 
 // ── PLUGIN CLASS ──────────────────────────────────────────────────────────────
@@ -983,8 +991,14 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('repair', 'Repair / reindex data', async () => {
         migrateState(this.state);
         await this.saveState();
-        const e = this.state.entities;
-        new Notice(`Reindexed. Campaigns:${e.campaigns.length} NPCs:${e.npcs.length} Quests:${e.quests.length} Sessions:${e.sessions.length} Secrets:${e.secrets.length}`, 6000);
+        const diag = await runDiagnostics(this);
+        const errors = diag.issues.filter(i => i.sev === 'error').length;
+        const warns  = diag.issues.filter(i => i.sev === 'warn').length;
+        const total  = Object.values(diag.counts).reduce((s, v) => s + v, 0);
+        new Notice(
+          `Reindexed — ${total} entities. ${errors ? errors + ' errors' : 'No errors'}${warns ? ', ' + warns + ' warnings' : ''}. Open Diagnostics for the full report.`,
+          8000
+        );
       });
       cmd('backup', 'Backup Data', () => exportBackup(this));
       cmd('my-content', 'Open My Content / Saved Items', async () => { this.state.activeSection = 'dashboard'; await this.saveState(); this.activateView(); });
@@ -1010,9 +1024,9 @@ class TTRPGEnginePlugin extends Plugin {
         new DiagnosticsModal(this.app, this, report).open();
       });
       // Additional creation commands
-      cmd('create-world',    'Create world',    () => new GenericModal(this.app, this, 'worlds').open());
+      cmd('create-world',    'Create world',    () => new GenericModal(this.app, this, 'worlds', null, worldFields).open());
       cmd('create-faction',  'Create faction',  () => new FactionModal(this.app, this).open());
-      cmd('create-location', 'Create location', () => new GenericModal(this.app, this, 'locations').open());
+      cmd('create-location', 'Create location', () => new GenericModal(this.app, this, 'locations', null, locationFields).open());
       cmd('create-creature', 'Create creature', () => new CreatureModal(this.app, this).open());
       cmd('create-bbeg',     'Create BBEG',     () => new BBEGModal(this.app, this).open());
       cmd('create-character','Create character sheet', () => new CharacterModal(this.app, this).open());
@@ -1053,6 +1067,10 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('import-campaign', 'Import campaign', () => new ImportModal(this.app, this).open());
       // Phase 19 - Endgame
       cmd('endgame', 'Open endgame tracker', async () => { this.state.activeSection = 'endgame'; await this.saveState(); this.activateView(); });
+      // Phase 251 - Missing create commands
+      cmd('create-region',     'Create region',     () => new GenericModal(this.app, this, 'regions', null, regionFields).open());
+      cmd('create-settlement', 'Create settlement', () => new GenericModal(this.app, this, 'settlements', null, settlementFields).open());
+      cmd('create-secret',     'Create secret',     () => new SecretModal(this.app, this).open());
 
       await endBoot(this);
     } catch (e) {
@@ -1107,8 +1125,8 @@ class TTRPGMainView extends ItemView {
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return 'TTRPG Engine'; }
   getIcon() { return 'castle'; }
-  async onOpen() { this.render(); }
-  async onClose() {}
+  async onOpen() { this.plugin.view = this; this.render(); }
+  async onClose() { if (this.plugin.view === this) this.plugin.view = null; }
 
   render() {
     const root = this.containerEl.children[1];
@@ -2718,9 +2736,9 @@ function renderGenerators(main, plugin) {
     if (h.type === 'NPC Name') {
       btn(acts, 'Save as NPC', 'te-btn is-sm is-primary', () => new NPCModal(plugin.app, plugin, { name: h.result }).open());
     } else if (h.type === 'Settlement Name') {
-      btn(acts, 'Save as Settlement', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'settlements', { name: h.result }).open());
+      btn(acts, 'Save as Settlement', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'settlements', { name: h.result }, settlementFields).open());
     } else if (h.type === 'Tavern Name') {
-      btn(acts, 'Save as Location', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'locations', { name: h.result }).open());
+      btn(acts, 'Save as Location', 'te-btn is-sm is-primary', () => new GenericModal(plugin.app, plugin, 'locations', { name: h.result }, locationFields).open());
     } else if (h.type === 'Quest Hook') {
       btn(acts, 'Save as Quest', 'te-btn is-sm is-primary', () => new QuestModal(plugin.app, plugin, { name: h.result.split('.')[0], summary: h.result }).open());
     } else {
@@ -2800,7 +2818,7 @@ function renderCampaignBible(main, plugin) {
       const mt = ce(c, 'div', 'te-card-meta');
       [['Level', m.level], ['Status', m.status]].forEach(([k, v]) => { if (!v) return; const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m, milestoneFields).open());
     });
   } else { emptyState(main, 'No milestones.', 'Add milestones in Adventures & Quests.'); }
 
@@ -2831,8 +2849,8 @@ async function exportCampaignBible(plugin) {
 // ── GAZETTEER (Phase 9) ────────────────────────────────────────────────────────
 function renderGazetteer(main, plugin) {
   pageHead(main, plugin, 'Gazetteer', 'Regions, settlements, dungeons, and locations at a glance.', [
-    { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions').open() },
-    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements').open() },
+    { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
+    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Dungeon', primary: true, onClick: () => new DungeonModal(plugin.app, plugin).open() },
   ]);
 
@@ -2850,7 +2868,7 @@ function renderGazetteer(main, plugin) {
       const m = ce(c, 'div', 'te-card-meta');
       [['Type', r.type], ['Government', r.government], ['Hazards', safeArr(r.hazards).join(', ')]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v).slice(0, 60)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'regions', r).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'regions', r, regionFields).open());
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'regions', r.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No regions yet.', 'Add regions to build your world geography.'); }
@@ -2866,7 +2884,7 @@ function renderGazetteer(main, plugin) {
       const m = ce(c, 'div', 'te-card-meta');
       [['Type', s.type], ['Population', s.population], ['Government', s.government]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'settlements', s).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'settlements', s, settlementFields).open());
       btn(a, 'Sync', 'te-btn is-sm', () => writeEntityNote(plugin, 'settlements', s));
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'settlements', s.id); await plugin.saveState(); });
     });
@@ -3048,14 +3066,14 @@ function renderFactionMatrix(main, plugin) {
       const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = lvlPct + '%';
       ce(c, 'p', 'te-progress-label', `Reputation: ${lvl}`);
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep).open());
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open());
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'reputations', rep.id); await plugin.saveState(); });
     });
   }
   const repRow = ce(main, 'div', 'te-modal-actions');
   btn(repRow, '+ Add Reputation', 'te-btn', () => {
     const rep = { id: uid('rep'), name: 'Party Reputation', factionId: factions[0]?.id || '', level: 'Neutral', notes: '' };
-    new GenericModal(plugin.app, plugin, 'reputations', rep).open();
+    new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open();
   });
 }
 
@@ -3063,9 +3081,9 @@ function renderFactionMatrix(main, plugin) {
 function renderEndgame(main, plugin) {
   const state = plugin.state;
   pageHead(main, plugin, 'Endgame & Realm Tracker', 'War fronts, realm incursions, broken cosmology reveals, and ending states.', [
-    { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts').open() },
-    { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions').open() },
-    { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates').open() },
+    { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts', null, warFrontFields).open() },
+    { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions', null, incursionFields).open() },
+    { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates', null, endgameStateFields).open() },
   ]);
 
   sectionHead(main, 'War Fronts');
@@ -3281,6 +3299,68 @@ const journalFields = [
   { key: 'session', label: 'Session #', type: 'text' },
   { key: 'summary', label: 'Journal Entry', type: 'textarea' },
 ];
+
+// Field arrays for entity types that previously used bare GenericModal calls
+const reputationFields = [
+  { key: 'name', label: 'Name', type: 'text' },
+  { key: 'factionId', label: 'Faction ID', type: 'text' },
+  { key: 'level', label: 'Reputation Level', type: 'select', options: ['Exalted','Revered','Honoured','Friendly','Neutral','Unfriendly','Hostile','Hated'] },
+  { key: 'notes', label: 'Notes', type: 'textarea' },
+];
+const warFrontFields = [
+  { key: 'name', label: 'War Front Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Active Front','Stalemate','Advance','Retreat','Siege','Guerrilla Campaign','Ceasefire','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Active','Escalating','Stalemate','Cooling Down','Resolved'] },
+  { key: 'faction', label: 'Primary Faction', type: 'text' },
+  { key: 'location', label: 'Location', type: 'text' },
+  { key: 'strength', label: 'Enemy Strength', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const incursionFields = [
+  { key: 'name', label: 'Incursion Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Raid','Occupation','Corruption Spread','Portal Opening','Army Advance','Arcane Storm','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Emerging','Active','Critical','Contained','Repelled'] },
+  { key: 'origin', label: 'Origin', type: 'text' },
+  { key: 'threat', label: 'Threat Level', type: 'select', options: ['Low','Medium','High','Critical','Existential'] },
+  { key: 'progress', label: 'Current Progress', type: 'text' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const endgameStateFields = [
+  { key: 'name', label: 'Ending State Name', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Victory','Defeat','Pyrrhic Victory','Bittersweet','Ambiguous','Tragedy','Transcendence','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Possible','Likely','Inevitable','Averted','Achieved'] },
+  { key: 'trigger', label: 'Trigger Condition', type: 'textarea' },
+  { key: 'consequence', label: 'World Consequence', type: 'textarea' },
+  { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+
+// Central schema lookup — maps every entity key to its GenericModal field array.
+// Used by defaultEdit() so every Edit button opens a schema-aware form.
+const ENTITY_FIELD_SCHEMAS = {
+  worlds: worldFields,
+  cosmologies: cosmologyFields,
+  realms: realmFields,
+  deities: deityFields,
+  cultures: cultureFields,
+  languages: langFields,
+  regions: regionFields,
+  settlements: settlementFields,
+  locations: locationFields,
+  pois: poiFields,
+  routes: routeFields,
+  adventures: adventureFields,
+  rules: ruleFields,
+  downtime: downtimeFields,
+  bastions: bastionFields,
+  milestones: milestoneFields,
+  handouts: handoutFields,
+  compendium: compendiumFields,
+  journals: journalFields,
+  reputations: reputationFields,
+  warFronts: warFrontFields,
+  incursions: incursionFields,
+  endgameStates: endgameStateFields,
+};
 
 function renderPlayerLore(parent, plugin) {
   // Show worlds and cultures with player-visible content
