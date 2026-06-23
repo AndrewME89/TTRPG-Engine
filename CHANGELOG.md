@@ -6,6 +6,20 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 259d
+
+### Added
+- **Run Session — Inline Dice Roller**: Quick die buttons (d4–d100) + formula input (`NdN±M`) with instant result; Enter key submits formula
+- **Run Session — Quick Generators panel**: Type selector (11 generator types), Generate button, result display; "Save as Entity" button appears for NPC Name (→ NPCModal), Faction Name (→ FactionModal), Quest Hook (→ QuestModal)
+- **Run Session — empty notes state**: Shows "Start a session to enable notes." when no active session
+
+### Changed
+- **Campaign pickers**: Added `campaignId` field + `addCampaignPicker()` to **CreatureModal**, **BBEGModal**, **SessionModal**, and **SecretModal** (NPCModal, FactionModal, QuestModal, EncounterModal already had it)
+- **EncounterModal participants**: Replaced manual `chipField('Participants (PCs)')` with two entity multi-pickers — `participantPcIds` (characters) and `participantNpcIds` (NPCs); legacy `participants` text array preserved for backward compat
+- **"Write Note" label**: All "Sync" buttons renamed to "Write Note" (clarifies one-way export — does not sync back from vault)
+
+---
+
 ## [Unreleased] — Phase 259c
 
 ### Added
