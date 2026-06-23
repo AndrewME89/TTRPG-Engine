@@ -298,3 +298,32 @@
 .te-ref-table th { background:var(--te-bg-alt); font-weight:700; padding:4px 8px; border:1px solid var(--te-border); text-align:left; }
 .te-ref-table td { padding:3px 8px; border:1px solid var(--te-border); }
 .te-ref-spell-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:3px; font-size:.82rem; margin-bottom:8px; color:var(--te-text); }
+
+/* ── Missing utility classes ─────────────────────────────────────────────── */
+/* Inline empty-state message used without the full .te-empty wrapper */
+.te-empty-state { font-size:.85rem; color:var(--te-muted); padding:var(--te-gap-sm) 0; font-style:italic; }
+/* Chip input wrapper (used in chipField helper) */
+.te-chip-input { display:flex; gap:var(--te-gap-xs); flex-wrap:wrap; align-items:center; padding:4px; border:1px solid var(--te-border); border-radius:var(--te-r-sm); min-height:32px; background:var(--te-bg); }
+/* Stat value in diagnostics / wizard cards */
+.te-stat-value { font-size:1rem; font-weight:700; color:var(--te-text); }
+
+/* ── Accessibility — keyboard focus ──────────────────────────────────────── */
+.te-btn:focus-visible,
+.te-nav-btn:focus-visible,
+.te-player-tab:focus-visible,
+button:focus-visible { outline:2px solid var(--te-accent); outline-offset:2px; }
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible { outline:2px solid var(--te-accent); outline-offset:1px; border-color:var(--te-accent); }
+/* Skip focus ring on mouse clicks (only keyboard) */
+.te-btn:focus:not(:focus-visible) { outline:none; }
+
+/* ── Level-up modal ──────────────────────────────────────────────────────── */
+.te-levelup-card { background:var(--te-bg-alt); border:1px solid var(--te-border); border-radius:var(--te-r-lg); padding:var(--te-gap-md); margin-bottom:var(--te-gap-md); display:flex; gap:var(--te-gap-md); flex-wrap:wrap; }
+.te-levelup-stat { text-align:center; min-width:80px; }
+.te-levelup-stat .te-stat-big { font-size:2rem; }
+.te-levelup-stat .te-stat-label { font-size:.72rem; }
+
+/* ── Run Session panels ──────────────────────────────────────────────────── */
+.te-session-npc-row { padding:6px 4px; border-bottom:1px solid var(--te-border); display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; font-size:.88rem; }
+.te-session-npc-row:last-child { border-bottom:none; }

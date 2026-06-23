@@ -6,6 +6,21 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 264 (UI/Accessibility)
+
+### Added
+- **`styles.css` — `.te-empty-state`**: Inline empty-state message class (used 49× in main.js but was unstyled); now rendered as italic muted text with appropriate padding
+- **`styles.css` — `.te-chip-input`**: Chip input wrapper with border, flex layout, and min-height
+- **`styles.css` — `.te-stat-value`**: Diagnostic/wizard stat value class
+- **`styles.css` — Keyboard focus styles**: `.te-btn:focus-visible`, `.te-nav-btn:focus-visible`, `.te-player-tab:focus-visible`, `input/select/textarea:focus-visible` — all receive 2px accent-colour outline; mouse-click focus suppressed via `:focus:not(:focus-visible)` to avoid visual noise
+- **`styles.css` — Level-up modal classes**: `.te-levelup-card`, `.te-levelup-stat`
+- **`styles.css` — Run Session NPC row**: `.te-session-npc-row` matching the inline styles previously applied via JavaScript
+
+### Changed
+- `src/styles.css` synced from root `styles.css`
+
+---
+
 ## [Unreleased] — Phase 263
 
 ### Added
