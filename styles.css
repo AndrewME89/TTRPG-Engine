@@ -120,7 +120,7 @@
 .te-modal h2 { margin:0 0 var(--te-gap-lg); font-size:1.2rem; font-weight:800; color:var(--te-text); }
 .te-modal .setting-item { align-items:flex-start; border-top:1px solid var(--te-border); }
 .te-modal input:not([type="checkbox"]):not([type="radio"]),.te-modal textarea,.te-modal select { width:100%; }
-.te-trait-chip input[type="checkbox"] { width:auto; flex:0 0 auto; margin-top:3px; cursor:pointer; }
+.te-trait-chip:focus { outline:2px solid var(--te-accent); outline-offset:1px; }
 .te-field-ta { width:100%; resize:vertical; min-height:60px; }
 .te-modal-buttons { display:flex; gap:var(--te-gap-sm); justify-content:flex-end; margin-top:var(--te-gap-lg); padding-top:var(--te-gap-md); border-top:1px solid var(--te-border); flex-wrap:wrap; }
 .te-modal-section { border:1px solid var(--te-border); border-radius:var(--te-r-md); padding:var(--te-gap-md); margin:var(--te-gap-md) 0; background:var(--te-bg-alt); }
