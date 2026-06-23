@@ -505,6 +505,7 @@ function createDefaultState() {
       reveals: [],
       loot: [],
       hybridAncestries: [],
+      nobleFamilies: [],
     },
     relationships: [],
     generatorHistory: [],
@@ -1195,6 +1196,7 @@ const ENTITY_ICONS = {
   reputations:'⭐', warFronts:'🚩', incursions:'🌊', endgameStates:'🌋',
   nations:'👑', religions:'🕍', districts:'🏙️', rooms:'🚪', timelines:'📅', reveals:'💡', loot:'💰',
   hybridAncestries:'🧬',
+  nobleFamilies:'🏰',
 };
 const ENTITY_LABELS = {
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
@@ -1210,6 +1212,7 @@ const ENTITY_LABELS = {
   reputations:'Reputation', warFronts:'War Front', incursions:'Realm Incursion', endgameStates:'Ending State',
   nations:'Nation', religions:'Religion', districts:'District', rooms:'Room', timelines:'Timeline Event', reveals:'Reveal', loot:'Loot Entry',
   hybridAncestries:'Hybrid Ancestry',
+  nobleFamilies:'Noble Family',
 };
 
 function itemCards(parent, plugin, key, opts) {
@@ -1261,6 +1264,7 @@ const RICH_EDIT_MAP = {
   homebrew:         (p, i) => new HomebrewModal(p.app, p, i).open(),
   characters:       (p, i) => new CharacterModal(p.app, p, i).open(),
   hybridAncestries: (p, i) => new HybridAncestryModal(p.app, p, i).open(),
+  nobleFamilies:    (p, i) => new NobleFamilyModal(p.app, p, i).open(),
 };
 function defaultEdit(plugin, key, item) {
   if (RICH_EDIT_MAP[key]) { RICH_EDIT_MAP[key](plugin, item); return; }
@@ -1269,6 +1273,44 @@ function defaultEdit(plugin, key, item) {
 }
 
 // ── PLUGIN CLASS ──────────────────────────────────────────────────────────────
+// ── Relationship constants ─────────────────────────────────────────────────────
+const RELATIONSHIP_TYPES = [
+  'Ally','At War','Blackmailed','Ceasefire','Client','Contact','Creditor','Debtor',
+  'Dependent','Employee','Employer','Enemy','Family','Hostile','Informant','Leader',
+  'Member','Neutral','Patron','Political Patron','Protective','Religious Authority',
+  'Rival','Romantic','Secret Alliance','Spy','Suspicious','Trade Partner','Vassal',
+];
+const PICKABLE_ENTITY_TYPES = [
+  { key:'npcs',          label:'NPC' },
+  { key:'characters',    label:'PC / Character' },
+  { key:'factions',      label:'Faction' },
+  { key:'nobleFamilies', label:'Noble Family' },
+  { key:'settlements',   label:'Settlement' },
+  { key:'locations',     label:'Location' },
+  { key:'regions',       label:'Region' },
+  { key:'quests',        label:'Quest' },
+];
+function addTypedEntityPicker(el, label, typeValue, idValue, plugin, onTypeChange, onIdChange) {
+  const cur = typeValue || PICKABLE_ENTITY_TYPES[0].key;
+  const wrap = ce(el, 'div', 'te-field-row'); wrap.style.alignItems = 'center';
+  ce(wrap, 'label', 'te-field-label', label);
+  const right = ce(wrap, 'div', ''); right.style.cssText = 'flex:1;display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+  const SX = 'padding:6px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  const typeSel = ce(right, 'select', 'te-field-select'); typeSel.style.cssText = SX + ';flex:0 0 140px';
+  PICKABLE_ENTITY_TYPES.forEach(et => { const o = ce(typeSel, 'option', '', et.label); o.value = et.key; if (et.key === cur) o.selected = true; });
+  const entityWrap = ce(right, 'div', ''); entityWrap.style.flex = '1';
+  const buildEntitySel = type => {
+    clear(entityWrap);
+    const items = safeArr(plugin.state.entities[type]).slice().sort((a,b) => (a.name||a.title||'').localeCompare(b.name||b.title||''));
+    const sel = ce(entityWrap, 'select', 'te-field-select'); sel.style.cssText = SX + ';width:100%';
+    ce(sel, 'option', '', '— select —').value = '';
+    items.forEach(it => { const o = ce(sel, 'option', '', it.name||it.title||it.id); o.value = it.id; if (it.id === idValue) o.selected = true; });
+    sel.addEventListener('change', () => onIdChange(sel.value));
+  };
+  buildEntitySel(cur);
+  typeSel.addEventListener('change', () => { onTypeChange(typeSel.value); buildEntitySel(typeSel.value); onIdChange(''); });
+}
+
 // ── Reference Data Service ────────────────────────────────────────────────────
 const REF_DATA_FILES = {
   spells: 'spells.json', feats: 'feats.json', equipment: 'equipment.json',
@@ -1734,7 +1776,7 @@ class TTRPGMainView extends ItemView {
         { id: 'gazetteer',   icon: '📍', label: 'Gazetteer' },
         { id: 'npcs',        icon: '👤', label: 'NPCs & Creatures' },
         { id: 'factions',    icon: '⚔️', label: 'Factions' },
-        { id: 'faction-matrix', icon: '🕸️', label: 'Faction Matrix' },
+        { id: 'faction-matrix', icon: '🕸️', label: 'Relationship Matrix' },
         { id: 'adventure',   icon: '📝', label: 'Adventures & Quests' },
         { id: 'encounters',  icon: '🎯', label: 'Encounters & Combat' },
         { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
@@ -1827,6 +1869,7 @@ function renderSection(main, plugin, section) {
     npcs: renderNpcs,
     factions: renderFactions,
     'faction-matrix': renderFactionMatrix,
+    'relationship-matrix': renderRelationshipMatrix,
     adventure: renderAdventure,
     encounters: renderEncounters,
     rules: renderRules,
@@ -3708,38 +3751,100 @@ function renderWarMachine(main, plugin) {
 }
 
 // ── FACTION MATRIX (Phase 12) ─────────────────────────────────────────────────
-function renderFactionMatrix(main, plugin) {
+function renderFactionMatrix(main, plugin) { renderRelationshipMatrix(main, plugin); }
+function renderRelationshipMatrix(main, plugin) {
   const state = plugin.state;
-  pageHead(main, plugin, 'Faction Relationship Matrix', 'How factions relate to each other and to the party.', [
-    { label: '+ Relationship', primary: true, onClick: () => new FactionRelationshipModal(plugin.app, plugin).open() },
+  const allRels = safeArr(state.relationships);
+
+  pageHead(main, plugin, 'Relationship Matrix', 'Map connections between factions, NPCs, PCs, noble families, settlements, and quests.', [
+    { label: '+ Relationship', primary: true, onClick: () => new RelationshipModal(plugin.app, plugin).open() },
+    { label: '+ Noble Family', onClick: () => new NobleFamilyModal(plugin.app, plugin).open() },
     { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
   ]);
 
-  const factions = safeArr(state.entities.factions);
-  if (factions.length < 2) { emptyState(main, 'Need at least two factions.', 'Add factions to build the relationship matrix.'); return; }
+  // Helper to resolve entity name from type + id
+  const resolveName = (type, id) => {
+    const arr = safeArr(state.entities[type]);
+    const ent = arr.find(x => x.id === id);
+    return ent ? (ent.name || ent.title || id) : id;
+  };
 
-  sectionHead(main, 'Relationship Overview');
-  const rels = safeArr(state.relationships).filter(r => r.type === 'faction-faction');
-  if (rels.length) {
-    const g = ce(main, 'div', 'te-grid');
-    rels.forEach(rel => {
-      const fromFac = factions.find(f => f.id === rel.fromId);
-      const toFac = factions.find(f => f.id === rel.toId);
-      if (!fromFac || !toFac) return;
-      const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🕸️'); ce(h, 'h3', 'te-card-title', `${fromFac.name} ↔ ${toFac.name}`);
-      const meta = ce(c, 'div', 'te-card-meta');
-      [['Status', rel.status], ['Notes', rel.notes]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v).slice(0, 80)); });
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new FactionRelationshipModal(plugin.app, plugin, rel).open());
-      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => {
-        state.relationships = state.relationships.filter(x => x.id !== rel.id);
-        await plugin.saveState();
+  // ── All relationships ──────────────────────────────────────────────────────
+  sectionHead(main, `All Relationships (${allRels.length})`);
+  if (allRels.length) {
+    // Group filter buttons
+    const filterRow = ce(main, 'div', 'te-card-actions'); filterRow.style.marginBottom = '10px';
+    const filters = ['All','NPC','Faction','PC','Noble Family','Settlement'];
+    let activeFilter = 'All';
+    const listEl = ce(main, 'div', 'te-grid');
+    const renderRelList = () => {
+      clear(listEl);
+      const shown = allRels.filter(r => {
+        if (activeFilter === 'All') return true;
+        const label = (t => PICKABLE_ENTITY_TYPES.find(x => x.key === t)?.label || t);
+        const fromLabel = label(r.fromEntityType || '');
+        const toLabel = label(r.toEntityType || '');
+        return fromLabel.includes(activeFilter) || toLabel.includes(activeFilter);
+      });
+      if (!shown.length) { ce(listEl, 'p', 'te-empty-state', 'No relationships match this filter.'); return; }
+      shown.forEach(rel => {
+        const fromName = rel.fromId ? resolveName(rel.fromEntityType, rel.fromId) : (rel.from || '?');
+        const toName = rel.toId ? resolveName(rel.toEntityType, rel.toId) : (rel.to || '?');
+        const fromLabel = rel.fromEntityType ? (PICKABLE_ENTITY_TYPES.find(x => x.key === rel.fromEntityType)?.label || rel.fromEntityType) : '';
+        const toLabel = rel.toEntityType ? (PICKABLE_ENTITY_TYPES.find(x => x.key === rel.toEntityType)?.label || rel.toEntityType) : '';
+        const c = ce(listEl, 'div', 'te-card');
+        const h = ce(c, 'div', 'te-card-head');
+        ce(h, 'span', 'te-card-icon', '🕸️');
+        ce(h, 'h3', 'te-card-title', `${fromName} ↔ ${toName}`);
+        const metaDiv = ce(c, 'div', 'te-card-meta');
+        [['Type', rel.relationshipType || rel.type || ''], ['Attitude', rel.attitude || ''], ['From', fromLabel], ['To', toLabel], ['Notes', (rel.notes || '').slice(0, 80)]].forEach(([k, v]) => {
+          if (!v) return; const r2 = ce(metaDiv, 'div', 'te-card-meta-row'); ce(r2, 'span', 'te-card-meta-label', k); ce(r2, 'span', '', v);
+        });
+        const acts = ce(c, 'div', 'te-card-actions');
+        btn(acts, 'Edit', 'te-btn is-sm', () => new RelationshipModal(plugin.app, plugin, rel).open());
+        btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => {
+          state.relationships = state.relationships.filter(x => x.id !== rel.id);
+          await plugin.saveState();
+        });
+      });
+    };
+    filters.forEach(f => {
+      btn(filterRow, f, 'te-btn is-sm' + (f === activeFilter ? ' is-primary' : ''), () => {
+        activeFilter = f;
+        // update button styles
+        Array.from(filterRow.querySelectorAll('button')).forEach((b, i) => {
+          b.className = 'te-btn is-sm' + (filters[i] === f ? ' is-primary' : '');
+        });
+        renderRelList();
       });
     });
-  } else { emptyState(main, 'No faction relationships defined.', 'Use "+ Relationship" to link factions together.'); }
+    renderRelList();
+  } else {
+    emptyState(main, 'No relationships yet.', 'Use "+ Relationship" to link any two entities.');
+  }
 
-  sectionHead(main, 'Reputation Tracker');
+  // ── Noble Families ─────────────────────────────────────────────────────────
+  sectionHead(main, 'Noble Families & Houses');
+  const nobles = safeArr(state.entities.nobleFamilies).filter(x => matchesSearch(x, state.search));
+  if (nobles.length) {
+    const ng = ce(main, 'div', 'te-grid');
+    nobles.forEach(nf => {
+      const c = ce(ng, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏰'); ce(h, 'h3', 'te-card-title', nf.name || 'Untitled');
+      if (nf.motto) ce(c, 'p', 'te-card-body', `"${nf.motto}"`);
+      const meta = ce(c, 'div', 'te-card-meta');
+      [['Status', nf.status], ['Holdings', (nf.holdings || '').slice(0, 60)]].forEach(([k, v]) => {
+        if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v);
+      });
+      const acts = ce(c, 'div', 'te-card-actions');
+      btn(acts, 'Edit', 'te-btn is-sm', () => new NobleFamilyModal(plugin.app, plugin, nf).open());
+      btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'nobleFamilies', nf.id); await plugin.saveState(); });
+    });
+  } else { emptyState(main, 'No noble families yet.', 'Use "+ Noble Family" to add houses.'); }
+
+  // ── Faction Reputation ─────────────────────────────────────────────────────
+  sectionHead(main, 'Faction Reputation');
+  const factions = safeArr(state.entities.factions);
   const reps = safeArr(state.entities.reputations).filter(x => matchesSearch(x, state.search));
   if (reps.length) {
     const g = ce(main, 'div', 'te-grid');
@@ -3757,8 +3862,7 @@ function renderFactionMatrix(main, plugin) {
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'reputations', rep.id); await plugin.saveState(); });
     });
   }
-  const repRow = ce(main, 'div', 'te-modal-actions');
-  btn(repRow, '+ Add Reputation', 'te-btn', () => {
+  btn(ce(main, 'div', 'te-modal-actions'), '+ Add Reputation', 'te-btn', () => {
     const rep = { id: uid('rep'), name: 'Party Reputation', factionId: factions[0]?.id || '', level: 'Neutral', notes: '' };
     new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open();
   });
@@ -4158,6 +4262,17 @@ const ENTITY_FIELD_SCHEMAS = {
     { key: 'content', label: 'Table Content (one entry per line)', type: 'textarea' },
     { key: 'summary', label: 'Description', type: 'textarea' },
     { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
+  ],
+  nobleFamilies: [
+    { key: 'name', label: 'House / Family Name', type: 'text' },
+    { key: 'motto', label: 'House Motto', type: 'text' },
+    { key: 'headOfHouse', label: 'Head of House', type: 'text' },
+    { key: 'status', label: 'Status', type: 'select', options: ['Ruling','Noble','Gentry','Declining','Exiled','Extinct','Unknown'] },
+    { key: 'holdings', label: 'Holdings & Titles', type: 'textarea' },
+    { key: 'claims', label: 'Claims & Disputes', type: 'textarea' },
+    { key: 'secrets', label: 'Secrets & Scandals', type: 'textarea' },
+    { key: 'summary', label: 'Summary', type: 'textarea' },
+    { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible','secret'] },
   ],
 };
 
@@ -4837,6 +4952,7 @@ class FactionModal extends Modal {
       allies: [], allyIds: [], enemies: [], enemyIds: [],
       publicFace: '', secretAgenda: '',
       reputation: '', rewards: '', consequences: '', visibility: 'dm-only',
+      staffRoles: [],
     }, this.item);
   }
   onOpen() {
@@ -4861,6 +4977,13 @@ class FactionModal extends Modal {
     addField(contentEl, 'Public Face', this.values.publicFace, v => this.values.publicFace = v, 'textarea');
     addField(contentEl, 'Secret Agenda', this.values.secretAgenda, v => this.values.secretAgenda = v, 'textarea');
     addField(contentEl, 'Reputation', this.values.reputation, v => this.values.reputation = v);
+
+    const sSt = ce(contentEl, 'div', 'te-modal-section');
+    sSt.createEl('h3', { text: 'Staff & Roles' });
+    ce(sSt, 'p', 'te-progress-label', 'Track key personnel. Format: Name — Role (Rank)');
+    chipField(sSt, 'Staff / Roles', safeArr(this.values.staffRoles), v => this.values.staffRoles = v,
+      { suggestions: ['Leader','Second-in-command','Quartermaster','Spy','Recruiter','Agent','Informant','Commander','Diplomat','Treasurer','Enforcer','Defector'] });
+
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Faction name is required.'); return; }
       upsert(this.plugin.state, 'factions', this.values);
@@ -5370,8 +5493,13 @@ class RelationshipModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('rel'), from: '', to: '', type: 'NPC-to-NPC',
-      attitude: 'Neutral', notes: '',
+      id: uid('rel'), campaignId: '',
+      fromEntityType: 'npcs', fromId: '', toEntityType: 'factions', toId: '',
+      relationshipType: 'Neutral', attitude: 'Neutral',
+      influence: '', trust: '', fear: '', notes: '', dmNotes: '',
+      visibility: 'dm-only',
+      // Legacy text fields kept for backward compatibility
+      from: '', to: '', type: '',
     }, this.item);
   }
   onOpen() {
@@ -5379,16 +5507,23 @@ class RelationshipModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Relationship` });
-    const npcNames = safeArr(this.plugin.state.entities.npcs).map(n => n.name);
-    const charNames = safeArr(this.plugin.state.entities.characters).map(c => c.name);
-    const allNames = [...npcNames, ...charNames];
-    addSelect(contentEl, 'Relationship Type', this.values.type, ['NPC-to-NPC','NPC-to-PC','Faction-to-NPC','Faction-to-Faction'], v => this.values.type = v);
-    addField(contentEl, 'From (NPC/PC name)', this.values.from, v => this.values.from = v);
-    addField(contentEl, 'To (NPC/PC name)', this.values.to, v => this.values.to = v);
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    addTypedEntityPicker(contentEl, 'From',
+      this.values.fromEntityType, this.values.fromId, this.plugin,
+      v => this.values.fromEntityType = v, v => this.values.fromId = v);
+    addTypedEntityPicker(contentEl, 'To',
+      this.values.toEntityType, this.values.toId, this.plugin,
+      v => this.values.toEntityType = v, v => this.values.toId = v);
+    addSelect(contentEl, 'Relationship Type', this.values.relationshipType, RELATIONSHIP_TYPES, v => this.values.relationshipType = v);
     addSelect(contentEl, 'Attitude', this.values.attitude, ['Allied','Friendly','Neutral','Suspicious','Hostile','Enemy','Unknown'], v => this.values.attitude = v);
+    addField(contentEl, 'Influence / Power Dynamic', this.values.influence, v => this.values.influence = v);
+    addField(contentEl, 'Trust Level', this.values.trust, v => this.values.trust = v);
+    addField(contentEl, 'Fear / Leverage', this.values.fear, v => this.values.fear = v);
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
+    addField(contentEl, 'DM Notes (hidden)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     modalButtons(contentEl, this, async () => {
-      if (!this.values.from.trim() || !this.values.to.trim()) { new Notice('Both From and To are required.'); return; }
+      if (!this.values.fromId || !this.values.toId) { new Notice('Both From and To entities must be selected.'); return; }
       if (!Array.isArray(this.plugin.state.relationships)) this.plugin.state.relationships = [];
       const idx = this.plugin.state.relationships.findIndex(r => r.id === this.values.id);
       if (idx >= 0) this.plugin.state.relationships[idx] = this.values;
@@ -5397,6 +5532,71 @@ class RelationshipModal extends Modal {
       new Notice('Relationship saved.');
       this.close();
     });
+  }
+}
+
+// NobleFamilyModal
+class NobleFamilyModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('noble'), name: '', motto: '', campaignId: '',
+      headOfHouseId: '', headOfHouse: '',
+      status: 'Noble', holdings: '', titles: [], claims: '',
+      members: [], heirs: [], marriages: [],
+      alliances: [], rivals: [], debts: '',
+      secrets: '', scandals: '',
+      regionId: '', settlementId: '',
+      factionIds: [], relatedQuestIds: [],
+      summary: '', dmNotes: '', visibility: 'dm-only',
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Noble Family` });
+
+    const s1 = ce(contentEl, 'div', 'te-modal-section');
+    s1.createEl('h3', { text: 'Identity' });
+    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    addField(s1, 'House Name *', this.values.name, v => this.values.name = v);
+    addField(s1, 'House Motto', this.values.motto, v => this.values.motto = v);
+    addSelect(s1, 'Status', this.values.status, ['Ruling','Noble','Gentry','Declining','Exiled','Extinct','Unknown'], v => this.values.status = v);
+    addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
+    addEntityPicker(s1, 'Head of House (NPC)', this.values.headOfHouseId, this.plugin, 'npcs', v => this.values.headOfHouseId = v);
+    addEntityPicker(s1, 'Home Region', this.values.regionId, this.plugin, 'regions', v => this.values.regionId = v);
+    addEntityPicker(s1, 'Seat / Settlement', this.values.settlementId, this.plugin, 'settlements', v => this.values.settlementId = v);
+
+    const s2 = ce(contentEl, 'div', 'te-modal-section');
+    s2.createEl('h3', { text: 'Holdings & Claims' });
+    addField(s2, 'Holdings & Titles', this.values.holdings, v => this.values.holdings = v, 'textarea');
+    addField(s2, 'Claims & Disputes', this.values.claims, v => this.values.claims = v, 'textarea');
+    addField(s2, 'Debts & Obligations', this.values.debts, v => this.values.debts = v, 'textarea');
+
+    const s3 = ce(contentEl, 'div', 'te-modal-section');
+    s3.createEl('h3', { text: 'Relations' });
+    addEntityMultiPicker(s3, 'Allied Factions', this.values.factionIds, this.plugin, 'factions', v => this.values.factionIds = v);
+    addEntityMultiPicker(s3, 'Related Quests', this.values.relatedQuestIds, this.plugin, 'quests', v => this.values.relatedQuestIds = v);
+    chipField(s3, 'Members (names)', safeArr(this.values.members), v => this.values.members = v);
+    chipField(s3, 'Alliances (house names)', safeArr(this.values.alliances), v => this.values.alliances = v);
+    chipField(s3, 'Rivals (house names)', safeArr(this.values.rivals), v => this.values.rivals = v);
+
+    const s4 = ce(contentEl, 'div', 'te-modal-section');
+    s4.createEl('h3', { text: 'DM Notes' });
+    addField(s4, 'Secrets & Scandals', this.values.secrets, v => this.values.secrets = v, 'textarea');
+    addField(s4, 'Summary (player-visible)', this.values.summary, v => this.values.summary = v, 'textarea');
+    addField(s4, 'DM Notes', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
+
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('House name is required.'); return; }
+      upsert(this.plugin.state, 'nobleFamilies', this.values);
+      await this.plugin.saveState();
+      new Notice(`Noble Family "${this.values.name}" saved.`);
+      this.close();
+    }, 'Save Noble Family');
   }
 }
 
