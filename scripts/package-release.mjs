@@ -18,6 +18,12 @@ if (fs.existsSync('assets')) {
   fs.cpSync('assets', path.join(stageDir, 'assets'), { recursive: true });
 }
 
+if (fs.existsSync('data')) {
+  fs.cpSync('data', path.join(stageDir, 'data'), { recursive: true });
+} else {
+  console.warn('Warning: data/ folder not found — reference data will not be included in release.');
+}
+
 try {
   execFileSync('zip', ['-r', path.basename(zipPath), manifest.id], { cwd: releaseDir, stdio: 'inherit' });
 } catch (err) {
