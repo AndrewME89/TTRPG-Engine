@@ -6,6 +6,20 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 265 (Tests)
+
+### Added
+- **`tests/phase261.test.js`**: 34 pure-function tests across 6 suites —
+  `generate() new types` (7: Plot Twist/Town Event/Trap assertions),
+  `Currency defaults` (7: all 5 coins present and zero),
+  `calcInitiative` (5: stored override, DEX-based calculation, edge cases),
+  `ENTITY_NAV map` (6: section routing for key entity types),
+  `BBEGModal defaults` (5: visibility, motivation, linkedNpcIds),
+  `repairAndReindex extended` (4: multi-type repair, campaignId assignment rules)
+- **`npm test`**: Now chains all four test suites — 204 tests total, 0 failed
+
+---
+
 ## [Unreleased] — Phase 264 (UI/Accessibility)
 
 ### Added
