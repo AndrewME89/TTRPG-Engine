@@ -14,7 +14,7 @@
     "sync-check": "node scripts/sync-check.mjs",
     "build": "node scripts/build.mjs",
     "check-release": "node scripts/check-release-files.mjs",
-    "test": "node tests/tile-map.test.js && node tests/phase259.test.js && node tests/phase260.test.js && node tests/phase261.test.js",
+    "test": "node tests/tile-map.test.js && node tests/phase259.test.js && node tests/phase260.test.js && node tests/phase261.test.js && node tests/phase266.test.js",
     "release": "npm run check && npm run build && npm run check-release && node scripts/package-release.mjs",
     "version-bump": "node scripts/version-bump.mjs"
   },

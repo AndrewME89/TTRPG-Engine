@@ -1058,7 +1058,8 @@ function entityMd(key, item) {
 }
 async function writeEntityNote(plugin, key, item) {
   const folder = campaignFolder(plugin);
-  const dir = `${folder}/${key}`;
+  const subFolder = ENTITY_FOLDER_LABELS[key] || key;
+  const dir = `${folder}/${subFolder}`;
   await ensureFolder(plugin.app, folder);
   await ensureFolder(plugin.app, dir);
   const path = `${dir}/${slugify(item.name || item.title || item.id)}.md`;
@@ -1524,6 +1525,23 @@ const ENTITY_LABELS = {
   nobleFamilies:'Noble Family',
 };
 
+const ENTITY_FOLDER_LABELS = {
+  campaigns:'Campaigns', worlds:'Worlds', cosmologies:'Cosmologies', realms:'Realms',
+  regions:'Regions', settlements:'Settlements', locations:'Locations', pois:'Points of Interest',
+  routes:'Routes', npcs:'NPCs', creatures:'Creatures', bbegs:'BBEGs',
+  factions:'Factions', cultures:'Cultures', languages:'Languages', deities:'Deities',
+  pantheons:'Pantheons', quests:'Quests', adventures:'Adventures', encounters:'Encounters',
+  sessions:'Sessions', milestones:'Milestones', secrets:'Secrets', handouts:'Handouts',
+  rules:'Rules', conditions:'Conditions', damageTypes:'Damage Types', downtime:'Downtime Activities',
+  projects:'Projects', bastions:'Bastions', compendium:'Compendium', homebrew:'Homebrew',
+  tables:'Tables', characters:'Characters', calendars:'Calendars', journals:'Journals',
+  maps:'Maps', dungeons:'Dungeons', timers:'Escalation Timers', enemyTemplates:'Enemy Templates',
+  reputations:'Reputations', warFronts:'War Fronts', incursions:'Realm Incursions', endgameStates:'Ending States',
+  nations:'Nations', religions:'Religions', districts:'Districts', rooms:'Rooms', timelines:'Timeline Events', reveals:'Reveals', loot:'Loot',
+  hybridAncestries:'Hybrid Ancestries',
+  nobleFamilies:'Noble Families',
+};
+
 function itemCards(parent, plugin, key, opts) {
   opts = opts || {};
   const items = opts.items ? opts.items : safeArr(plugin.state.entities[key]).filter(x => matchesSearch(x, plugin.state.search));
@@ -1846,7 +1864,16 @@ class TTRPGEnginePlugin extends Plugin {
   async onload() {
     let boot;
     try { boot = await beginBoot(this); } catch (e) { boot = { ok: false, reason: String(e) }; }
-    if (!boot.ok) { new Notice(`TTRPG Engine blocked: ${boot.reason}`, 10000); return; }
+    if (!boot.ok) {
+      // Kill switch is a hard block (user explicitly disabled the plugin)
+      if (boot.reason && boot.reason.startsWith('Kill switch')) {
+        new Notice(`TTRPG Engine blocked: ${boot.reason}`, 10000);
+        return;
+      }
+      // LOAD_FAILED or stale boot — enable safe mode and fall through to recovery UI
+      await enableSafeMode(this.app);
+      new Notice(`TTRPG Engine: ${boot.reason.split('\n')[0]} — recovery panel available.`, 10000);
+    }
 
     try {
       const saved = await this.loadData() || {};
@@ -1855,8 +1882,9 @@ class TTRPGEnginePlugin extends Plugin {
       migrateState(this.state);
     } catch (e) {
       await safeDisable(this.app, 'State load failed', e);
-      new Notice('TTRPG Engine: state load failed — see crash report in plugin folder.', 10000);
-      return;
+      await enableSafeMode(this.app);
+      this.state = createDefaultState();
+      new Notice('TTRPG Engine: state load failed — safe mode recovery active.', 10000);
     }
 
     // Safe mode — register a minimal recovery shell so the DM can fix things without touching files
@@ -1869,6 +1897,8 @@ class TTRPGEnginePlugin extends Plugin {
       scmd('disable-safe-mode', 'Disable safe mode', async () => { await disableSafeMode(this.app); new Notice('Safe mode disabled. Reload Obsidian to restore full operation.', 8000); });
       scmd('backup', 'Backup Data', () => exportBackup(this));
       scmd('repair', 'Repair / reindex data', async () => { migrateState(this.state); await this.saveState(); new Notice('Data repaired and reindexed.'); });
+      scmd('clear-crash-lock', 'Clear crash lock', async () => { await clearCrashLock(this.app); new Notice('Crash lock cleared — please reload Obsidian.', 8000); });
+      scmd('diagnostics', 'Open diagnostics', () => new DiagnosticsModal(this.app, this).open());
       await endBoot(this);
       return;
     }
@@ -2402,7 +2432,7 @@ function renderCampaigns(main, plugin) {
       });
     }
     btn(acts, 'Edit', 'te-btn is-sm', () => new CampaignModal(plugin.app, plugin, camp).open());
-    btn(acts, 'Sync Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'campaigns', camp));
+    btn(acts, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'campaigns', camp));
     btn(acts, camp.status === 'Archived' ? 'Unarchive' : 'Archive', 'te-btn is-sm', async () => {
       camp.status = camp.status === 'Archived' ? 'On Hold' : 'Archived';
       upsert(plugin.state, 'campaigns', camp); await plugin.saveState();
@@ -5031,7 +5061,7 @@ function renderPCCharacter(main, plugin) {
   const a = ce(c, 'div', 'te-card-actions');
   btn(a, 'Full Edit', 'te-btn is-sm is-primary', () => new CharacterModal(plugin.app, plugin, char).open());
   btn(a, '💤 Long Rest', 'te-btn is-sm', async () => { char.hp = char.maxHp || char.hp; upsert(state, 'characters', char); await plugin.saveState(); new Notice('Long Rest — HP restored.'); });
-  btn(a, 'Sync Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'characters', char));
+  btn(a, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'characters', char));
 }
 
 async function renderPCInventory(main, plugin) {
@@ -5443,6 +5473,11 @@ class NPCModal extends Modal {
       t.inputEl.setAttribute('list', list.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
+      this.plugin.refData.get('races').then(races => {
+        const refNames = [...new Set(races.map(r => r.name).filter(Boolean))];
+        const existing = new Set([...ANCESTRIES, ...hybridNames]);
+        refNames.filter(n => !existing.has(n)).forEach(n => { const opt = list.createEl('option'); opt.value = n; });
+      }).catch(() => {});
     });
     addField(s1, 'Role / Title', this.values.role, v => this.values.role = v);
     addField(s1, 'Occupation', this.values.occupation, v => this.values.occupation = v);
@@ -5634,7 +5669,7 @@ class FactionModal extends Modal {
       allies: [], allyIds: [], enemies: [], enemyIds: [],
       publicFace: '', secretAgenda: '',
       reputation: '', rewards: '', consequences: '', visibility: 'dm-only',
-      staffRoles: [],
+      staffRoles: [], memberNpcIds: [], territoryIds: [], linkedQuestIds: [],
     }, this.item);
   }
   onOpen() {
@@ -5666,6 +5701,10 @@ class FactionModal extends Modal {
     chipField(sSt, 'Staff / Roles', safeArr(this.values.staffRoles), v => this.values.staffRoles = v,
       { suggestions: ['Leader','Second-in-command','Quartermaster','Spy','Recruiter','Agent','Informant','Commander','Diplomat','Treasurer','Enforcer','Defector'] });
 
+    addEntityMultiPicker(contentEl, 'Member NPCs', this.values.memberNpcIds, this.plugin, 'npcs', v => this.values.memberNpcIds = v);
+    addEntityMultiPicker(contentEl, 'Territories', this.values.territoryIds, this.plugin, 'settlements', v => this.values.territoryIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Quests', this.values.linkedQuestIds, this.plugin, 'quests', v => this.values.linkedQuestIds = v);
+
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Faction name is required.'); return; }
       upsert(this.plugin.state, 'factions', this.values);
@@ -5684,7 +5723,7 @@ class QuestModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('quest'), name: '', questType: 'Side', status: 'Available',
-      giver: '', giverNpcId: '', location: '', locationId: '', campaignId: '',
+      giver: '', giverNpcId: '', location: '', locationId: '', locationType: '', campaignId: '',
       relatedNPCs: [], relatedNpcIds: [], relatedFactions: [], relatedFactionIds: [],
       objectives: '', stages: '', hooks: [], complications: [],
       rewards: '', consequences: '', secrets: '', playerSummary: '', dmNotes: '',
@@ -5702,7 +5741,12 @@ class QuestModal extends Modal {
     addSelect(contentEl, 'Status', this.values.status, ['Available','Active','Completed','Failed','Abandoned'], v => this.values.status = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     addEntityPicker(contentEl, 'Quest Giver (NPC)', this.values.giverNpcId, this.plugin, 'npcs', v => this.values.giverNpcId = v);
-    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
+    addSelect(contentEl, 'Location Type', this.values.locationType || 'settlements', ['regions','settlements','locations','pois'], v => {
+      this.values.locationType = v;
+      this.values.locationId = '';
+      this.onOpen();
+    });
+    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, this.values.locationType || 'settlements', v => this.values.locationId = v);
     addEntityMultiPicker(contentEl, 'Related NPCs', this.values.relatedNpcIds, this.plugin, 'npcs', v => this.values.relatedNpcIds = v);
     addEntityMultiPicker(contentEl, 'Related Factions', this.values.relatedFactionIds, this.plugin, 'factions', v => this.values.relatedFactionIds = v);
     addField(contentEl, 'Objectives', this.values.objectives, v => this.values.objectives = v, 'textarea');
@@ -5733,7 +5777,7 @@ class EncounterModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '',
-      participants: [], participantPcIds: [], participantNpcIds: [], enemyGroups: '', difficulty: 'Medium',
+      participants: [], participantPcIds: [], participantNpcIds: [], enemyTemplateIds: [], creatureIds: [], enemyGroups: '', difficulty: 'Medium',
       terrain: '', tactics: '', objectives: '',
       victoryConditions: '', failureConditions: '', rewards: '',
       linkedQuest: '', linkedQuestId: '', campaignId: '',
@@ -5753,6 +5797,8 @@ class EncounterModal extends Modal {
     addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
     addEntityMultiPicker(contentEl, 'PC Participants', this.values.participantPcIds, this.plugin, 'characters', v => this.values.participantPcIds = v);
     addEntityMultiPicker(contentEl, 'NPC Participants', this.values.participantNpcIds, this.plugin, 'npcs', v => this.values.participantNpcIds = v);
+    addEntityMultiPicker(contentEl, 'Enemy Templates', this.values.enemyTemplateIds, this.plugin, 'enemyTemplates', v => this.values.enemyTemplateIds = v);
+    addEntityMultiPicker(contentEl, 'Creatures', this.values.creatureIds, this.plugin, 'creatures', v => this.values.creatureIds = v);
     addField(contentEl, 'Enemy Groups', this.values.enemyGroups, v => this.values.enemyGroups = v, 'textarea');
     addField(contentEl, 'Terrain', this.values.terrain, v => this.values.terrain = v);
     addField(contentEl, 'Tactics', this.values.tactics, v => this.values.tactics = v, 'textarea');
@@ -6330,6 +6376,48 @@ class NobleFamilyModal extends Modal {
   }
 }
 
+class RefDataPickerModal extends Modal {
+  constructor(app, items, label, onPick) {
+    super(app);
+    this.items = items || [];
+    this.label = label;
+    this.onPick = onPick;
+    this.search = '';
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `Pick ${this.label}` });
+    const searchEl = ce(contentEl, 'input');
+    searchEl.type = 'text'; searchEl.placeholder = `Search ${this.label}...`;
+    searchEl.style.cssText = 'width:100%;margin-bottom:10px;padding:6px 8px;border-radius:var(--te-r-md);border:1px solid var(--te-border)';
+    const listEl = ce(contentEl, 'div', '');
+    listEl.style.cssText = 'max-height:400px;overflow-y:auto';
+    const render = () => {
+      clear(listEl);
+      const q = this.search.toLowerCase();
+      const filtered = (q ? this.items.filter(it => (it.name||'').toLowerCase().includes(q) || (it.source||'').toLowerCase().includes(q)) : this.items).slice(0, 50);
+      if (!filtered.length) { ce(listEl, 'p', 'te-empty-state', 'No results.'); return; }
+      filtered.forEach(it => {
+        const row = ce(listEl, 'div', 'te-card');
+        row.style.cssText = 'padding:8px 10px;cursor:pointer;margin-bottom:4px';
+        row.onmouseenter = () => row.style.background = 'var(--te-bg-alt)';
+        row.onmouseleave = () => row.style.background = '';
+        const h = ce(row, 'div', ''); h.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+        ce(h, 'strong', '', it.name || 'Unknown');
+        ce(h, 'span', 'te-stat-label', it.source || '');
+        if (it.prerequisite) ce(row, 'p', 'te-card-body', `Req: ${it.prerequisite}`);
+        if (it.entries && it.entries.length) ce(row, 'p', 'te-card-body', String(it.entries[0] || '').slice(0, 120) + '…');
+        row.addEventListener('click', () => { this.onPick(it); this.close(); });
+      });
+    };
+    searchEl.addEventListener('input', () => { this.search = searchEl.value; render(); });
+    render();
+  }
+  onClose() { clear(this.contentEl); }
+}
+
 // LevelUpModal
 class LevelUpModal extends Modal {
   constructor(app, plugin, character, fromLevel, toLevel) {
@@ -6417,8 +6505,19 @@ class LevelUpModal extends Modal {
       });
       const featSection = ce(sASI, 'div', '');
       featSection.style.display = 'none';
-      addField(featSection, 'Feat Name', this.featChosen, v => this.featChosen = v);
-      ce(featSection, 'p', 'te-card-body', 'Enter the feat name. Use the 5e Reference section to look up prerequisites.');
+      const featDisplay = ce(featSection, 'div', 'te-picker-display');
+      featDisplay.style.cssText = 'padding:6px 8px;background:var(--te-bg-alt);border-radius:var(--te-r-md);font-size:.85rem;margin-bottom:6px';
+      featDisplay.textContent = this.featChosen || '— No feat selected —';
+      const featRow = ce(featSection, 'div', 'te-card-actions');
+      btn(featRow, '📖 Browse Feats', 'te-btn is-sm', async () => {
+        const feats = await this.plugin.refData.get('feats');
+        new RefDataPickerModal(this.plugin.app, feats, 'Feat', feat => {
+          this.featChosen = feat.name;
+          featDisplay.textContent = feat.name + (feat.prerequisite ? ` (Req: ${feat.prerequisite})` : '');
+        }).open();
+      });
+      addField(featSection, 'Or type feat name', this.featChosen, v => { this.featChosen = v; featDisplay.textContent = v || '— No feat selected —'; });
+      ce(featSection, 'p', 'te-card-body', 'Browse from the feat compendium or type manually. Check prerequisites before selecting.');
     }
 
     // Spell slots section
@@ -6522,7 +6621,7 @@ class CharacterModal extends Modal {
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
     addField(s1, 'Character Name *', this.values.name, v => this.values.name = v);
-    // Race datalist
+    // Race datalist — populated from data/races.json + hardcoded fallback + hybrid ancestries
     new Setting(s1).setName('Race / Ancestry').addText(t => {
       const dl = s1.createEl('datalist'); dl.id = 'char-race-dl';
       const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
@@ -6530,6 +6629,11 @@ class CharacterModal extends Modal {
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.race || '');
       t.onChange(v => this.values.race = v);
+      this.plugin.refData.get('races').then(races => {
+        const refNames = [...new Set(races.map(r => r.name).filter(Boolean))];
+        const existing = new Set([...ANCESTRIES, ...hybridNames]);
+        refNames.filter(n => !existing.has(n)).forEach(n => { const o = dl.createEl('option'); o.value = n; });
+      }).catch(() => {});
     });
     // Class datalist
     new Setting(s1).setName('Class').addText(t => {
@@ -6545,6 +6649,11 @@ class CharacterModal extends Modal {
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.background || '');
       t.onChange(v => this.values.background = v);
+      this.plugin.refData.get('backgrounds').then(bgs => {
+        const refNames = [...new Set(bgs.map(b => b.name).filter(Boolean))];
+        const existing = new Set(BACKGROUNDS);
+        refNames.filter(n => !existing.has(n)).forEach(n => { const o = dl.createEl('option'); o.value = n; });
+      }).catch(() => {});
     });
     addNumber(s1, 'Level', this.values.level, v => this.values.level = v);
     addSelect(s1, 'Alignment', this.values.alignment, ALIGNMENTS, v => this.values.alignment = v);
@@ -6657,6 +6766,11 @@ class HybridAncestryModal extends Modal {
         t.inputEl.setAttribute('list', dl.id);
         t.setValue(val || '');
         t.onChange(setter);
+        this.plugin.refData.get('races').then(races => {
+          const refNames = [...new Set(races.map(r => r.name).filter(Boolean))];
+          const existing = new Set(allAncOptions);
+          refNames.filter(n => !existing.has(n)).forEach(n => { const o = dl.createEl('option'); o.value = n; });
+        }).catch(() => {});
       });
     };
     makeAncDl('Dominant Ancestry', this.values.dominantAncestry, v => this.values.dominantAncestry = v);

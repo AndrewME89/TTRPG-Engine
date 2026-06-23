@@ -2488,5 +2488,40 @@
       "NPC Race"
     ],
     "type": "Race"
+  },
+  {
+    "id": "race-drow",
+    "name": "Drow",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "cha": 1
+      }
+    ],
+    "darkvision": 120,
+    "traitTags": [
+      "Superior Darkvision",
+      "Fey Ancestry",
+      "Trance",
+      "Keen Senses",
+      "Drow Magic",
+      "Sunlight Sensitivity"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-drow",
+    "name": "Drow",
+    "source": "DMG",
+    "size": ["M"],
+    "speed": { "walk": 30 },
+    "ability": [{ "dex": 1, "cha": 2 }],
+    "traitTags": ["Darkvision", "Superior Darkvision", "Sunlight Sensitivity", "Fey Ancestry", "Trance", "Drow Magic", "Drow Weapon Training"],
+    "type": "Race"
   }
 ]

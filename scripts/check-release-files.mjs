@@ -30,6 +30,23 @@ try {
 // ── versions.json ──────────────────────────────────────────────────────────────
 check('versions.json', fs.existsSync('versions.json'), 'file missing');
 
+// ── Reference data files ───────────────────────────────────────────────────────
+const dataFiles = ['actions.json','backgrounds.json','conditions.json','deities.json',
+  'equipment.json','feats.json','languages.json','objects.json','races.json',
+  'rewards.json','senses.json','skills.json','spells.json','traps.json','vehicles.json'];
+const dataDir = 'data';
+if (!fs.existsSync(dataDir)) {
+  console.error('FAIL  data/ folder: missing — reference data will not load');
+  ok = false;
+} else {
+  for (const df of dataFiles) {
+    const dp = path.join(dataDir, df);
+    const exists = fs.existsSync(dp);
+    const size = exists ? fs.statSync(dp).size : 0;
+    check(`data/${df}`, exists && size > 0, exists ? 'file is empty' : 'file missing');
+  }
+}
+
 // ── Asset folder and structure ─────────────────────────────────────────────────
 const assetRoot = path.join('assets', 'tile-map');
 check('assets/tile-map folder',  fs.existsSync(assetRoot), 'assets/tile-map/ not found');
