@@ -38,7 +38,6 @@ async function safeDisable(app, reason, err) {
   const stamp = new Date().toISOString();
   const msg = `TTRPG Engine safety-disabled at ${stamp}.\n\nReason: ${reason}\n\n${err ? String(err.stack || err) : ''}`;
   await adapterWrite(app, LOAD_FAILED, msg);
-  await adapterWrite(app, KILL_SWITCH_FILES[1], msg);
   await adapterWrite(app, CRASH_REPORT, msg);
 }
 async function beginBoot(plugin) {
@@ -69,7 +68,11 @@ const SAFE_MODE_FILE = `${PLUGIN_DIR}/SAFE_MODE.txt`;
 async function safeModeActive(app) { return adapterExists(app, SAFE_MODE_FILE); }
 async function enableSafeMode(app) { await adapterWrite(app, SAFE_MODE_FILE, `Safe mode enabled ${new Date().toISOString()}`); }
 async function disableSafeMode(app) { await adapterRemove(app, SAFE_MODE_FILE); }
-async function clearCrashLock(app) { await adapterRemove(app, LOAD_FAILED); }
+async function clearCrashLock(app) {
+  await adapterRemove(app, LOAD_FAILED);
+  await adapterRemove(app, BOOT_MARKER);
+  await adapterRemove(app, KILL_SWITCH_FILES[1]);
+}
 async function readCrashReport(app) { return (await adapterExists(app, CRASH_REPORT)) ? adapterRead(app, CRASH_REPORT) : ''; }
 
 // ── Tile asset constants & helpers ────────────────────────────────────────────
@@ -190,10 +193,15 @@ const TILE_ASSETS = [
 ];
 
 // ── 5e canonical lists ────────────────────────────────────────────────────────
-const ANCESTRIES = ['Dragonborn','Dwarf','Elf','Gnome','Half-Elf','Half-Orc','Halfling','Human','Tiefling',
-  'Aasimar','Genasi','Goliath','Tabaxi','Kenku','Lizardfolk','Triton','Yuan-ti Pureblood',
-  'Firbolg','Bugbear','Goblin','Hobgoblin','Kobold','Orc','Tortle','Changeling','Kalashtar',
-  'Shifter','Warforged','Centaur','Loxodon','Minotaur','Simic Hybrid','Vedalken','Other'];
+const ANCESTRIES = [
+  'Aasimar','Bugbear','Centaur','Changeling','Deep Gnome','Dragonborn','Drow','Dwarf',
+  'Elf','Firbolg','Forest Gnome','Genasi','Gnome','Goblin','Goliath',
+  'Half-Elf','Half-Orc','Halfling','High Elf','Hill Dwarf','Hobgoblin','Human',
+  'Kalashtar','Kenku','Kobold','Lightfoot Halfling','Lizardfolk','Loxodon',
+  'Minotaur','Mountain Dwarf','Orc','Rock Gnome','Shifter','Simic Hybrid',
+  'Stout Halfling','Tabaxi','Tiefling','Tortle','Triton',
+  'Vedalken','Warforged','Wood Elf','Yuan-ti Pureblood','Other',
+];
 const CLASSES = ['Artificer','Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin',
   'Ranger','Rogue','Sorcerer','Warlock','Wizard'];
 const BACKGROUNDS = ['Acolyte','Charlatan','Criminal','Entertainer','Folk Hero','Guild Artisan',
@@ -248,6 +256,16 @@ const ANCESTRY_DATA = {
   'Minotaur':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Horns','Goring Rush','Hammering Horns'] },
   'Simic Hybrid':     { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Animal Enhancement'] },
   'Vedalken':         { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Tireless Precision','Partially Amphibious'] },
+  'Drow':             { size:'Medium', speed:30,  darkvision:120, creatureType:'Humanoid', resistance:[],                   traits:['Superior Darkvision','Fey Ancestry','Trance','Keen Senses','Drow Magic','Sunlight Sensitivity'] },
+  'High Elf':         { size:'Medium', speed:30,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Keen Senses','Fey Ancestry','Trance','Cantrip','Extra Language'] },
+  'Wood Elf':         { size:'Medium', speed:35,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Keen Senses','Fey Ancestry','Trance','Fleet of Foot','Mask of the Wild'] },
+  'Hill Dwarf':       { size:'Medium', speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],            traits:['Darkvision','Dwarven Resilience','Stonecunning','Dwarven Toughness'] },
+  'Mountain Dwarf':   { size:'Medium', speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:['Poison'],            traits:['Darkvision','Dwarven Resilience','Stonecunning','Dwarven Armor Training'] },
+  'Lightfoot Halfling':{ size:'Small', speed:25,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:['Lucky','Brave','Halfling Nimbleness','Naturally Stealthy'] },
+  'Stout Halfling':   { size:'Small',  speed:25,  darkvision:0,   creatureType:'Humanoid', resistance:['Poison'],            traits:['Lucky','Brave','Halfling Nimbleness','Stout Resilience'] },
+  'Forest Gnome':     { size:'Small',  speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Gnome Cunning','Natural Illusionist','Speak with Small Beasts'] },
+  'Rock Gnome':       { size:'Small',  speed:25,  darkvision:60,  creatureType:'Humanoid', resistance:[],                   traits:['Darkvision','Gnome Cunning',"Artificer's Lore",'Tinker'] },
+  'Deep Gnome':       { size:'Small',  speed:25,  darkvision:120, creatureType:'Humanoid', resistance:[],                   traits:['Superior Darkvision','Stone Camouflage'] },
   'Other':            { size:'Medium', speed:30,  darkvision:0,   creatureType:'Humanoid', resistance:[],                   traits:[] },
 };
 
@@ -587,9 +605,13 @@ function activeCampaign(state) {
     || safeArr(state.entities.campaigns).find(c => c.status !== 'Archived')
     || null;
 }
+function toTitleCase(s) {
+  return String(s || '').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim()
+    .replace(/\b\w/g, c => c.toUpperCase()).slice(0, 100) || 'Untitled';
+}
 function campaignFolder(plugin) {
   const c = activeCampaign(plugin.state);
-  return c ? (slugify(c.name) || 'Unassigned') : 'Unassigned';
+  return c ? (toTitleCase(c.name) || 'Unassigned') : 'Unassigned';
 }
 function modifier(score) { return Math.floor((Number(score || 10) - 10) / 2); }
 function modStr(score) { const m = modifier(score); return (m >= 0 ? '+' : '') + m; }
@@ -744,7 +766,8 @@ async function runDiagnostics(plugin) {
 
 // ── Entity picker helpers ─────────────────────────────────────────────────────
 function addEntityPicker(el, label, value, plugin, entityKey, onChange) {
-  const items = safeArr(plugin.state.entities[entityKey]);
+  const items = safeArr(plugin.state.entities[entityKey])
+    .slice().sort((a, b) => (a.name || a.title || '').localeCompare(b.name || b.title || ''));
   const opts = items.map(x => x.name || x.title || x.id);
   const vals = items.map(x => x.id);
   const wrap = ce(el, 'div', 'te-field-row');
@@ -758,6 +781,36 @@ function addEntityPicker(el, label, value, plugin, entityKey, onChange) {
 }
 function addCampaignPicker(el, label, value, plugin, onChange) {
   return addEntityPicker(el, label, value, plugin, 'campaigns', onChange);
+}
+function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) {
+  const items = safeArr(plugin.state.entities[entityKey])
+    .slice().sort((a, b) => (a.name || a.title || '').localeCompare(b.name || b.title || ''));
+  const selected = new Set(safeArr(valueIds));
+  const wrap = ce(el, 'div', 'te-field-row'); wrap.style.alignItems = 'flex-start';
+  ce(wrap, 'label', 'te-field-label', label);
+  const right = ce(wrap, 'div', ''); right.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:4px';
+  const chipRow = ce(right, 'div', 'te-chip-input');
+  chipRow.style.cssText = 'flex-wrap:wrap;gap:4px;min-height:28px;padding:2px 0';
+  const renderChips = () => {
+    clear(chipRow);
+    [...selected].forEach(id => {
+      const it = items.find(x => x.id === id);
+      if (!it) return;
+      const chip = ce(chipRow, 'span', 'te-chip');
+      chip.textContent = it.name || it.title || id;
+      const rm = ce(chip, 'span', ''); rm.textContent = ' ×';
+      rm.style.cssText = 'cursor:pointer;margin-left:4px;opacity:.7';
+      rm.addEventListener('click', () => { selected.delete(id); renderChips(); onChange([...selected]); });
+    });
+  };
+  const sel = ce(right, 'select', 'te-field-select');
+  sel.style.cssText = 'padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  ce(sel, 'option', '', `— add ${label} —`).value = '';
+  items.forEach(it => { const o = ce(sel, 'option', '', it.name || it.title || it.id); o.value = it.id; });
+  sel.addEventListener('change', () => {
+    if (sel.value) { selected.add(sel.value); renderChips(); onChange([...selected]); sel.value = ''; }
+  });
+  renderChips();
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────
@@ -775,14 +828,84 @@ async function writeNote(app, path, content) {
     else await app.vault.create(norm, content);
   } catch (e) { new Notice('Could not write note: ' + e.message); }
 }
+const ENTITY_MD_TEMPLATES = {
+  npcs: item => {
+    let b = `# ${item.name || 'NPC'}\n\n`;
+    if (item.role || item.occupation) b += `**Role:** ${[item.role,item.occupation].filter(Boolean).join(' / ')}\n`;
+    if (item.race) b += `**Race:** ${item.race}\n`;
+    if (item.status) b += `**Status:** ${item.status}\n`;
+    b += '\n## Personality\n\n';
+    if (item.motivation) b += `**Motivation:** ${item.motivation}\n\n`;
+    if (item.appearance) b += `**Appearance:** ${item.appearance}\n\n`;
+    if (item.voice) b += `**Voice / Mannerisms:** ${item.voice}\n\n`;
+    b += '## DM Notes\n\n';
+    if (item.secrets) b += `${item.secrets}\n\n`;
+    if (item.notes) b += `${item.notes}\n\n`;
+    return b;
+  },
+  quests: item => {
+    let b = `# ${item.name || 'Quest'}\n\n`;
+    if (item.questType) b += `**Type:** ${item.questType}`;
+    if (item.status) b += ` | **Status:** ${item.status}`;
+    b += '\n\n## Objectives\n\n';
+    if (item.objectives) b += `${item.objectives}\n\n`;
+    if (item.stages) b += `## Stages\n\n${item.stages}\n\n`;
+    if (item.rewards) b += `## Rewards\n\n${item.rewards}\n\n`;
+    if (item.playerSummary) b += `## Player Summary\n\n${item.playerSummary}\n\n`;
+    if (item.secrets) b += `## DM Notes\n\n${item.secrets}\n\n`;
+    return b;
+  },
+  factions: item => {
+    let b = `# ${item.name || 'Faction'}\n\n`;
+    if (item.type) b += `**Type:** ${item.type}\n\n`;
+    if (item.ideology) b += `## Ideology\n\n${item.ideology}\n\n`;
+    if (item.publicFace) b += `## Public Face\n\n${item.publicFace}\n\n`;
+    if (item.secretAgenda) b += `## Secret Agenda\n\n${item.secretAgenda}\n\n`;
+    if (item.resources) b += `## Resources\n\n${item.resources}\n\n`;
+    return b;
+  },
+  encounters: item => {
+    let b = `# ${item.name || 'Encounter'}\n\n`;
+    if (item.type) b += `**Type:** ${item.type} | **Difficulty:** ${item.difficulty || 'Medium'}\n\n`;
+    if (item.objectives) b += `## Objectives\n\n${item.objectives}\n\n`;
+    if (item.tactics) b += `## Tactics\n\n${item.tactics}\n\n`;
+    if (item.victoryConditions) b += `## Victory Conditions\n\n${item.victoryConditions}\n\n`;
+    if (item.rewards) b += `## Rewards\n\n${item.rewards}\n\n`;
+    if (item.notes) b += `## DM Notes\n\n${item.notes}\n\n`;
+    return b;
+  },
+  sessions: item => {
+    let b = `# ${item.name || 'Session'}\n\n`;
+    if (item.realDate) b += `**Date:** ${item.realDate}`;
+    if (item.gameDate) b += ` | **In-world:** ${item.gameDate}`;
+    b += '\n\n## Recap\n\n';
+    if (item.recap) b += `${item.recap}\n\n`;
+    if (item.cliffhanger) b += `## Cliffhanger\n\n${item.cliffhanger}\n\n`;
+    if (item.nextSessionNotes) b += `## Next Session\n\n${item.nextSessionNotes}\n\n`;
+    return b;
+  },
+  hybridAncestries: item => {
+    let b = `# ${item.name || 'Hybrid Ancestry'}\n\n`;
+    b += `**Parents:** ${[item.dominantAncestry,item.recessiveAncestry].filter(Boolean).join(' × ')}\n`;
+    b += `**Size:** ${item.size||'Medium'} | **Speed:** ${item.speed||30} ft | **Type:** ${item.creatureType||'Humanoid'} | **Darkvision:** ${item.darkvision||'None'}\n\n`;
+    if (item.summary) b += `## Summary\n\n${item.summary}\n\n`;
+    if (item.playerNotes) b += `## Player Notes\n\n${item.playerNotes}\n\n`;
+    return b;
+  },
+};
 function entityMd(key, item) {
+  const FM_KEYS = ['name','title','status','type','campaignId','visibility','updatedAt'];
   const lines = ['---'];
-  for (const [k, v] of Object.entries(item)) {
-    if (k === 'id') continue;
-    const val = Array.isArray(v) ? v.join(', ') : String(v || '');
-    lines.push(`${k}: ${val}`);
-  }
-  lines.push('---', '', `# ${item.name || item.title || 'Untitled'}`, '', item.summary || item.description || '');
+  FM_KEYS.forEach(k => {
+    if (item[k] !== undefined && item[k] !== '') {
+      const val = Array.isArray(item[k]) ? item[k].join(', ') : String(item[k] || '');
+      lines.push(`${k}: ${val}`);
+    }
+  });
+  lines.push('---', '');
+  const tmpl = ENTITY_MD_TEMPLATES[key];
+  if (tmpl) lines.push(tmpl(item));
+  else lines.push(`# ${item.name || item.title || 'Untitled'}`, '', item.summary || item.description || '');
   return lines.join('\n');
 }
 async function writeEntityNote(plugin, key, item) {
@@ -4277,8 +4400,8 @@ class NPCModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('npc'), name: '', pronouns: '', race: '', role: '', occupation: '',
-      status: 'Alive', location: '', faction: [], attitude: 'Indifferent',
-      ac: 10, hp: 10, speed: '30 ft',
+      status: 'Alive', location: '', locationId: '', faction: [], factionIds: [], attitude: 'Indifferent',
+      campaignId: '', ac: 10, hp: 10, speed: '30 ft',
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       traits: [], ideals: [], bonds: [], flaws: [],
       motivation: '', secrets: '', appearance: '', voice: '',
@@ -4293,6 +4416,7 @@ class NPCModal extends Modal {
 
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
+    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(s1, 'Name *', this.values.name, v => this.values.name = v);
     addField(s1, 'Pronouns', this.values.pronouns, v => this.values.pronouns = v);
     const raceIn = new Setting(s1).setName('Race / Ancestry').addText(t => {
@@ -4307,8 +4431,8 @@ class NPCModal extends Modal {
     addField(s1, 'Role / Title', this.values.role, v => this.values.role = v);
     addField(s1, 'Occupation', this.values.occupation, v => this.values.occupation = v);
     addSelect(s1, 'Status', this.values.status, ['Alive','Dead','Missing','Captured','Unknown','Retired'], v => this.values.status = v);
-    addField(s1, 'Location', this.values.location, v => this.values.location = v);
-    chipField(s1, 'Faction(s)', this.values.faction, v => this.values.faction = v);
+    addEntityPicker(s1, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
+    addEntityMultiPicker(s1, 'Faction(s)', this.values.factionIds, this.plugin, 'factions', v => this.values.factionIds = v);
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Combat Stats' });
@@ -4482,8 +4606,10 @@ class FactionModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('faction'), name: '', type: '', ideology: '', territory: '',
-      leadership: '', goals: [], methods: [], resources: '', ranks: [],
-      allies: [], enemies: [], publicFace: '', secretAgenda: '',
+      leadership: '', leaderNpcId: '', campaignId: '',
+      goals: [], methods: [], resources: '', ranks: [],
+      allies: [], allyIds: [], enemies: [], enemyIds: [],
+      publicFace: '', secretAgenda: '',
       reputation: '', rewards: '', consequences: '', visibility: 'dm-only',
     }, this.item);
   }
@@ -4492,17 +4618,20 @@ class FactionModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Faction` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Faction Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Faction Type', this.values.type || 'Criminal', ['Criminal','Political','Religious','Military','Mercantile','Academic','Secret Society','Resistance','Cult','Guild','Noble House','Other'], v => this.values.type = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     addField(contentEl, 'Ideology', this.values.ideology, v => this.values.ideology = v, 'textarea');
     addField(contentEl, 'Territory', this.values.territory, v => this.values.territory = v);
-    addField(contentEl, 'Leadership', this.values.leadership, v => this.values.leadership = v);
+    addEntityPicker(contentEl, 'Leader NPC', this.values.leaderNpcId, this.plugin, 'npcs', v => this.values.leaderNpcId = v);
+    addField(contentEl, 'Leadership (text)', this.values.leadership, v => this.values.leadership = v);
     chipField(contentEl, 'Goals', this.values.goals, v => this.values.goals = v);
     chipField(contentEl, 'Methods', this.values.methods, v => this.values.methods = v);
     addField(contentEl, 'Resources', this.values.resources, v => this.values.resources = v, 'textarea');
     chipField(contentEl, 'Ranks / Titles', this.values.ranks, v => this.values.ranks = v);
-    chipField(contentEl, 'Allies', this.values.allies, v => this.values.allies = v);
-    chipField(contentEl, 'Enemies', this.values.enemies, v => this.values.enemies = v);
+    addEntityMultiPicker(contentEl, 'Allied Factions', this.values.allyIds, this.plugin, 'factions', v => this.values.allyIds = v);
+    addEntityMultiPicker(contentEl, 'Enemy Factions', this.values.enemyIds, this.plugin, 'factions', v => this.values.enemyIds = v);
     addField(contentEl, 'Public Face', this.values.publicFace, v => this.values.publicFace = v, 'textarea');
     addField(contentEl, 'Secret Agenda', this.values.secretAgenda, v => this.values.secretAgenda = v, 'textarea');
     addField(contentEl, 'Reputation', this.values.reputation, v => this.values.reputation = v);
@@ -4524,10 +4653,11 @@ class QuestModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('quest'), name: '', questType: 'Side', status: 'Available',
-      giver: '', location: '', relatedNPCs: [], relatedFactions: [],
+      giver: '', giverNpcId: '', location: '', locationId: '', campaignId: '',
+      relatedNPCs: [], relatedNpcIds: [], relatedFactions: [], relatedFactionIds: [],
       objectives: '', stages: '', hooks: [], complications: [],
       rewards: '', consequences: '', secrets: '', playerSummary: '', dmNotes: '',
-      linkedEncounters: [], visibility: 'dm-only',
+      linkedEncounters: [], linkedEncounterIds: [], visibility: 'dm-only',
     }, this.item);
   }
   onOpen() {
@@ -4535,14 +4665,15 @@ class QuestModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Quest` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Quest Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Quest Type', this.values.questType, ['Main','Side','Personal','Faction','Investigation','Escort','Retrieval','Elimination','Exploration','Social','Other'], v => this.values.questType = v);
     addSelect(contentEl, 'Status', this.values.status, ['Available','Active','Completed','Failed','Abandoned'], v => this.values.status = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
-    addField(contentEl, 'Quest Giver', this.values.giver, v => this.values.giver = v);
-    addField(contentEl, 'Location', this.values.location, v => this.values.location = v);
-    chipField(contentEl, 'Related NPCs', this.values.relatedNPCs, v => this.values.relatedNPCs = v);
-    chipField(contentEl, 'Related Factions', this.values.relatedFactions, v => this.values.relatedFactions = v);
+    addEntityPicker(contentEl, 'Quest Giver (NPC)', this.values.giverNpcId, this.plugin, 'npcs', v => this.values.giverNpcId = v);
+    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
+    addEntityMultiPicker(contentEl, 'Related NPCs', this.values.relatedNpcIds, this.plugin, 'npcs', v => this.values.relatedNpcIds = v);
+    addEntityMultiPicker(contentEl, 'Related Factions', this.values.relatedFactionIds, this.plugin, 'factions', v => this.values.relatedFactionIds = v);
     addField(contentEl, 'Objectives', this.values.objectives, v => this.values.objectives = v, 'textarea');
     addField(contentEl, 'Stages / Steps', this.values.stages, v => this.values.stages = v, 'textarea');
     chipField(contentEl, 'Hooks', this.values.hooks, v => this.values.hooks = v);
@@ -4551,7 +4682,7 @@ class QuestModal extends Modal {
     addField(contentEl, 'Consequences (failure)', this.values.consequences, v => this.values.consequences = v, 'textarea');
     addField(contentEl, 'Player-Visible Summary', this.values.playerSummary, v => this.values.playerSummary = v, 'textarea');
     addField(contentEl, 'DM Notes (hidden)', this.values.secrets, v => this.values.secrets = v, 'textarea');
-    chipField(contentEl, 'Linked Encounters', this.values.linkedEncounters, v => this.values.linkedEncounters = v);
+    addEntityMultiPicker(contentEl, 'Linked Encounters', this.values.linkedEncounterIds, this.plugin, 'encounters', v => this.values.linkedEncounterIds = v);
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Quest name is required.'); return; }
       upsert(this.plugin.state, 'quests', this.values);
@@ -4569,11 +4700,12 @@ class EncounterModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('encounter'), name: '', type: 'Combat', location: '',
+      id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '',
       participants: [], enemyGroups: '', difficulty: 'Medium',
       terrain: '', tactics: '', objectives: '',
       victoryConditions: '', failureConditions: '', rewards: '',
-      linkedQuest: '', notes: '', visibility: 'dm-only',
+      linkedQuest: '', linkedQuestId: '', campaignId: '',
+      notes: '', visibility: 'dm-only',
     }, this.item);
   }
   onOpen() {
@@ -4581,10 +4713,12 @@ class EncounterModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Encounter` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Encounter Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Encounter Type', this.values.type, ['Combat','Social','Exploration','Trap','Chase','Hazard','Skill Challenge','Puzzle','Boss Fight','Other'], v => this.values.type = v);
     addSelect(contentEl, 'Difficulty', this.values.difficulty, ['Trivial','Easy','Medium','Hard','Deadly','Mythic'], v => this.values.difficulty = v);
-    addField(contentEl, 'Location', this.values.location, v => this.values.location = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
+    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
     chipField(contentEl, 'Participants (PCs)', this.values.participants, v => this.values.participants = v);
     addField(contentEl, 'Enemy Groups', this.values.enemyGroups, v => this.values.enemyGroups = v, 'textarea');
     addField(contentEl, 'Terrain', this.values.terrain, v => this.values.terrain = v);
@@ -4593,7 +4727,7 @@ class EncounterModal extends Modal {
     addField(contentEl, 'Victory Conditions', this.values.victoryConditions, v => this.values.victoryConditions = v, 'textarea');
     addField(contentEl, 'Failure Conditions', this.values.failureConditions, v => this.values.failureConditions = v, 'textarea');
     addField(contentEl, 'Rewards / Loot', this.values.rewards, v => this.values.rewards = v, 'textarea');
-    addField(contentEl, 'Linked Quest', this.values.linkedQuest, v => this.values.linkedQuest = v);
+    addEntityPicker(contentEl, 'Linked Quest', this.values.linkedQuestId, this.plugin, 'quests', v => this.values.linkedQuestId = v);
     addField(contentEl, 'DM Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Encounter name is required.'); return; }
@@ -5299,22 +5433,26 @@ class HybridAncestryModal extends Modal {
       const tGrid = ce(s5, 'div', 'te-trait-grid');
       tierTraits.forEach(trait => {
         const isOn = safeArr(this.values.traits).includes(trait.id);
-        const row = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
-        const cb = ce(row, 'input'); cb.type = 'checkbox'; cb.checked = isOn;
-        const lbl = ce(row, 'label', '');
-        lbl.style.cssText = 'cursor:pointer;margin-left:4px;font-size:.84rem;flex:1;min-width:0';
-        ce(lbl, 'strong', '', trait.name);
-        ce(lbl, 'span', 'te-muted-text', ` (+${tier})`);
-        ce(lbl, 'p', 'te-trait-desc', trait.desc);
+        const card = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
+        card.setAttribute('role', 'checkbox');
+        card.setAttribute('aria-checked', String(isOn));
+        card.setAttribute('tabindex', '0');
+        card.style.cursor = 'pointer';
+        const nameRow = ce(card, 'div', ''); nameRow.style.cssText = 'font-size:.84rem;font-weight:600';
+        nameRow.textContent = trait.name;
+        const tierBadge = ce(nameRow, 'span', 'te-muted-text'); tierBadge.textContent = ` (+${tier})`;
+        ce(card, 'p', 'te-trait-desc', trait.desc);
         const toggle = () => {
+          const active = card.getAttribute('aria-checked') === 'true';
+          const next = !active;
+          card.setAttribute('aria-checked', String(next));
+          card.classList.toggle('is-active', next);
           const cur = safeArr(this.values.traits);
-          if (cb.checked) { if (!cur.includes(trait.id)) this.values.traits = [...cur, trait.id]; }
-          else { this.values.traits = cur.filter(id => id !== trait.id); }
-          row.classList.toggle('is-active', cb.checked);
+          this.values.traits = next ? (cur.includes(trait.id) ? cur : [...cur, trait.id]) : cur.filter(id => id !== trait.id);
           refreshBalance();
         };
-        cb.addEventListener('change', toggle);
-        lbl.addEventListener('click', () => { cb.checked = !cb.checked; toggle(); });
+        card.addEventListener('click', toggle);
+        card.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
       });
     });
 
