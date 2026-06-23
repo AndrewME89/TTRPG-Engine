@@ -6,6 +6,23 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 259c
+
+### Added
+- **Relationship Matrix**: Replaces Faction Matrix — multi-entity relationship tracking for Factions, NPCs, PCs, Noble Families, Settlements, Locations, Regions, and Quests; nav label updated to "Relationship Matrix"; `'relationship-matrix'` section alias added; old `renderFactionMatrix` kept as delegate stub for backward compatibility
+- **`RELATIONSHIP_TYPES`**: 28 relationship types (Ally, At War, Blackmailed, Blood Feud, Business Partners, Cautious, Controlled, Defector, Diplomatic, Estranged, Feudal Lord, Former Allies, Grudging Respect, Mercenaries, Mentored, Neutral, Peace Treaty, Protected, Rivals, Romance, Servant, Spy, Suspicious, Trade Partners, Trusted, Uneasy Truce, Unknown, Vassal)
+- **`PICKABLE_ENTITY_TYPES`**: 8 entity types selectable in relationship from/to pickers (Faction, NPC, PC/Character, Noble Family, Settlement, Location, Region, Quest)
+- **`addTypedEntityPicker()`**: Helper for two-dropdown entity selection (type selector + entity-ID selector populated from that type)
+- **`NobleFamilyModal`**: 4-section rich modal — Identity (name, motto, status, visibility, head of house NPC, home region, seat settlement), Holdings & Claims, Relations (allied factions multi-picker, related quests multi-picker, member/alliance/rival chips), DM Notes (secrets, player summary, DM notes)
+- **Noble Families entity**: `nobleFamilies` added to `createDefaultState()`, `ENTITY_ICONS` (🏰), `ENTITY_LABELS`, `RICH_EDIT_MAP`, and `ENTITY_FIELD_SCHEMAS`
+- **`renderRelationshipMatrix()`**: New render function — All Relationships section with filter buttons (All, NPC, Faction, PC, Noble Family, Settlement), Noble Families & Houses card grid, Faction Reputation tracker
+
+### Changed
+- **`RelationshipModal`**: Rebuilt with typed-entity pickers (`fromEntityType/fromId`, `toEntityType/toId`), `relationshipType` dropdown (28 types), `attitude`, `influence`, `trust`, `fear` sliders/fields; legacy `from/to/type` text fields preserved for backward compat
+- **`FactionModal`**: Added `staffRoles` chip field section (Staff & Roles) with suggestions: Leader, Second-in-command, Quartermaster, Spy, Recruiter, Agent, Informant, Commander, Diplomat, Treasurer, Enforcer, Defector
+
+---
+
 ## [Unreleased] — Phase 259
 
 ### Added
