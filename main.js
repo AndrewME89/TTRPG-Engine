@@ -4059,6 +4059,88 @@ function renderRunSession(main, plugin) {
   });
   saveAsBtn.style.display = 'none';
 
+  // ── Active NPC Quick Look ─────────────────────────────────────────────────
+  sectionHead(main, '👥 Active NPCs');
+  const npcLookWrap = ce(main, 'div', 'te-card'); npcLookWrap.style.padding = '12px';
+  const campNpcs = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
+  if (campNpcs.length) {
+    const npcSearch = { q: '' };
+    const npcSIn = ce(npcLookWrap, 'input'); npcSIn.type = 'text'; npcSIn.placeholder = 'Search NPCs…';
+    npcSIn.style.cssText = 'width:100%;padding:6px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem;margin-bottom:8px';
+    const npcListEl = ce(npcLookWrap, 'div', '');
+    const rebuildNpcs = () => {
+      clear(npcListEl);
+      const q = npcSearch.q.toLowerCase();
+      const shown = campNpcs.filter(n => !q || (n.name||'').toLowerCase().includes(q) || (n.role||'').toLowerCase().includes(q)).slice(0, 20);
+      if (!shown.length) { ce(npcListEl, 'p', 'te-empty-state', q ? 'No NPCs match.' : 'No NPCs in this campaign.'); return; }
+      shown.forEach(npc => {
+        const row = ce(npcListEl, 'div', 'te-card-meta-row');
+        row.style.cssText = 'padding:6px 4px;border-bottom:1px solid var(--te-border);display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap';
+        const nm = ce(row, 'strong', ''); nm.textContent = npc.name; nm.style.minWidth = '120px';
+        if (npc.role) { const r = ce(row, 'span', 'te-card-meta-label'); r.textContent = npc.role; }
+        if (npc.attitude) { const a = ce(row, 'span', 'te-muted-text'); a.textContent = npc.attitude; a.style.fontSize = '.82rem'; }
+        if (npc.motivation) { const m = ce(row, 'span', 'te-muted-text'); m.textContent = `"${npc.motivation}"`; m.style.fontSize = '.82rem'; m.style.fontStyle = 'italic'; m.style.flex = '1'; }
+      });
+    };
+    npcSIn.addEventListener('input', () => { npcSearch.q = npcSIn.value; rebuildNpcs(); });
+    rebuildNpcs();
+  } else {
+    ce(npcLookWrap, 'p', 'te-empty-state', 'No NPCs in the active campaign.');
+  }
+
+  // ── Active Quests ─────────────────────────────────────────────────────────
+  sectionHead(main, '📋 Active Quests');
+  const questWrap = ce(main, 'div', '');
+  const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!state.activeCampaignId || q.campaignId === state.activeCampaignId));
+  if (activeQuests.length) {
+    const qg = ce(questWrap, 'div', 'te-grid');
+    activeQuests.slice(0, 12).forEach(q => {
+      const c = ce(qg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head');
+      ce(h, 'span', 'te-card-icon', ENTITY_ICONS.quests || '📋');
+      ce(h, 'h3', 'te-card-title', q.name);
+      if (q.questType) { const m = ce(h, 'span', 'te-card-meta-label', q.questType); m.style.marginLeft = '6px'; }
+      if (q.summary) ce(c, 'p', 'te-card-body', q.summary.slice(0, 100));
+      const objs = safeArr(q.objectives);
+      if (objs.length) {
+        const ol = ce(c, 'ul', ''); ol.style.cssText = 'margin:4px 0 0 16px;padding:0;font-size:.82rem;color:var(--te-muted)';
+        objs.slice(0, 3).forEach(obj => { const li = ce(ol, 'li', ''); li.textContent = typeof obj === 'string' ? obj : (obj.text || ''); });
+        if (objs.length > 3) ce(ol, 'li', 'te-muted-text', `+ ${objs.length - 3} more`);
+      }
+    });
+  } else {
+    ce(questWrap, 'p', 'te-empty-state', 'No active quests. Mark a quest as Active in the Quest Tracker.');
+  }
+
+  // ── Conditions Reference ──────────────────────────────────────────────────
+  sectionHead(main, '⚡ Conditions Reference');
+  const condWrap = ce(main, 'div', 'te-card'); condWrap.style.padding = '12px';
+  const condLoading = ce(condWrap, 'p', 'te-muted-text', 'Loading conditions…');
+  plugin.refData.get('conditions').then(allConds => {
+    condLoading.remove();
+    if (!allConds.length) { ce(condWrap, 'p', 'te-empty-state', 'Conditions data not loaded. Ensure data/conditions.json is present.'); return; }
+    const condList = ce(condWrap, 'div', '');
+    let condExpanded = null;
+    const renderConds = () => {
+      clear(condList);
+      allConds.forEach(cond => {
+        const row = ce(condList, 'div', '');
+        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border)';
+        const headRow = ce(row, 'div', '');
+        headRow.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0';
+        const nameEl = ce(headRow, 'strong', ''); nameEl.textContent = cond.name;
+        const isOpen = condExpanded === cond.name;
+        const arrow = ce(headRow, 'span', 'te-muted-text'); arrow.textContent = isOpen ? '▲' : '▼'; arrow.style.fontSize = '.75rem';
+        if (isOpen) {
+          const body = ce(row, 'div', ''); body.style.cssText = 'padding:4px 8px;font-size:.85rem;color:var(--te-text)';
+          renderEntries(body, cond.entries);
+        }
+        headRow.addEventListener('click', () => { condExpanded = isOpen ? null : cond.name; renderConds(); });
+      });
+    };
+    renderConds();
+  });
+
   // ── Session Event Log ─────────────────────────────────────────────────────
   sectionHead(main, '📋 Session Event Log');
   const sess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
@@ -4834,7 +4916,7 @@ function renderPCCharacter(main, plugin) {
   btn(a, 'Sync Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'characters', char));
 }
 
-function renderPCInventory(main, plugin) {
+async function renderPCInventory(main, plugin) {
   const state = plugin.state;
   pageHead(main, plugin, '🎒 Inventory', 'Track equipment, currency, and carried items.', []);
   const chars = safeArr(state.entities.characters);
@@ -4865,33 +4947,65 @@ function renderPCInventory(main, plugin) {
   }
   const addRow = ce(main, 'div', ''); addRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';
   const inp = ce(addRow, 'input'); inp.type = 'text'; inp.placeholder = 'Item name…'; inp.style.flex = '1';
-  const sel = ce(addRow, 'select'); sel.style.cssText = 'max-width:160px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-  ce(sel, 'option', '', '— quick pick —').value = '';
-  OPTION_BANKS.inventoryItemTypes.forEach(t => ce(sel, 'option', '', t).value = t);
-  sel.addEventListener('change', () => { if (sel.value) { inp.value = sel.value; sel.value = ''; inp.focus(); } });
   btn(addRow, '+ Add', 'te-btn is-sm is-primary', async () => {
     const v = inp.value.trim();
     if (v) { if (!char.equipment) char.equipment = []; char.equipment.push(v); upsert(state, 'characters', char); await plugin.saveState(); inp.value = ''; }
   });
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addRow.querySelector('button').click(); } });
+
+  // Equipment Browser (backed by equipment.json via ReferenceDataService)
+  sectionHead(main, 'Equipment Browser');
+  const allEquip = await plugin.refData.get('equipment');
+  const ebs = { search: '', expanded: null };
+  const eWrap = ce(main, 'div', '');
+  const rebuildEquipBrowser = () => {
+    clear(eWrap);
+    const sRow = ce(eWrap, 'div', ''); sRow.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+    const sIn = ce(sRow, 'input'); sIn.type = 'text'; sIn.placeholder = 'Search equipment…'; sIn.value = ebs.search;
+    sIn.style.cssText = 'flex:1;padding:7px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem';
+    sIn.addEventListener('input', () => { ebs.search = sIn.value; ebs.expanded = null; rebuildEquipBrowser(); });
+    if (!allEquip.length) { ce(eWrap, 'p', 'te-empty-state', 'Equipment data not loaded. Ensure data/equipment.json is present.'); return; }
+    const filtered = plugin.refData.search(allEquip, ebs.search).slice(0, 80);
+    const listEl = ce(eWrap, 'div', 'te-grid');
+    filtered.forEach(eq => {
+      const carried = safeArr(char.equipment).includes(eq.name);
+      const c = ce(listEl, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); h.style.cursor = 'pointer';
+      ce(h, 'h3', 'te-card-title', eq.name);
+      const m = ce(h, 'span', 'te-card-meta-label', refItemMeta('equipment', eq)); m.style.marginLeft = '6px';
+      const isOpen = ebs.expanded === eq.name;
+      if (isOpen) { const d = ce(c, 'div', 'te-ref-detail'); refItemDetail(d, 'equipment', eq); }
+      h.addEventListener('click', () => { ebs.expanded = isOpen ? null : eq.name; rebuildEquipBrowser(); });
+      const a = ce(c, 'div', 'te-card-actions');
+      if (carried) {
+        const lbl = ce(a, 'span', 'te-muted-text'); lbl.textContent = '✓ Carried'; lbl.style.fontSize = '.82rem';
+      } else {
+        btn(a, '+ Carry', 'te-btn is-sm is-primary', async () => {
+          if (!char.equipment) char.equipment = []; char.equipment.push(eq.name); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${eq.name}" added to inventory.`);
+        });
+      }
+    });
+    if (!filtered.length) ce(listEl, 'p', 'te-empty-state', `No equipment matches "${ebs.search}".`);
+  };
+  rebuildEquipBrowser();
 }
 
-function renderPCSpellbook(main, plugin) {
+async function renderPCSpellbook(main, plugin) {
   const state = plugin.state;
-  pageHead(main, plugin, '📕 Spellbook', 'Known and prepared spells.');
+  pageHead(main, plugin, '📕 Spellbook', 'Known and prepared spells — backed by the full 5e spell list.');
   const chars = safeArr(state.entities.characters);
   if (!chars.length) { emptyState(main, 'No characters yet.'); return; }
   const char = chars.find(c => c.id === state.activeCharacterId) || chars[0];
-  const isSpellcaster = SPELLCASTING_CLASSES.includes(char.class);
-  if (!isSpellcaster) { emptyState(main, `${char.name} is a ${char.class || 'non-spellcasting class'}.`, 'Spellbook is available for spellcasting classes.'); return; }
+  const isSpellcasterChar = SPELLCASTING_CLASSES.includes(char.class);
+  if (!isSpellcasterChar) { emptyState(main, `${char.name} is a ${char.class || 'non-spellcasting class'}.`, 'Spellbook is available for spellcasting classes only.'); return; }
 
   // Spell Slots Tracker
   sectionHead(main, 'Spell Slots');
-  ce(main, 'p', 'te-progress-label', 'Click a bubble to mark it used. Set max slots for each level. Resets on rest.');
+  ce(main, 'p', 'te-progress-label', 'Click a bubble to mark it used. Set max slots for each level. Resets on long rest.');
   const slotWrap = ce(main, 'div', 'te-spell-slots');
   for (let lvl = 1; lvl <= 9; lvl++) {
     const slotData = (char.spellSlots || {})[lvl] || { max: 0, used: 0 };
-    if (lvl > 1 && slotData.max === 0) continue; // hide empty high levels
+    if (lvl > 1 && slotData.max === 0) continue;
     const row = ce(slotWrap, 'div', 'te-slot-row');
     ce(row, 'span', 'te-slot-label', `Level ${lvl}`);
     const bubbles = ce(row, 'div', 'te-slot-bubbles');
@@ -4906,7 +5020,7 @@ function renderPCSpellbook(main, plugin) {
       });
     }
     const maxInp = ce(row, 'input'); maxInp.type = 'number'; maxInp.min = '0'; maxInp.max = '9'; maxInp.value = String(slotData.max || 0);
-    maxInp.title = 'Set maximum slots for this level';
+    maxInp.title = 'Set maximum slots';
     maxInp.style.cssText = 'width:46px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:2px 6px;text-align:center';
     maxInp.addEventListener('change', async () => {
       if (!char.spellSlots) char.spellSlots = {};
@@ -4916,38 +5030,78 @@ function renderPCSpellbook(main, plugin) {
     });
   }
   const resetRow = ce(main, 'div', ''); resetRow.style.marginBottom = '16px';
-  btn(resetRow, '↺ Reset All Slots', 'te-btn is-sm', async () => {
+  btn(resetRow, '↺ Long Rest — Reset Slots', 'te-btn is-sm', async () => {
     if (char.spellSlots) { Object.keys(char.spellSlots).forEach(k => { char.spellSlots[k].used = 0; }); }
-    upsert(state, 'characters', char); await plugin.saveState(); new Notice('Spell slots reset.');
+    upsert(state, 'characters', char); await plugin.saveState(); new Notice('Spell slots reset (Long Rest).');
   });
 
-  sectionHead(main, `${char.name}'s Spells`);
-  const spells = safeArr(char.spells);
-  if (spells.length) {
-    const compSpells = safeArr(state.entities.compendium).filter(e => e.type === 'Spell');
+  // Known Spells (from char.spells array)
+  sectionHead(main, `${char.name}'s Known / Prepared Spells`);
+  const knownSpells = safeArr(char.spells);
+  const allRefSpells = await plugin.refData.get('spells');
+  if (knownSpells.length) {
     const g = ce(main, 'div', 'te-grid');
-    spells.forEach((spellName, i) => {
-      const comp = compSpells.find(s => s.name.toLowerCase() === spellName.toLowerCase());
+    knownSpells.forEach((spellName, i) => {
+      const refSpell = allRefSpells.find(s => s.name.toLowerCase() === spellName.toLowerCase());
       const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '✨'); ce(h, 'h3', 'te-card-title', spellName);
-      if (comp) { if (comp.level) ce(c, 'p', 'te-card-body', `${comp.level} — ${(comp.summary || '').slice(0, 80)}`); }
+      const h = ce(c, 'div', 'te-card-head');
+      ce(h, 'span', 'te-card-icon', '✨');
+      ce(h, 'h3', 'te-card-title', spellName);
+      if (refSpell) { const m = ce(h, 'span', 'te-card-meta-label', refItemMeta('spells', refSpell)); m.style.marginLeft = '6px'; }
+      if (refSpell) {
+        const detail = ce(c, 'div', 'te-ref-detail'); detail.style.display = 'none';
+        refItemDetail(detail, 'spells', refSpell);
+        h.style.cursor = 'pointer';
+        h.addEventListener('click', () => { detail.style.display = detail.style.display === 'none' ? '' : 'none'; });
+      }
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Remove', 'te-btn is-sm is-danger', async () => { char.spells = char.spells.filter((_, j) => j !== i); upsert(state, 'characters', char); await plugin.saveState(); });
+      btn(a, 'Remove', 'te-btn is-sm is-danger', async () => {
+        char.spells = char.spells.filter((_, j) => j !== i); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${spellName}" removed.`);
+      });
     });
+  } else {
+    ce(main, 'p', 'te-empty-state', 'No spells added yet. Browse the spell list below to add spells.');
   }
-  const addRow = ce(main, 'div', ''); addRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';
-  const inp = ce(addRow, 'input'); inp.type = 'text'; inp.placeholder = 'Spell name…'; inp.style.flex = '1';
-  const compSpells = safeArr(state.entities.compendium).filter(e => e.type === 'Spell').map(s => s.name);
-  if (compSpells.length) {
-    const sel = ce(addRow, 'select'); sel.style.cssText = 'max-width:160px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-    ce(sel, 'option', '', '— from compendium —').value = '';
-    compSpells.forEach(s => ce(sel, 'option', '', s).value = s);
-    sel.addEventListener('change', () => { if (sel.value) { inp.value = sel.value; sel.value = ''; } });
-  }
-  btn(addRow, '+ Add', 'te-btn is-sm is-primary', async () => {
-    const v = inp.value.trim();
-    if (v) { if (!char.spells) char.spells = []; if (!char.spells.includes(v)) { char.spells.push(v); upsert(state, 'characters', char); await plugin.saveState(); } inp.value = ''; }
-  });
+
+  // Spell Browser (search + level filter)
+  sectionHead(main, 'Spell Browser');
+  const bs = { search: '', level: 'all', expanded: null };
+  const browserWrap = ce(main, 'div', '');
+  const rebuildBrowser = () => {
+    clear(browserWrap);
+    const filterRow = ce(browserWrap, 'div', ''); filterRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px';
+    const LEVELS = [['all','All'],['0','Cantrip'],['1','1'],['2','2'],['3','3'],['4','4'],['5','5'],['6','6'],['7','7'],['8','8'],['9','9']];
+    LEVELS.forEach(([val, lbl]) => btn(filterRow, lbl, 'te-btn is-sm' + (bs.level === val ? ' is-primary' : ''), () => { bs.level = val; bs.expanded = null; rebuildBrowser(); }));
+    const sRow = ce(browserWrap, 'div', ''); sRow.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+    const sIn = ce(sRow, 'input'); sIn.type = 'text'; sIn.placeholder = `Search ${char.class} spells…`; sIn.value = bs.search;
+    sIn.style.cssText = 'flex:1;padding:7px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem';
+    sIn.addEventListener('input', () => { bs.search = sIn.value; bs.expanded = null; rebuildBrowser(); });
+    const listEl = ce(browserWrap, 'div', 'te-grid');
+    let filtered = plugin.refData.search(allRefSpells, bs.search);
+    if (bs.level !== 'all') filtered = filtered.filter(s => String(s.level) === bs.level);
+    const shown = filtered.slice(0, 80);
+    if (!shown.length) { listEl.className = ''; ce(listEl, 'p', 'te-empty-state', bs.search ? `No spells match "${bs.search}".` : 'No spells available.'); }
+    shown.forEach(sp => {
+      const known = knownSpells.some(n => n.toLowerCase() === sp.name.toLowerCase());
+      const c = ce(listEl, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); h.style.cursor = 'pointer';
+      ce(h, 'h3', 'te-card-title', sp.name);
+      const m = ce(h, 'span', 'te-card-meta-label', refItemMeta('spells', sp)); m.style.marginLeft = '6px';
+      const isOpen = bs.expanded === sp.name;
+      if (isOpen) { const d = ce(c, 'div', 'te-ref-detail'); refItemDetail(d, 'spells', sp); }
+      h.addEventListener('click', () => { bs.expanded = isOpen ? null : sp.name; rebuildBrowser(); });
+      const a = ce(c, 'div', 'te-card-actions');
+      if (known) {
+        const lbl = ce(a, 'span', 'te-muted-text'); lbl.textContent = '✓ Known'; lbl.style.fontSize = '.82rem';
+      } else {
+        btn(a, '+ Learn', 'te-btn is-sm is-primary', async () => {
+          if (!char.spells) char.spells = []; if (!char.spells.includes(sp.name)) { char.spells.push(sp.name); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${sp.name}" added to spellbook.`); }
+        });
+      }
+    });
+    if (filtered.length > 80) ce(browserWrap, 'p', 'te-empty-state', `Showing 80 of ${filtered.length} — refine your search.`);
+  };
+  rebuildBrowser();
 }
 
 function renderPCQuests(main, plugin) {
@@ -6230,7 +6384,7 @@ class CharacterModal extends Modal {
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
       skills: [], savingThrows: [], features: [], spells: [],
-      equipment: [], currency: { gp: 0, sp: 0, cp: 0 },
+      equipment: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
       xp: 0, spellSlots: {}, deathSaves: { successes: 0, failures: 0 },
       backstory: '', notes: '',
     }, this.item);
@@ -6314,8 +6468,8 @@ class CharacterModal extends Modal {
     s6.createEl('h3', { text: 'Equipment & Currency' });
     chipField(s6, 'Equipment', this.values.equipment, v => this.values.equipment = v, { placeholder: 'Item…' });
     const currRow = ce(s6, 'div', '');
-    currRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
-    ['gp','sp','cp'].forEach(coin => {
+    currRow.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px';
+    ['pp','gp','ep','sp','cp'].forEach(coin => {
       const cw = ce(currRow, 'div', '');
       new Setting(cw).setName(coin.toUpperCase()).addText(t => {
         t.inputEl.type = 'number'; t.setValue(String((this.values.currency || {})[coin] || 0));
