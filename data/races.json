@@ -1,0 +1,2492 @@
+[
+  {
+    "id": "race-aarakocra",
+    "name": "Aarakocra",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 20,
+      "fly": 50
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 2
+      }
+    ],
+    "traitTags": [
+      "Natural Weapon",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-aarakocra",
+    "name": "Aarakocra",
+    "source": "EEPC",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 25,
+      "fly": 50
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-aarakocra",
+    "name": "Aarakocra",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "fly": true
+    },
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-aasimar",
+    "name": "Aasimar",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "wis": 1,
+        "cha": 2
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-aasimar",
+    "name": "Aasimar",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-aasimar",
+    "name": "Aasimar",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-aasimar",
+    "name": "Aasimar",
+    "source": "XPHB",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-aetherborn",
+    "name": "Aetherborn",
+    "source": "PSK",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2,
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis"
+          ],
+          "count": 2
+        }
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-astral-elf",
+    "name": "Astral Elf",
+    "source": "AAG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "Tool Proficiency",
+      "Weapon Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-autognome",
+    "name": "Autognome",
+    "source": "AAG",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Improved Resting",
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-aven",
+    "name": "Aven",
+    "source": "PSA",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 25,
+      "fly": 30
+    },
+    "ability": [
+      {
+        "dex": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-aven",
+    "name": "Aven",
+    "source": "PSD",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 25,
+      "fly": 30
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-boggart",
+    "name": "Boggart",
+    "source": "LFL",
+    "type": "Race"
+  },
+  {
+    "id": "race-bugbear",
+    "name": "Bugbear",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "dex": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-bugbear",
+    "name": "Bugbear",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-bugbear",
+    "name": "Bugbear",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "dex": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-bullywug",
+    "name": "Bullywug",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 20,
+      "swim": 40
+    },
+    "ability": [
+      {
+        "int": -2,
+        "cha": -2
+      }
+    ],
+    "traitTags": [
+      "Amphibious",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-centaur",
+    "name": "Centaur",
+    "source": "GGR",
+    "size": [
+      "M"
+    ],
+    "speed": 40,
+    "ability": [
+      {
+        "str": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Weapon",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-centaur",
+    "name": "Centaur",
+    "source": "MOT",
+    "type": "Race"
+  },
+  {
+    "id": "race-centaur",
+    "name": "Centaur",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 40,
+    "traitTags": [
+      "Natural Weapon",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-changeling",
+    "name": "Changeling",
+    "source": "EFA",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-changeling",
+    "name": "Changeling",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2,
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis"
+          ],
+          "count": 1
+        }
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-changeling",
+    "name": "Changeling",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-custom-lineage",
+    "name": "Custom Lineage",
+    "source": "TCE",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha"
+          ],
+          "amount": 2
+        }
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-deep-gnome",
+    "name": "Deep Gnome",
+    "source": "MPMM",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "darkvision": 120,
+    "traitTags": [
+      "Magic Resistance"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-dhampir",
+    "name": "Dhampir",
+    "source": "ABH",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": {
+      "walk": 35,
+      "climb": true
+    },
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-dhampir",
+    "name": "Dhampir",
+    "source": "VRGR",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": {
+      "walk": 35,
+      "climb": true
+    },
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-dragonborn",
+    "name": "Dragonborn",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "cha": 1
+      }
+    ],
+    "traitTags": [
+      "Uncommon Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-dragonborn",
+    "name": "Dragonborn",
+    "source": "XPHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-dragonborn-chromatic",
+    "name": "Dragonborn (Chromatic)",
+    "source": "FTD",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-dragonborn-gem",
+    "name": "Dragonborn (Gem)",
+    "source": "FTD",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-dragonborn-metallic",
+    "name": "Dragonborn (Metallic)",
+    "source": "FTD",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-duergar",
+    "name": "Duergar",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-dwarf",
+    "name": "Dwarf",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 25,
+    "ability": [
+      {
+        "con": 2
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-dwarf",
+    "name": "Dwarf",
+    "source": "XPHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-dwarf-kaladesh",
+    "name": "Dwarf (Kaladesh)",
+    "source": "PSK",
+    "size": [
+      "M"
+    ],
+    "speed": 25,
+    "ability": [
+      {
+        "con": 2,
+        "wis": 1
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-eladrin",
+    "name": "Eladrin",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "Tool Proficiency",
+      "Weapon Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-elf",
+    "name": "Elf",
+    "source": "LFL",
+    "type": "Race"
+  },
+  {
+    "id": "race-elf",
+    "name": "Elf",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-elf",
+    "name": "Elf",
+    "source": "XPHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-elf-kaladesh",
+    "name": "Elf (Kaladesh)",
+    "source": "PSK",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-elf-zendikar",
+    "name": "Elf (Zendikar)",
+    "source": "PSZ",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "wis": 2
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-faerie",
+    "name": "Faerie",
+    "source": "LFL",
+    "type": "Race"
+  },
+  {
+    "id": "race-fairy",
+    "name": "Fairy",
+    "source": "MPMM",
+    "size": [
+      "S"
+    ],
+    "speed": {
+      "walk": 30,
+      "fly": true
+    },
+    "type": "Race"
+  },
+  {
+    "id": "race-fairy",
+    "name": "Fairy",
+    "source": "WBtW",
+    "size": [
+      "S"
+    ],
+    "speed": {
+      "walk": 30,
+      "fly": true
+    },
+    "type": "Race"
+  },
+  {
+    "id": "race-firbolg",
+    "name": "Firbolg",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-firbolg",
+    "name": "Firbolg",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "wis": 2,
+        "str": 1
+      }
+    ],
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-flamekin",
+    "name": "Flamekin",
+    "source": "LFL",
+    "type": "Race"
+  },
+  {
+    "id": "race-genasi",
+    "name": "Genasi",
+    "source": "EEPC",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-genasi",
+    "name": "Genasi",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-giff",
+    "name": "Giff",
+    "source": "AAG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": true
+    },
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-gith",
+    "name": "Gith",
+    "source": "MTF",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "int": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-githyanki",
+    "name": "Githyanki",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Weapon Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-githzerai",
+    "name": "Githzerai",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-gnoll",
+    "name": "Gnoll",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "int": -2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Weapon",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-gnome",
+    "name": "Gnome",
+    "source": "PHB",
+    "size": [
+      "S"
+    ],
+    "speed": 25,
+    "ability": [
+      {
+        "int": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Uncommon Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-gnome",
+    "name": "Gnome",
+    "source": "XPHB",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-gnome-deep",
+    "name": "Gnome (Deep)",
+    "source": "DMG",
+    "size": [
+      "S"
+    ],
+    "speed": 20,
+    "ability": [
+      {
+        "str": 1,
+        "dex": 2
+      }
+    ],
+    "darkvision": 120,
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "DMG",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": -2,
+        "dex": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "ERLW",
+    "size": [
+      "S"
+    ],
+    "traitTags": null,
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "GGR",
+    "traitTags": null,
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "MPMM",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "PSZ",
+    "size": [
+      "S"
+    ],
+    "speed": 25,
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin",
+    "name": "Goblin",
+    "source": "VGM",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goblin-dankwood",
+    "name": "Goblin (Dankwood)",
+    "source": "AWM",
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goliath",
+    "name": "Goliath",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goliath",
+    "name": "Goliath",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-goliath",
+    "name": "Goliath",
+    "source": "XPHB",
+    "size": [
+      "M"
+    ],
+    "speed": 35,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-grimlock",
+    "name": "Grimlock",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "cha": -2
+      }
+    ],
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-grung",
+    "name": "Grung",
+    "source": "OGA",
+    "size": [
+      "S"
+    ],
+    "speed": {
+      "walk": 25,
+      "climb": 25
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "con": 1
+      }
+    ],
+    "traitTags": [
+      "Amphibious"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-hadozee",
+    "name": "Hadozee",
+    "source": "AAG",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "climb": true
+    },
+    "type": "Race"
+  },
+  {
+    "id": "race-half-elf",
+    "name": "Half-Elf",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2,
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis"
+          ],
+          "count": 2
+        }
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Uncommon Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-half-orc",
+    "name": "Half-Orc",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Uncommon Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-halfling",
+    "name": "Halfling",
+    "source": "PHB",
+    "size": [
+      "S"
+    ],
+    "speed": 25,
+    "ability": [
+      {
+        "dex": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-halfling",
+    "name": "Halfling",
+    "source": "XPHB",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-harengon",
+    "name": "Harengon",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-harengon",
+    "name": "Harengon",
+    "source": "WBtW",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-hexblood",
+    "name": "Hexblood",
+    "source": "VRGR",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-hobgoblin",
+    "name": "Hobgoblin",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-hobgoblin",
+    "name": "Hobgoblin",
+    "source": "ERLW",
+    "type": "Race"
+  },
+  {
+    "id": "race-hobgoblin",
+    "name": "Hobgoblin",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-hobgoblin",
+    "name": "Hobgoblin",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 2,
+        "int": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-human",
+    "name": "Human",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-human",
+    "name": "Human",
+    "source": "XPHB",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-human-innistrad",
+    "name": "Human (Innistrad)",
+    "source": "PSI",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-human-ixalan",
+    "name": "Human (Ixalan)",
+    "source": "PSX",
+    "ability": [
+      {
+        "str": 1,
+        "dex": 1,
+        "con": 1,
+        "int": 1,
+        "wis": 1,
+        "cha": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-human-kaladesh",
+    "name": "Human (Kaladesh)",
+    "source": "PSK",
+    "ability": [
+      {
+        "str": 1,
+        "dex": 1,
+        "con": 1,
+        "int": 1,
+        "wis": 1,
+        "cha": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-human-zendikar",
+    "name": "Human (Zendikar)",
+    "source": "PSZ",
+    "ability": [
+      {
+        "str": 1,
+        "dex": 1,
+        "con": 1,
+        "int": 1,
+        "wis": 1,
+        "cha": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kalashtar",
+    "name": "Kalashtar",
+    "source": "EFA",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Skill Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kalashtar",
+    "name": "Kalashtar",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "wis": 2,
+        "cha": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kender",
+    "name": "Kender",
+    "source": "DSotDQ",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-kenku",
+    "name": "Kenku",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kenku",
+    "name": "Kenku",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "type": "Race"
+  },
+  {
+    "id": "race-kenku",
+    "name": "Kenku",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-khenra",
+    "name": "Khenra",
+    "source": "PSA",
+    "size": [
+      "M"
+    ],
+    "speed": 35,
+    "ability": [
+      {
+        "dex": 2,
+        "str": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-khoravar",
+    "name": "Khoravar",
+    "source": "EFA",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Skill Proficiency",
+      "Tool Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kithkin",
+    "name": "Kithkin",
+    "source": "LFL",
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-kobold",
+    "name": "Kobold",
+    "source": "DMG",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "str": -4
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "NPC Race",
+      "Sunlight Sensitivity"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kobold",
+    "name": "Kobold",
+    "source": "MPMM",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-kobold",
+    "name": "Kobold",
+    "source": "VGM",
+    "size": [
+      "S"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race",
+      "Sunlight Sensitivity"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kor",
+    "name": "Kor",
+    "source": "PSZ",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "climb": 30
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "wis": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-kuo-toa",
+    "name": "Kuo-Toa",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "darkvision": 120,
+    "traitTags": [
+      "Amphibious",
+      "NPC Race",
+      "Sunlight Sensitivity"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-leonin",
+    "name": "Leonin",
+    "source": "MOT",
+    "size": [
+      "M"
+    ],
+    "speed": 35,
+    "ability": [
+      {
+        "str": 1,
+        "con": 2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-lizardfolk",
+    "name": "Lizardfolk",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "ability": [
+      {
+        "str": 2,
+        "int": -2
+      }
+    ],
+    "traitTags": [
+      "Natural Armor",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-lizardfolk",
+    "name": "Lizardfolk",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": true
+    },
+    "traitTags": [
+      "Natural Armor",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-lizardfolk",
+    "name": "Lizardfolk",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "ability": [
+      {
+        "con": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Armor",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-locathah",
+    "name": "Locathah",
+    "source": "LR",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "ability": [
+      {
+        "str": 2,
+        "dex": 1
+      }
+    ],
+    "traitTags": [
+      "Amphibious",
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-lorwyn-changeling",
+    "name": "Lorwyn Changeling",
+    "source": "LFL",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-loxodon",
+    "name": "Loxodon",
+    "source": "GGR",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Armor",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-merfolk",
+    "name": "Merfolk",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 10,
+      "swim": 40
+    },
+    "traitTags": [
+      "Amphibious",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-merfolk",
+    "name": "Merfolk",
+    "source": "PSZ",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "ability": [
+      {
+        "cha": 1
+      }
+    ],
+    "traitTags": [
+      "Amphibious"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-minotaur",
+    "name": "Minotaur",
+    "source": "GGR",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-minotaur",
+    "name": "Minotaur",
+    "source": "MOT",
+    "type": "Race"
+  },
+  {
+    "id": "race-minotaur",
+    "name": "Minotaur",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-minotaur-amonkhet",
+    "name": "Minotaur (Amonkhet)",
+    "source": "PSA",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-naga",
+    "name": "Naga",
+    "source": "PSA",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 2,
+        "int": 1
+      }
+    ],
+    "traitTags": [
+      "Language Proficiency",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "int": -2
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "EGW",
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Monstrous Race",
+      "Powerful Build"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-orc",
+    "name": "Orc",
+    "source": "XPHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-orc-ixalan",
+    "name": "Orc (Ixalan)",
+    "source": "PSX",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-owlin",
+    "name": "Owlin",
+    "source": "SCC",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "fly": true
+    },
+    "darkvision": 120,
+    "type": "Race"
+  },
+  {
+    "id": "race-plasmoid",
+    "name": "Plasmoid",
+    "source": "AAG",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-reborn",
+    "name": "Reborn",
+    "source": "VRGR",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Improved Resting"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-rimekin",
+    "name": "Rimekin",
+    "source": "LFL",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-satyr",
+    "name": "Satyr",
+    "source": "MOT",
+    "size": [
+      "M"
+    ],
+    "speed": 35,
+    "ability": [
+      {
+        "cha": 2,
+        "dex": 1
+      }
+    ],
+    "traitTags": [
+      "Magic Resistance",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-satyr",
+    "name": "Satyr",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 35,
+    "traitTags": [
+      "Magic Resistance",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-sea-elf",
+    "name": "Sea Elf",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": true
+    },
+    "darkvision": 60,
+    "traitTags": [
+      "Amphibious",
+      "Improved Resting",
+      "Tool Proficiency",
+      "Weapon Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-shadar-kai",
+    "name": "Shadar-Kai",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "Tool Proficiency",
+      "Weapon Proficiency"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-shifter",
+    "name": "Shifter",
+    "source": "EFA",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-shifter",
+    "name": "Shifter",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-shifter",
+    "name": "Shifter",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-simic-hybrid",
+    "name": "Simic Hybrid",
+    "source": "GGR",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30
+    },
+    "ability": [
+      {
+        "con": 2,
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "int",
+            "wis",
+            "cha"
+          ],
+          "count": 1
+        }
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Amphibious",
+      "Natural Armor",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-siren",
+    "name": "Siren",
+    "source": "PSX",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 25,
+      "fly": 30
+    },
+    "ability": [
+      {
+        "cha": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-skeleton",
+    "name": "Skeleton",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "dex": 2,
+        "int": -4,
+        "cha": -4
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "NPC Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-tabaxi",
+    "name": "Tabaxi",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "climb": true
+    },
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-tabaxi",
+    "name": "Tabaxi",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "climb": 20
+    },
+    "ability": [
+      {
+        "dex": 2,
+        "cha": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-thri-kreen",
+    "name": "Thri-kreen",
+    "source": "AAG",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-tiefling",
+    "name": "Tiefling",
+    "source": "PHB",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2,
+        "int": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Uncommon Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-tiefling",
+    "name": "Tiefling",
+    "source": "XPHB",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-tortle",
+    "name": "Tortle",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Natural Armor",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-tortle",
+    "name": "Tortle",
+    "source": "TTP",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Natural Armor",
+      "Natural Weapon"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-triton",
+    "name": "Triton",
+    "source": "MOT",
+    "type": "Race"
+  },
+  {
+    "id": "race-triton",
+    "name": "Triton",
+    "source": "MPMM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": true
+    },
+    "darkvision": 60,
+    "traitTags": [
+      "Amphibious"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-triton",
+    "name": "Triton",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": {
+      "walk": 30,
+      "swim": 30
+    },
+    "ability": [
+      {
+        "str": 1,
+        "cha": 1,
+        "con": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Amphibious"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-troglodyte",
+    "name": "Troglodyte",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 2,
+        "con": 2,
+        "int": -4,
+        "cha": -4
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Natural Armor",
+      "NPC Race",
+      "Sunlight Sensitivity"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-vampire",
+    "name": "Vampire",
+    "source": "PSZ",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2
+      }
+    ],
+    "darkvision": 60,
+    "type": "Race"
+  },
+  {
+    "id": "race-vedalken",
+    "name": "Vedalken",
+    "source": "GGR",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "int": 2,
+        "wis": 1
+      }
+    ],
+    "traitTags": [
+      "Skill Bonus Dice",
+      "Tool Bonus Dice"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-vedalken",
+    "name": "Vedalken",
+    "source": "PSK",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "int": 2,
+        "wis": 1
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-verdan",
+    "name": "Verdan",
+    "source": "AI",
+    "size": [
+      "V"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 1,
+        "cha": 2
+      }
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-warforged",
+    "name": "Warforged",
+    "source": "EFA",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "traitTags": [
+      "Improved Resting",
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-warforged",
+    "name": "Warforged",
+    "source": "ERLW",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "con": 2,
+        "choose": {
+          "from": [
+            "str",
+            "dex",
+            "int",
+            "wis",
+            "cha"
+          ],
+          "count": 1
+        }
+      }
+    ],
+    "traitTags": [
+      "Improved Resting",
+      "Natural Armor"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-yuan-ti",
+    "name": "Yuan-Ti",
+    "source": "MPMM",
+    "size": [
+      "S",
+      "M"
+    ],
+    "speed": 30,
+    "darkvision": 60,
+    "traitTags": [
+      "Magic Resistance"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-yuan-ti-pureblood",
+    "name": "Yuan-ti Pureblood",
+    "source": "VGM",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "cha": 2,
+        "int": 1
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Magic Resistance",
+      "Monstrous Race"
+    ],
+    "type": "Race"
+  },
+  {
+    "id": "race-zombie",
+    "name": "Zombie",
+    "source": "DMG",
+    "size": [
+      "M"
+    ],
+    "speed": 30,
+    "ability": [
+      {
+        "str": 1,
+        "con": 2,
+        "int": -6,
+        "wis": -4,
+        "cha": -4
+      }
+    ],
+    "darkvision": 60,
+    "traitTags": [
+      "Improved Resting",
+      "NPC Race"
+    ],
+    "type": "Race"
+  }
+]

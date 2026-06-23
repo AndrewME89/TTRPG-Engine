@@ -1269,6 +1269,228 @@ function defaultEdit(plugin, key, item) {
 }
 
 // ── PLUGIN CLASS ──────────────────────────────────────────────────────────────
+// ── Reference Data Service ────────────────────────────────────────────────────
+const REF_DATA_FILES = {
+  spells: 'spells.json', feats: 'feats.json', equipment: 'equipment.json',
+  backgrounds: 'backgrounds.json', races: 'races.json', skills: 'skills.json',
+  languages: 'languages.json', conditions: 'conditions.json', deities: 'deities.json',
+  actions: 'actions.json', rewards: 'rewards.json', traps: 'traps.json',
+  objects: 'objects.json', vehicles: 'vehicles.json', senses: 'senses.json',
+};
+const SPELL_SCHOOLS = {
+  A:'Abjuration', C:'Conjuration', D:'Divination', E:'Enchantment',
+  I:'Illusion', N:'Necromancy', T:'Transmutation', V:'Evocation',
+};
+const REF_TABS = [
+  { key:'spells',      label:'Spells',      icon:'✨' },
+  { key:'feats',       label:'Feats',       icon:'⭐' },
+  { key:'equipment',   label:'Equipment',   icon:'🗡️' },
+  { key:'backgrounds', label:'Backgrounds', icon:'📜' },
+  { key:'races',       label:'Races',       icon:'👥' },
+  { key:'skills',      label:'Skills',      icon:'🎯' },
+  { key:'languages',   label:'Languages',   icon:'💬' },
+  { key:'conditions',  label:'Conditions',  icon:'🩺' },
+  { key:'deities',     label:'Deities',     icon:'⚡' },
+  { key:'actions',     label:'Actions',     icon:'⚔️' },
+  { key:'rewards',     label:'Rewards',     icon:'🏆' },
+  { key:'traps',       label:'Traps',       icon:'⚠️' },
+  { key:'vehicles',    label:'Vehicles',    icon:'🚢' },
+  { key:'objects',     label:'Objects',     icon:'📦' },
+  { key:'senses',      label:'Senses',      icon:'👁️' },
+];
+class ReferenceDataService {
+  constructor(plugin) { this.plugin = plugin; this._cache = {}; }
+  async get(type) {
+    if (this._cache[type]) return this._cache[type];
+    const filename = REF_DATA_FILES[type];
+    if (!filename) return [];
+    try {
+      const raw = await adapterRead(this.plugin.app, `${PLUGIN_DIR}/data/${filename}`);
+      this._cache[type] = JSON.parse(raw);
+    } catch { this._cache[type] = []; }
+    return this._cache[type];
+  }
+  search(items, query) {
+    if (!query) return items;
+    const q = query.toLowerCase();
+    return items.filter(it => {
+      return [it.name, it.source, it.type, it.school, String(it.level||''), it.pantheon, it.category]
+        .filter(Boolean).join(' ').toLowerCase().includes(q);
+    });
+  }
+}
+
+// ── 5e.tools tag / entry renderer ────────────────────────────────────────────
+function renderTag(text) {
+  return String(text || '').replace(/\{@(\w+)\s+([^}]*)\}/g, (_, tag, content) => {
+    const main = content.split('|')[0].trim();
+    switch (tag) {
+      case 'dice': case 'damage': case 'd20': case 'hit': return main;
+      case 'dc': return 'DC ' + main;
+      case 'chance': return main + '%';
+      case 'variantrule': return main.split('|')[0].trim();
+      default: return main.replace(/\b\w/g, c => c.toUpperCase());
+    }
+  });
+}
+function renderEntries(el, entries) {
+  safeArr(entries).forEach(entry => {
+    if (typeof entry === 'string') {
+      if (entry.trim()) ce(el, 'p', 'te-ref-p', renderTag(entry));
+    } else if (entry && typeof entry === 'object') {
+      switch (entry.type) {
+        case 'entries': {
+          if (entry.name) { const h = ce(el, 'strong', 'te-ref-sub', entry.name); h.style.display = 'block'; h.style.marginTop = '6px'; }
+          renderEntries(el, entry.entries);
+          break;
+        }
+        case 'list': {
+          const ul = ce(el, 'ul', 'te-ref-list');
+          safeArr(entry.items).forEach(it => {
+            if (typeof it === 'string') { ce(ul, 'li', '', renderTag(it)); }
+            else if (it && it.type === 'item') {
+              const li = ce(ul, 'li', '');
+              if (it.name) { const b = ce(li, 'span', ''); b.style.fontWeight = '700'; b.textContent = it.name + ' '; }
+              if (it.entry) li.appendChild(document.createTextNode(renderTag(it.entry)));
+              else renderEntries(li, it.entries);
+            } else if (it) { const li = ce(ul, 'li', ''); renderEntries(li, [it]); }
+          });
+          break;
+        }
+        case 'table': {
+          const tbl = ce(el, 'table', 'te-ref-table');
+          if (entry.colLabels) {
+            const tr = ce(ce(tbl, 'thead', ''), 'tr', '');
+            entry.colLabels.forEach(h => ce(tr, 'th', '', renderTag(String(h || ''))));
+          }
+          const tbody = ce(tbl, 'tbody', '');
+          safeArr(entry.rows).forEach(row => {
+            const tr = ce(tbody, 'tr', '');
+            safeArr(row).forEach(cell => {
+              const t = typeof cell === 'string' ? cell : (cell?.entry || String(cell?.exact ?? cell?.min ?? ''));
+              ce(tr, 'td', '', renderTag(t));
+            });
+          });
+          break;
+        }
+        case 'item': case 'itemSub': {
+          const p = ce(el, 'p', '');
+          if (entry.name) { const b = ce(p, 'span', ''); b.style.fontWeight = '700'; b.textContent = entry.name + ': '; }
+          if (entry.entry) p.appendChild(document.createTextNode(renderTag(entry.entry)));
+          else renderEntries(p, entry.entries);
+          break;
+        }
+        default: if (entry.entries) renderEntries(el, entry.entries);
+      }
+    }
+  });
+}
+function refItemMeta(type, item) {
+  switch (type) {
+    case 'spells': {
+      const school = SPELL_SCHOOLS[item.school] || item.school || '';
+      return item.level === 0 ? `${school} Cantrip` : `Level ${item.level} ${school}`;
+    }
+    case 'feats': return item.category || '';
+    case 'equipment': return [item.type, item.value != null ? `${item.value} gp` : ''].filter(Boolean).join(' · ');
+    case 'backgrounds': {
+      const skills = Object.keys((safeArr(item.skillProficiencies)[0]) || {});
+      return skills.length ? `Skills: ${skills.join(', ')}` : '';
+    }
+    case 'races': return [Array.isArray(item.size) ? item.size.join('/') : item.size, item.speed ? `${item.speed} ft` : ''].filter(Boolean).join(' · ');
+    case 'skills': return item.ability ? `(${item.ability})` : '';
+    case 'deities': return [item.pantheon, item.alignment].filter(Boolean).join(' · ');
+    case 'languages': return safeArr(item.typicalSpeakers).slice(0, 3).join(', ');
+    default: return item.type || '';
+  }
+}
+function refItemDetail(el, type, item) {
+  if (type === 'spells') {
+    const school = SPELL_SCHOOLS[item.school] || item.school;
+    const castTime = safeArr(item.time).map(t => `${t.number} ${t.unit}`).join(', ');
+    const rng = item.range?.distance ? `${item.range.distance.amount} ${item.range.distance.type}` : (item.range?.type || '—');
+    const dur = safeArr(item.duration).map(d => {
+      if (d.type === 'instant') return 'Instantaneous';
+      const base = d.duration ? `${d.duration.amount || ''} ${d.duration.type || ''}`.trim() : d.type;
+      return d.concentration ? `Conc., ${base}` : base;
+    }).join(', ');
+    const grid = ce(el, 'div', 'te-ref-spell-grid');
+    [['School', school],['Casting Time', castTime],['Range', rng],['Duration', dur]].forEach(([l, v]) => {
+      const c = ce(grid, 'div', ''); ce(c, 'span', 'te-muted-text', l + ': '); c.appendChild(document.createTextNode(v || '—'));
+    });
+  }
+  if (type === 'deities') {
+    if (item.domains?.length) ce(el, 'p', 'te-muted-text', `Domains: ${safeArr(item.domains).join(', ')}`);
+    if (item.symbol) ce(el, 'p', 'te-muted-text', `Symbol: ${item.symbol}`);
+  }
+  if (type === 'feats' && item.prerequisite) {
+    const prereq = safeArr(item.prerequisite).map(p => Object.entries(p).map(([k,v]) => renderTag(String(v))).join(', ')).join('; ');
+    if (prereq) ce(el, 'p', 'te-muted-text', `Prerequisite: ${prereq}`);
+  }
+  if (type === 'equipment') {
+    const meta2 = [item.weight ? `Weight: ${item.weight} lb` : '', item.weaponCategory ? `Cat: ${item.weaponCategory}` : ''].filter(Boolean).join(' · ');
+    if (meta2) ce(el, 'p', 'te-muted-text', meta2);
+  }
+  renderEntries(el, item.entries);
+}
+
+// ── 5e Reference section ──────────────────────────────────────────────────────
+async function renderReference(main, plugin) {
+  pageHead(main, plugin, '5e Reference', 'Searchable rules reference — spells, feats, equipment, races, backgrounds, and more.');
+  const dataPath = `${PLUGIN_DIR}/data`;
+  const dataExists = await adapterExists(plugin.app, dataPath);
+  if (!dataExists) {
+    const warn = ce(main, 'div', 'te-card'); warn.style.cssText = 'border-color:var(--te-danger)';
+    ce(warn, 'p', 'te-card-body', `⚠️ Data folder not found at ${dataPath}/. Install the plugin's data folder to enable this section.`);
+    return;
+  }
+  const rs = { tab: 'spells', search: '', expanded: null };
+  const wrap = ce(main, 'div', '');
+  const rebuild = async () => {
+    clear(wrap);
+    // Tab row
+    const tabRow = ce(wrap, 'div', ''); tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px';
+    REF_TABS.forEach(t => {
+      btn(tabRow, `${t.icon} ${t.label}`, 'te-btn is-sm' + (rs.tab === t.key ? ' is-primary' : ''), () => {
+        rs.tab = t.key; rs.search = ''; rs.expanded = null; rebuild();
+      });
+    });
+    // Search
+    const sRow = ce(wrap, 'div', ''); sRow.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center';
+    const sIn = ce(sRow, 'input', '');
+    sIn.type = 'text'; sIn.placeholder = `Search ${rs.tab}…`; sIn.value = rs.search;
+    sIn.style.cssText = 'flex:1;padding:7px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem';
+    const listEl = ce(wrap, 'div', '');
+    const buildList = async () => {
+      clear(listEl);
+      const all = await plugin.refData.get(rs.tab);
+      if (!all.length) { ce(listEl, 'p', 'te-empty-state', `No data for "${rs.tab}". Check that data/${REF_DATA_FILES[rs.tab]} is present.`); return; }
+      const filtered = plugin.refData.search(all, rs.search);
+      const shown = filtered.slice(0, 120);
+      shown.forEach(item => {
+        const card = ce(listEl, 'div', 'te-card te-ref-card');
+        const head = ce(card, 'div', 'te-card-head');
+        head.style.cursor = 'pointer';
+        ce(head, 'h3', 'te-card-title', item.name);
+        const meta = refItemMeta(rs.tab, item);
+        if (meta) { const m = ce(head, 'span', 'te-card-meta-label', meta); m.style.marginLeft = '6px'; }
+        if (item.source) { const s = ce(head, 'span', 'te-ref-source', item.source); }
+        const isOpen = rs.expanded === item.id;
+        if (isOpen) {
+          const body = ce(card, 'div', 'te-ref-detail');
+          refItemDetail(body, rs.tab, item);
+        }
+        head.addEventListener('click', () => { rs.expanded = isOpen ? null : item.id; buildList(); });
+      });
+      if (filtered.length > 120) ce(listEl, 'p', 'te-empty-state', `Showing 120 of ${filtered.length} — refine your search to see more.`);
+      else if (!filtered.length) ce(listEl, 'p', 'te-empty-state', `No matches for "${rs.search}".`);
+    };
+    sIn.addEventListener('input', () => { rs.search = sIn.value; rs.expanded = null; buildList(); });
+    buildList();
+  };
+  rebuild();
+}
+
 class TTRPGEnginePlugin extends Plugin {
   async onload() {
     let boot;
@@ -1400,6 +1622,8 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('create-settlement', 'Create settlement', () => new GenericModal(this.app, this, 'settlements', null, settlementFields).open());
       cmd('create-secret',     'Create secret',     () => new SecretModal(this.app, this).open());
 
+      this.refData = new ReferenceDataService(this);
+
       await endBoot(this);
     } catch (e) {
       await safeDisable(this.app, 'Plugin registration failed', e);
@@ -1525,6 +1749,7 @@ class TTRPGMainView extends ItemView {
       ]},
       { label: 'Library', items: [
         { id: 'library',     icon: '📚', label: 'Compendium & Library' },
+        { id: 'reference',   icon: '📖', label: '5e Reference' },
         { id: 'homebrew',    icon: '🧪', label: 'Homebrew' },
         { id: 'generators',  icon: '🎲', label: 'Generators' },
       ]},
@@ -1611,6 +1836,7 @@ function renderSection(main, plugin, section) {
     'war-machine': renderWarMachine,
     endgame: renderEndgame,
     library: renderLibrary,
+    reference: renderReference,
     homebrew: renderHomebrew,
     generators: renderGenerators,
     // Legacy

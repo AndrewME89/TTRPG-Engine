@@ -6,6 +6,34 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 259
+
+### Added
+- **5e Reference section**: New Library nav item "📖 5e Reference" — searchable, tab-filtered reference for 15 data types: Spells, Feats, Equipment, Backgrounds, Races, Skills, Languages, Conditions, Deities, Actions, Rewards, Traps, Vehicles, Objects, Senses; expand any row for full detail including spell stats grid (school, cast time, range, duration), feat prerequisites, background skill proficiencies, deity domains; capped at 120 visible results with "refine to see more" prompt
+- **`ReferenceDataService`**: Lazy-loading JSON cache — reads per-type file from `PLUGIN_DIR/data/` on first access; `search()` filters across name, source, type, school, level, category
+- **`renderTag()`**: Strips 5e.tools inline tags (`{@spell fireball}`, `{@dice 1d6}`, `{@dc 13}`, `{@variantrule Long Rest|XPHB}`, etc.) to readable plain text
+- **`renderEntries()`**: Recursively renders 5e.tools entry objects (strings, `entries`, `list`, `item`, `table`, `cell`) as DOM nodes — handles nested sections, bullet lists, and data tables
+- **Reference data bundle**: 15 JSON data files copied to `data/` folder (actions, backgrounds, conditions, deities, equipment, feats, languages, objects, races, rewards, senses, skills, spells, traps, vehicles)
+- **`addEntityMultiPicker()`**: New helper for chip-display multi-entity selection storing IDs with add-from-dropdown and click-to-remove chips
+- **Drow + ancestry variants**: Added Drow (darkvision 120, Superior Darkvision, Fey Ancestry, Drow Magic, Sunlight Sensitivity), High Elf, Wood Elf, Hill Dwarf, Mountain Dwarf, Lightfoot Halfling, Stout Halfling, Forest Gnome, Rock Gnome, Deep Gnome to `ANCESTRIES` list and `ANCESTRY_DATA` with correct stats
+- **`ANCESTRIES` sorted alphabetically** (Other remains last)
+- **`toTitleCase()` helper** + **`campaignFolder()` now produces Title Case paths** (e.g. `My Campaign`) instead of kebab-case slugs
+- **`addEntityPicker()` sort**: Items now sorted alphabetically by name
+- **`entityMd()` rewritten** with per-entity Markdown body templates (npcs, quests, factions, encounters, sessions, hybridAncestries); YAML frontmatter reduced to essential fields only (name, status, type, campaignId, visibility, updatedAt)
+
+### Changed
+- **NPCModal**: Added campaign picker (top), `locationId` (settlements entity picker), `factionIds` (faction multi-picker with chips) — IDs stored alongside legacy text fields
+- **FactionModal**: Added campaign picker, visibility selector, `leaderNpcId` (NPC picker), `allyIds` / `enemyIds` (faction multi-pickers replacing plain chipFields)
+- **QuestModal**: Added campaign picker, `giverNpcId` (NPC picker), `locationId` (settlements picker), `relatedNpcIds` / `relatedFactionIds` / `linkedEncounterIds` (entity multi-pickers)
+- **EncounterModal**: Added campaign picker, visibility selector, `locationId` (settlements picker), `linkedQuestId` (quest picker)
+- **HybridAncestryModal trait chips**: Replaced native `<input type="checkbox">` with accessible custom toggle cards (`role="checkbox"`, `aria-checked`, keyboard support via Space/Enter)
+
+### Fixed
+- **`safeDisable()`**: No longer writes `TTRPG_ENGINE_DISABLED.txt` automatically on crash — only `LOAD_FAILED` and `CRASH_REPORT` are written, preventing a normal crash from creating an unrecoverable hard-disable
+- **`clearCrashLock()`**: Now removes all plugin-created lock files (`LOAD_FAILED`, `BOOT_MARKER`, `TTRPG_ENGINE_DISABLED.txt`) instead of just `LOAD_FAILED`
+
+---
+
 ## [Unreleased] — Phase 258
 
 ### Fixed
