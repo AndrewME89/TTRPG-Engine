@@ -57,6 +57,24 @@ for (const cat of expectedCategories) {
   check(`assets/tile-map/${cat}/`, fs.existsSync(path.join(assetRoot, cat)), `category subfolder missing`);
 }
 
+// ── Tile image asset count ─────────────────────────────────────────────────────
+const IMAGE_EXTS = new Set(['.png','.jpg','.jpeg','.webp','.gif','.svg']);
+function countImages(dir) {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) { n += countImages(path.join(dir, entry.name)); }
+    else if (IMAGE_EXTS.has(path.extname(entry.name).toLowerCase())) n++;
+  }
+  return n;
+}
+const imgCount = countImages(assetRoot);
+if (imgCount === 0) {
+  console.warn('WARN  tile-map images: 0 image files found — plugin will use emoji fallback tiles only. Add .png/.jpg/.webp files to assets/tile-map/ for production image tiles.');
+} else {
+  console.log(`ok    tile-map images: ${imgCount} image file(s) found`);
+}
+
 // ── Syntax check on main.js ───────────────────────────────────────────────────
 import { execFileSync } from 'node:child_process';
 try {
