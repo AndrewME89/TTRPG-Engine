@@ -6,6 +6,154 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Production Hardening Complete (Phase 260-265)
+
+### Production Exit Criteria Status
+
+| Criterion | Status |
+|-----------|--------|
+| Plugin loads safely (boot/safe-mode guard) | ✅ |
+| Existing data survives updates (migrateState) | ✅ |
+| All major features connected to shared data model | ✅ |
+| Creation/editing flows complete | ✅ |
+| Entity relationships work (RelationshipMatrix, entity pickers) | ✅ |
+| Reference/rules data used throughout | ✅ |
+| Notes are readable and useful (ENTITY_MD_TEMPLATES × 12) | ✅ |
+| PC character progression works (LevelUpModal, spellbook v2) | ✅ |
+| Run Session useful for live play | ✅ |
+| Generators create complete usable entities | ✅ |
+| UI is consistent, readable, theme-compliant | ✅ |
+| Build/release process cannot lose features | ✅ |
+| 200+ tests across all major systems | ✅ (204 tests, 0 failed) |
+
+---
+
+## [Unreleased] — Phase 265 (Tests)
+
+### Added
+- **`tests/phase261.test.js`**: 34 pure-function tests across 6 suites —
+  `generate() new types` (7: Plot Twist/Town Event/Trap assertions),
+  `Currency defaults` (7: all 5 coins present and zero),
+  `calcInitiative` (5: stored override, DEX-based calculation, edge cases),
+  `ENTITY_NAV map` (6: section routing for key entity types),
+  `BBEGModal defaults` (5: visibility, motivation, linkedNpcIds),
+  `repairAndReindex extended` (4: multi-type repair, campaignId assignment rules)
+- **`npm test`**: Now chains all four test suites — 204 tests total, 0 failed
+
+---
+
+## [Unreleased] — Phase 264 (UI/Accessibility)
+
+### Added
+- **`styles.css` — `.te-empty-state`**: Inline empty-state message class (used 49× in main.js but was unstyled); now rendered as italic muted text with appropriate padding
+- **`styles.css` — `.te-chip-input`**: Chip input wrapper with border, flex layout, and min-height
+- **`styles.css` — `.te-stat-value`**: Diagnostic/wizard stat value class
+- **`styles.css` — Keyboard focus styles**: `.te-btn:focus-visible`, `.te-nav-btn:focus-visible`, `.te-player-tab:focus-visible`, `input/select/textarea:focus-visible` — all receive 2px accent-colour outline; mouse-click focus suppressed via `:focus:not(:focus-visible)` to avoid visual noise
+- **`styles.css` — Level-up modal classes**: `.te-levelup-card`, `.te-levelup-stat`
+- **`styles.css` — Run Session NPC row**: `.te-session-npc-row` matching the inline styles previously applied via JavaScript
+
+### Changed
+- `src/styles.css` synced from root `styles.css`
+
+---
+
+## [Unreleased] — Phase 263
+
+### Added
+- **NPCModal — Tags**: Tags chip field added to the Identity section (was already stored in `tags` array, now has UI); suggestions: Merchant, Noble, Informant, Villain, Ally, Enemy, Quest Giver, Recurring, Secret Keeper, Combat, Social, City, Wilderness
+- **BBEGModal enhancements**: Added `Visibility` select (dm-only/player-visible/secret), `Motivation / Backstory` textarea, and `Lieutenant NPCs` entity multi-picker backed by the NPCs list; `linkedNpcIds` stored on entity
+- **QuestModal — DM Notes fix**: `DM Notes (hidden from players)` field now correctly saves to `dmNotes` (was saving to `secrets`); `Secrets (DM only)` field retained as a separate field
+- **New generators — Plot Twist**: 12-entry plot twist table covering betrayals, misdirections, and dramatic reversals
+- **New generators — Town Event**: 12-entry town event table for settlement-level happenings during play
+- **New generators — Trap**: Generator combining trap type, trigger, effect, and tell sign into a single card result
+- **Generator UI**: Plot Twist, Town Event, and Trap cards added to both the Generators tab and the Run Session Quick Generators panel (now 14 types)
+
+---
+
+## [Unreleased] — Phase 262
+
+### Added
+- **Dashboard — My Content clickable tiles**: All "Content Summary" stat cards now navigate to their corresponding section on click; hover shows accent outline
+- **Dashboard — Quick actions**: Backup Now, Restore Backup, and Repair & Reindex buttons in the Content Summary card
+- **`RestoreBackupModal`**: Preview a backup JSON file (vault path input), see version/timestamp/entity counts; "Restore" auto-backs up current data first, then restores and re-migrates state
+- **Character sheet calculated initiative**: `renderPCCharacter` stat grid now always shows Initiative as the DEX ability modifier if no override is set
+
+### Changed
+- **Dashboard**: "My Content / Saved Items" section retitled "Content Summary — click any tile to navigate"; stat cards are now interactive
+
+---
+
+## [Unreleased] — Phase 261
+
+### Added
+- **Spellbook v2** (`renderPCSpellbook`, now async): Full spell browser backed by `ReferenceDataService` (`spells.json`); level filter buttons (All/Cantrip/1–9), search input, expandable spell detail cards (school, cast time, range, duration); "+ Learn" action adds spell to character; known spells shown at top with expand-to-detail and Remove button
+- **Inventory Equipment Browser** (`renderPCInventory`, now async): Equipment browser backed by `ReferenceDataService` (`equipment.json`); search input, expandable detail, "+ Carry" action adds item to character inventory
+- **Currency unified to 5 coins**: CharacterModal defaults updated from `{gp, sp, cp}` to `{pp, gp, ep, sp, cp}` matching the Inventory view's five-coin display
+- **Run Session — Active NPCs panel**: Searchable list of campaign NPCs showing name, role, attitude, and motivation quote
+- **Run Session — Active Quests panel**: Grid of active campaign quests with objectives (up to 3 shown per quest)
+- **Run Session — Conditions Reference**: Expandable conditions list loaded async from `conditions.json` via `ReferenceDataService`
+
+---
+
+## [Unreleased] — Phase 260c
+
+### Added
+- **Complete Entity Generators**: Four "Complete Entity Generator" cards in Generators tab — Complete NPC, Complete Settlement, Complete Faction, Complete Quest — each returns a full structured object (all required fields populated) and opens `EntityDraftModal` for preview before saving
+- **`generateCompleteNPC(state)`**: Returns name, ancestry, role, occupation, attitude, personality, motivation, secret, questHook, status, visibility, campaignId
+- **`generateCompleteSettlement(state)`**: Returns name, type, size, government, population, economy, problems array, description, status, campaignId
+- **`generateCompleteFaction(state)`**: Returns name, type, goals/methods arrays, publicFace, secretAgenda, status, visibility, campaignId
+- **`generateCompleteQuest(state)`**: Returns name, questType, status, summary, objectives/complications/rewards arrays, campaignId
+- **`EntityDraftModal`**: Preview-and-save modal for generated entities — shows all fields, "Save as Entity" opens the correct builder modal, "Regenerate" refreshes the draft, "Discard" cancels
+- **Session Event Log**: Live event log at the bottom of Run Session — 12 type buttons (Note, NPC Met, Location Visited, Combat Start, Combat End, Loot Found, Spell Cast, Death/KO, PC Decision, Revelation, Quest Update, Other), text input with Enter support, persisted to `sess.eventLog`, displayed in reverse-chronological order with timestamps
+
+---
+
+## [Unreleased] — Phase 260b
+
+### Added
+- **Level-up constants**: `HIT_DICE` (all 13 classes d6–d12), `SPELLCASTER_TYPE` (full/half/pact/none per class), `FULL_CASTER_SLOTS` / `HALF_CASTER_SLOTS` / `PACT_SLOTS` tables, `ASI_LEVELS_DEFAULT/FIGHTER/ROGUE`
+- **`getAsiLevels(cls)`**: Returns correct ASI level array (Fighter gets 7 ASIs, Rogue gets 6, others get 5)
+- **`getSpellSlotsForLevel(cls, level)`**: Returns 9-element slot array for full/half casters, null for pact/none
+- **`isSpellcaster(cls)`**: Returns true for all caster types including pact
+- **`LevelUpModal`**: Level-up flow modal triggered automatically when Character Builder saves with a higher level — HP section (average/roll/manual with Roll Die button), ASI section (conditional on ASI level), Spell Slots section (conditional on caster type), Class Features note; Apply button commits HP gain, ASI deltas (capped at 20), and spell slot changes to the character record and records a `levelHistory` entry; Skip cancels without applying
+
+### Changed
+- **CharacterModal save**: Now detects level increase (`newLevel > prevLevel`), saves the character first, then automatically opens `LevelUpModal`
+
+---
+
+## [Unreleased] — Phase 260a
+
+### Added
+- **`repairAndReindex(state)`**: Scans all entity arrays — assigns missing IDs (`${key}-repaired-${i}`), renames duplicates (`${id}-dup-${i}`), adds missing `createdAt`/`updatedAt`, assigns `campaignId` from `state.activeCampaignId` to campaign-owned entities; returns issues array for reporting
+- **Safe Mode Recovery — Repair / Reindex**: New option in the safe mode recovery shell that calls `repairAndReindex()` and shows a summary notice of issues found/fixed
+- **Safe Mode Recovery — View Crash Report**: New option that renders the full crash error and stack trace in a scrollable container
+- **`ENTITY_MD_TEMPLATES`**: Expanded from 6 to 12 entries — added `secrets`, `bbegs`, `hybridAncestries`, `nobleFamilies`, `handouts`, `homebrew` templates with structured Markdown bodies (sections, bold labels, proper paragraph breaks)
+- **`scripts/sync-check.mjs`**: Verifies root `main.js` and `src/main.js` are byte-identical; exits 1 with a helpful message if they differ (preventing accidental divergence)
+
+### Changed
+- **`scripts/build.mjs`**: Rewritten to copy root → src (was src → root); now runs `node --check main.js` as first step and fails fast on syntax errors
+- **`npm run build`**: Now includes `check-release` step; `release` script chains check → build → check-release → package
+- **`package.json` scripts**: Added `sync-check` script; `build` and `release` scripts updated
+
+---
+
+## [Unreleased] — Phase 260e (tests)
+
+### Added
+- **`tests/phase260.test.js`**: 39 pure-function unit tests across 7 suites — `HIT_DICE` (5), `SPELLCASTER_TYPE/isSpellcaster` (8), `getSpellSlotsForLevel` (6), `getAsiLevels` (6), `repairAndReindex` (7), `generateCompleteNPC` (4), `generateCompleteFaction` (3)
+- **`npm test`**: Now chains all three test suites (`tile-map.test.js` + `phase259.test.js` + `phase260.test.js`) — 170 tests total
+
+---
+
+## [Unreleased] — Phase 259e
+
+### Added
+- **`tests/phase259.test.js`**: 79 pure-function unit tests across 8 suites — `toTitleCase` (6), `renderTag` (10), `modifier/modStr/profBonus` (12), `slugify` (4), `safeArr` (5), `matchesSearch` (6), `activeCampaign` (4), `upsert/removeItem` (7), `generate` (10), `computeHybridBalance` (15)
+- **`npm test`**: Now chains both test suites (`tile-map.test.js` + `phase259.test.js`)
+
+---
+
 ## [Unreleased] — Phase 259d
 
 ### Added

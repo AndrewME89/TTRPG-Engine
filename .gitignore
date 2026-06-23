@@ -34,3 +34,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Claude Code session files (worktrees, internal state)
+.claude/
