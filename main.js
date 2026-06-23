@@ -332,6 +332,58 @@ function computeHybridBalance(values) {
   return { score, rating, warnings };
 }
 
+// ── Level-up constants ────────────────────────────────────────────────────────
+const HIT_DICE = {
+  Barbarian:12, Fighter:10, Paladin:10, Ranger:10,
+  Bard:8, Cleric:8, Druid:8, Monk:8, Rogue:8, Warlock:8, Artificer:8,
+  Sorcerer:6, Wizard:6,
+};
+const SPELLCASTER_TYPE = {
+  Bard:'full', Cleric:'full', Druid:'full', Sorcerer:'full', Wizard:'full',
+  Paladin:'half', Ranger:'half', Artificer:'half',
+  Warlock:'pact', Monk:'none', Rogue:'none', Fighter:'none', Barbarian:'none',
+};
+const FULL_CASTER_SLOTS = {
+  1:[2,0,0,0,0,0,0,0,0], 2:[3,0,0,0,0,0,0,0,0], 3:[4,2,0,0,0,0,0,0,0],
+  4:[4,3,0,0,0,0,0,0,0], 5:[4,3,2,0,0,0,0,0,0], 6:[4,3,3,0,0,0,0,0,0],
+  7:[4,3,3,1,0,0,0,0,0], 8:[4,3,3,2,0,0,0,0,0], 9:[4,3,3,3,1,0,0,0,0],
+  10:[4,3,3,3,2,0,0,0,0],11:[4,3,3,3,2,1,0,0,0],12:[4,3,3,3,2,1,0,0,0],
+  13:[4,3,3,3,2,1,1,0,0],14:[4,3,3,3,2,1,1,0,0],15:[4,3,3,3,2,1,1,1,0],
+  16:[4,3,3,3,2,1,1,1,0],17:[4,3,3,3,2,1,1,1,1],18:[4,3,3,3,3,1,1,1,1],
+  19:[4,3,3,3,3,2,1,1,1],20:[4,3,3,3,3,2,2,1,1],
+};
+const HALF_CASTER_SLOTS = {
+  1:[0,0,0,0,0,0,0,0,0], 2:[2,0,0,0,0,0,0,0,0], 3:[3,0,0,0,0,0,0,0,0],
+  4:[3,0,0,0,0,0,0,0,0], 5:[4,2,0,0,0,0,0,0,0], 6:[4,2,0,0,0,0,0,0,0],
+  7:[4,3,0,0,0,0,0,0,0], 8:[4,3,0,0,0,0,0,0,0], 9:[4,3,2,0,0,0,0,0,0],
+  10:[4,3,2,0,0,0,0,0,0],11:[4,3,3,0,0,0,0,0,0],12:[4,3,3,0,0,0,0,0,0],
+  13:[4,3,3,1,0,0,0,0,0],14:[4,3,3,1,0,0,0,0,0],15:[4,3,3,2,0,0,0,0,0],
+  16:[4,3,3,2,0,0,0,0,0],17:[4,3,3,3,1,0,0,0,0],18:[4,3,3,3,1,0,0,0,0],
+  19:[4,3,3,3,2,0,0,0,0],20:[4,3,3,3,2,0,0,0,0],
+};
+const PACT_SLOTS = {
+  1:{slots:1,level:1}, 2:{slots:2,level:1}, 3:{slots:2,level:2}, 4:{slots:2,level:2},
+  5:{slots:2,level:3}, 6:{slots:2,level:3}, 7:{slots:2,level:4}, 8:{slots:2,level:4},
+  9:{slots:2,level:5},10:{slots:2,level:5},11:{slots:3,level:5},12:{slots:3,level:5},
+  13:{slots:3,level:5},14:{slots:3,level:5},15:{slots:3,level:5},16:{slots:3,level:5},
+  17:{slots:4,level:5},18:{slots:4,level:5},19:{slots:4,level:5},20:{slots:4,level:5},
+};
+const ASI_LEVELS_DEFAULT = [4, 8, 12, 16, 19];
+const ASI_LEVELS_FIGHTER  = [4, 6, 8, 12, 14, 16, 19];
+const ASI_LEVELS_ROGUE    = [4, 8, 10, 12, 16, 19];
+function getAsiLevels(cls) {
+  if (cls === 'Fighter') return ASI_LEVELS_FIGHTER;
+  if (cls === 'Rogue')   return ASI_LEVELS_ROGUE;
+  return ASI_LEVELS_DEFAULT;
+}
+function getSpellSlotsForLevel(cls, level) {
+  const type = SPELLCASTER_TYPE[cls] || 'none';
+  if (type === 'full')  return FULL_CASTER_SLOTS[level] || FULL_CASTER_SLOTS[20];
+  if (type === 'half')  return HALF_CASTER_SLOTS[level] || HALF_CASTER_SLOTS[20];
+  return null;
+}
+function isSpellcaster(cls) { return (SPELLCASTER_TYPE[cls] || 'none') !== 'none'; }
+
 // ── Option banks (Phase 4) ────────────────────────────────────────────────────
 const OPTION_BANKS = {
   tones:        ['Heroic','Dark & Gritty','Epic','Political Intrigue','Horror','Mystery','Comedic','Survival','Heist','Exploration','War','Redemption Arc'],
@@ -832,65 +884,160 @@ async function writeNote(app, path, content) {
 const ENTITY_MD_TEMPLATES = {
   npcs: item => {
     let b = `# ${item.name || 'NPC'}\n\n`;
-    if (item.role || item.occupation) b += `**Role:** ${[item.role,item.occupation].filter(Boolean).join(' / ')}\n`;
-    if (item.race) b += `**Race:** ${item.race}\n`;
-    if (item.status) b += `**Status:** ${item.status}\n`;
-    b += '\n## Personality\n\n';
-    if (item.motivation) b += `**Motivation:** ${item.motivation}\n\n`;
-    if (item.appearance) b += `**Appearance:** ${item.appearance}\n\n`;
-    if (item.voice) b += `**Voice / Mannerisms:** ${item.voice}\n\n`;
-    b += '## DM Notes\n\n';
-    if (item.secrets) b += `${item.secrets}\n\n`;
-    if (item.notes) b += `${item.notes}\n\n`;
+    b += `> **Role:** ${item.role || '—'}  |  **Status:** ${item.status || 'Unknown'}  |  **Visibility:** ${item.visibility || 'dm-only'}\n\n`;
+    if (item.race || item.ancestry) b += `**Ancestry/Race:** ${item.race || item.ancestry}\n`;
+    if (item.occupation) b += `**Occupation:** ${item.occupation}\n`;
+    if (item.location || item.locationId) b += `**Location:** ${item.location || item.locationId}\n`;
+    b += '\n';
+    b += `## Appearance\n\n${item.appearance || '_No appearance noted._'}\n\n`;
+    b += `## Personality\n\n${item.personality || '_No personality noted._'}\n\n`;
+    b += `## Motivation\n\n${item.motivation || '_No motivation noted._'}\n\n`;
+    if (item.backstory) b += `## Backstory\n\n${item.backstory}\n\n`;
+    if (item.relationships || item.factionIds?.length) {
+      b += `## Relationships\n\n${item.relationships || ''}`;
+      if (item.factionIds?.length) b += `\n**Faction IDs:** ${item.factionIds.join(', ')}`;
+      b += '\n\n';
+    }
+    if (item.questHook) b += `## Quest Hook\n\n${item.questHook}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || item.notes || '_No notes._'}\n`;
     return b;
   },
-  quests: item => {
-    let b = `# ${item.name || 'Quest'}\n\n`;
-    if (item.questType) b += `**Type:** ${item.questType}`;
-    if (item.status) b += ` | **Status:** ${item.status}`;
-    b += '\n\n## Objectives\n\n';
-    if (item.objectives) b += `${item.objectives}\n\n`;
-    if (item.stages) b += `## Stages\n\n${item.stages}\n\n`;
-    if (item.rewards) b += `## Rewards\n\n${item.rewards}\n\n`;
-    if (item.playerSummary) b += `## Player Summary\n\n${item.playerSummary}\n\n`;
-    if (item.secrets) b += `## DM Notes\n\n${item.secrets}\n\n`;
+  creatures: item => {
+    let b = `# ${item.name || 'Creature'}\n\n`;
+    b += `> **CR:** ${item.cr || '—'}  |  **Type:** ${item.creatureType || '—'}  |  **Size:** ${item.size || 'Medium'}  |  **Alignment:** ${item.alignment || '—'}\n\n`;
+    b += `## Stats\n\n| AC | HP | Speed |\n|---|---|---|\n| ${item.ac || '—'} | ${item.hp || '—'} | ${item.speed || '—'} |\n\n`;
+    b += `| STR | DEX | CON | INT | WIS | CHA |\n|---|---|---|---|---|---|\n`;
+    b += `| ${item.str||10} | ${item.dex||10} | ${item.con||10} | ${item.int||10} | ${item.wis||10} | ${item.cha||10} |\n\n`;
+    if (item.senses) b += `**Senses:** ${item.senses}\n`;
+    if (item.languages) b += `**Languages:** ${item.languages}\n`;
+    b += '\n';
+    if (item.traits) b += `## Traits\n\n${item.traits}\n\n`;
+    if (item.actions) b += `## Actions\n\n${item.actions}\n\n`;
+    if (item.reactions) b += `## Reactions\n\n${item.reactions}\n\n`;
+    if (item.legendaryActions) b += `## Legendary Actions\n\n${item.legendaryActions}\n\n`;
+    if (item.lore) b += `## Lore\n\n${item.lore}\n\n`;
+    if (item.habitat) b += `**Habitat:** ${item.habitat}\n\n`;
     return b;
   },
   factions: item => {
     let b = `# ${item.name || 'Faction'}\n\n`;
-    if (item.type) b += `**Type:** ${item.type}\n\n`;
+    b += `> **Type:** ${item.type || '—'}  |  **Visibility:** ${item.visibility || 'dm-only'}\n\n`;
     if (item.ideology) b += `## Ideology\n\n${item.ideology}\n\n`;
-    if (item.publicFace) b += `## Public Face\n\n${item.publicFace}\n\n`;
-    if (item.secretAgenda) b += `## Secret Agenda\n\n${item.secretAgenda}\n\n`;
+    b += `## Goals\n\n${safeArr(item.goals).map(g=>`- ${g}`).join('\n') || '_No goals._'}\n\n`;
+    b += `## Methods\n\n${safeArr(item.methods).map(m=>`- ${m}`).join('\n') || '_No methods._'}\n\n`;
     if (item.resources) b += `## Resources\n\n${item.resources}\n\n`;
+    if (item.leadership || item.leaderNpcId) b += `## Leadership\n\n${item.leadership || ''}${item.leaderNpcId ? `\n**Leader ID:** ${item.leaderNpcId}` : ''}\n\n`;
+    if (item.staffRoles?.length) b += `## Staff & Roles\n\n${safeArr(item.staffRoles).map(r=>`- ${r}`).join('\n')}\n\n`;
+    if (item.publicFace) b += `## Public Face\n\n${item.publicFace}\n\n`;
+    if (item.secretAgenda) b += `## Secret Agenda\n\n_DM Only:_ ${item.secretAgenda}\n\n`;
+    if (item.territory) b += `**Territory:** ${item.territory}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || item.notes || '_No notes._'}\n`;
+    return b;
+  },
+  quests: item => {
+    let b = `# ${item.name || 'Quest'}\n\n`;
+    b += `> **Type:** ${item.questType || '—'}  |  **Status:** ${item.status || 'Available'}  |  **Visibility:** ${item.visibility || 'dm-only'}\n\n`;
+    if (item.playerSummary || item.summary) b += `## Summary\n\n${item.playerSummary || item.summary}\n\n`;
+    if (item.giver || item.giverNpcId) b += `**Quest Giver:** ${item.giver || ''}${item.giverNpcId ? ` (ID: ${item.giverNpcId})` : ''}\n\n`;
+    if (item.location || item.locationId) b += `**Location:** ${item.location || ''}${item.locationId ? ` (ID: ${item.locationId})` : ''}\n\n`;
+    if (item.objectives) b += `## Objectives\n\n${item.objectives}\n\n`;
+    if (item.stages) b += `## Stages\n\n${item.stages}\n\n`;
+    if (item.hooks?.length) b += `## Hooks\n\n${safeArr(item.hooks).map(h=>`- ${h}`).join('\n')}\n\n`;
+    if (item.complications?.length) b += `## Complications\n\n${safeArr(item.complications).map(c=>`- ${c}`).join('\n')}\n\n`;
+    if (item.rewards) b += `## Rewards\n\n${item.rewards}\n\n`;
+    if (item.consequences) b += `## Consequences\n\n${item.consequences}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || item.secrets || '_No notes._'}\n`;
     return b;
   },
   encounters: item => {
     let b = `# ${item.name || 'Encounter'}\n\n`;
-    if (item.type) b += `**Type:** ${item.type} | **Difficulty:** ${item.difficulty || 'Medium'}\n\n`;
+    b += `> **Type:** ${item.type || 'Combat'}  |  **Difficulty:** ${item.difficulty || 'Medium'}  |  **Visibility:** ${item.visibility || 'dm-only'}\n\n`;
+    if (item.location || item.locationId) b += `**Location:** ${item.location || ''}${item.locationId ? ` (ID: ${item.locationId})` : ''}\n\n`;
     if (item.objectives) b += `## Objectives\n\n${item.objectives}\n\n`;
+    if (item.terrain) b += `**Terrain:** ${item.terrain}\n\n`;
     if (item.tactics) b += `## Tactics\n\n${item.tactics}\n\n`;
-    if (item.victoryConditions) b += `## Victory Conditions\n\n${item.victoryConditions}\n\n`;
-    if (item.rewards) b += `## Rewards\n\n${item.rewards}\n\n`;
-    if (item.notes) b += `## DM Notes\n\n${item.notes}\n\n`;
+    if (item.enemyGroups) b += `## Enemy Groups\n\n${item.enemyGroups}\n\n`;
+    if (item.victoryConditions) b += `**Victory:** ${item.victoryConditions}\n\n`;
+    if (item.failureConditions) b += `**Failure:** ${item.failureConditions}\n\n`;
+    if (item.rewards) b += `## Rewards / Loot\n\n${item.rewards}\n\n`;
+    b += `## DM Notes\n\n${item.notes || item.dmNotes || '_No notes._'}\n`;
     return b;
   },
   sessions: item => {
     let b = `# ${item.name || 'Session'}\n\n`;
-    if (item.realDate) b += `**Date:** ${item.realDate}`;
-    if (item.gameDate) b += ` | **In-world:** ${item.gameDate}`;
-    b += '\n\n## Recap\n\n';
-    if (item.recap) b += `${item.recap}\n\n`;
+    b += `> **Session #:** ${item.sessionNumber || '—'}  |  **Date:** ${item.realDate || '—'}  |  **Status:** ${item.status || 'Planned'}\n\n`;
+    if (item.gameDate) b += `**In-World Date:** ${item.gameDate}\n\n`;
+    if (item.partyMembers?.length) b += `**Party:** ${safeArr(item.partyMembers).join(', ')}\n\n`;
+    if (item.recap) b += `## Recap\n\n${item.recap}\n\n`;
+    if (item.scenes) b += `## Scenes\n\n${item.scenes}\n\n`;
+    if (item.npcsMet?.length) b += `## NPCs Encountered\n\n${safeArr(item.npcsMet).map(n=>`- ${n}`).join('\n')}\n\n`;
+    if (item.questsAdvanced?.length) b += `## Quests Advanced\n\n${safeArr(item.questsAdvanced).map(q=>`- ${q}`).join('\n')}\n\n`;
+    if (item.secretsRevealed?.length) b += `## Secrets Revealed\n\n${safeArr(item.secretsRevealed).map(s=>`- ${s}`).join('\n')}\n\n`;
+    if (item.lootAwarded) b += `## Loot Awarded\n\n${item.lootAwarded}\n\n`;
+    if (item.xpMilestones) b += `**XP / Milestones:** ${item.xpMilestones}\n\n`;
     if (item.cliffhanger) b += `## Cliffhanger\n\n${item.cliffhanger}\n\n`;
-    if (item.nextSessionNotes) b += `## Next Session\n\n${item.nextSessionNotes}\n\n`;
+    if (item.nextSessionNotes) b += `## Next Session Notes\n\n${item.nextSessionNotes}\n\n`;
+    if (item.notes) b += `## Session Notes\n\n${item.notes}\n\n`;
+    b += `## DM Prep Notes\n\n${item.prepNotes || '_No prep notes._'}\n`;
+    return b;
+  },
+  secrets: item => {
+    let b = `# ${item.name || 'Secret'}\n\n`;
+    b += `> **Type:** ${item.secretType || '—'}  |  **Status:** ${item.revealStatus || 'Hidden'}  |  **Visibility:** ${item.visibility || 'secret'}\n\n`;
+    if (item.revealTrigger) b += `**Reveal Trigger:** ${item.revealTrigger}\n\n`;
+    b += `## Content\n\n${item.content || '_No content._'}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || '_No notes._'}\n`;
+    return b;
+  },
+  bbegs: item => {
+    let b = `# ${item.name || 'Villain'}\n\n`;
+    b += `> **Title:** ${item.title || '—'}  |  **Status:** ${item.status || 'Active'}\n\n`;
+    b += `## Goals\n\n${safeArr(item.goals).map(g=>`- ${g}`).join('\n') || '_No goals._'}\n\n`;
+    b += `## Methods\n\n${safeArr(item.methods).map(m=>`- ${m}`).join('\n') || '_No methods._'}\n\n`;
+    if (item.resources) b += `## Resources\n\n${item.resources}\n\n`;
+    if (item.mythicPhases) b += `## Mythic Phases\n\n${item.mythicPhases}\n\n`;
+    if (item.escalationClocks) b += `## Escalation Clocks\n\n${item.escalationClocks}\n\n`;
+    if (item.finalConfrontation) b += `## Final Confrontation\n\n${item.finalConfrontation}\n\n`;
+    b += `## Secrets\n\n${item.secrets || '_No secrets._'}\n`;
     return b;
   },
   hybridAncestries: item => {
     let b = `# ${item.name || 'Hybrid Ancestry'}\n\n`;
-    b += `**Parents:** ${[item.dominantAncestry,item.recessiveAncestry].filter(Boolean).join(' × ')}\n`;
-    b += `**Size:** ${item.size||'Medium'} | **Speed:** ${item.speed||30} ft | **Type:** ${item.creatureType||'Humanoid'} | **Darkvision:** ${item.darkvision||'None'}\n\n`;
+    b += `> **Parents:** ${[item.dominantAncestry, item.recessiveAncestry].filter(Boolean).join(' × ')}  |  **Status:** ${item.approvalStatus || item.status || 'Pending'}\n\n`;
+    b += `**Size:** ${item.size || 'Medium'}  |  **Speed:** ${item.speed || 30} ft  |  **Type:** ${item.creatureType || 'Humanoid'}  |  **Darkvision:** ${item.darkvision ? item.darkvision + ' ft' : 'None'}\n\n`;
+    if (item.languages?.length) b += `**Languages:** ${safeArr(item.languages).join(', ')}\n\n`;
+    if (item.ageNotes) b += `**Age:** ${item.ageNotes}\n\n`;
     if (item.summary) b += `## Summary\n\n${item.summary}\n\n`;
     if (item.playerNotes) b += `## Player Notes\n\n${item.playerNotes}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || '_No DM notes._'}\n`;
+    return b;
+  },
+  nobleFamilies: item => {
+    let b = `# House ${item.name || 'Unknown'}\n\n`;
+    b += `> **Motto:** _${item.motto || 'None'}_  |  **Status:** ${item.status || 'Active'}\n\n`;
+    if (item.holdings) b += `## Holdings & Titles\n\n${item.holdings}\n\n`;
+    if (item.claims) b += `## Claims & Disputes\n\n${item.claims}\n\n`;
+    if (item.debts) b += `## Debts & Obligations\n\n${item.debts}\n\n`;
+    if (item.members?.length) b += `## Members\n\n${safeArr(item.members).map(m=>`- ${m}`).join('\n')}\n\n`;
+    if (item.alliances?.length) b += `## Alliances\n\n${safeArr(item.alliances).map(a=>`- ${a}`).join('\n')}\n\n`;
+    if (item.rivals?.length) b += `## Rivals\n\n${safeArr(item.rivals).map(r=>`- ${r}`).join('\n')}\n\n`;
+    b += `## Secrets & Scandals\n\n${item.secrets || '_No secrets._'}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || '_No notes._'}\n`;
+    return b;
+  },
+  handouts: item => {
+    let b = `# ${item.name || 'Handout'}\n\n`;
+    b += `> **Type:** ${item.type || '—'}  |  **Visibility:** ${item.visibility || 'dm-only'}\n\n`;
+    b += `${item.content || item.description || '_No content._'}\n`;
+    return b;
+  },
+  homebrew: item => {
+    let b = `# ${item.name || 'Homebrew Entry'}\n\n`;
+    b += `> **Type:** ${item.type || '—'}  |  **Status:** ${item.status || 'Draft'}\n\n`;
+    if (item.description) b += `## Description\n\n${item.description}\n\n`;
+    if (item.mechanics) b += `## Mechanics\n\n${item.mechanics}\n\n`;
+    if (item.balance) b += `**Balance Notes:** ${item.balance}\n\n`;
+    b += `## DM Notes\n\n${item.dmNotes || item.notes || '_No notes._'}\n`;
     return b;
   },
 };
@@ -1083,6 +1230,80 @@ function generate(type, state) {
     case 'NPC Trait': return `${rnd(t.personality)}. ${rnd(t.quirk)}.`;
     default: return '[Result]';
   }
+}
+
+function generateCompleteNPC(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const FIRST = ['Aldric','Brea','Caelum','Dara','Emory','Fynn','Gael','Hana','Idris','Jora','Kael','Lena','Maren','Noel','Oryn','Priya','Quinn','Reva','Soren','Tara','Uland','Vara','Wren','Xael','Yosef','Zara'];
+  const LAST  = ['Ashmore','Blackwood','Cresthill','Dunmore','Embervale','Frostwood','Greymoor','Halloway','Ironvale','Jasperton','Keldram','Lochwood','Merrow','Nighthollow','Ostwick','Pendleton','Quarrystone','Redmoor','Stonehaven','Thornwall','Underhill','Vayne','Whitmore','Yewdale','Zorvath'];
+  const ROLES = ['Merchant','Innkeeper','Guard','Priest','Scholar','Noble','Soldier','Artisan','Sailor','Hunter','Blacksmith','Healer','Criminal','Spy','Mercenary','Farmer','Beggar','Bard','Herbalist'];
+  const ANCESTRIES = ['Human','Elf','Dwarf','Halfling','Half-Elf','Half-Orc','Tiefling','Gnome','Dragonborn','Aasimar'];
+  const ATTITUDES  = ['Friendly','Neutral','Suspicious','Hostile','Desperate','Curious','Cautious','Jovial','Melancholy'];
+  const PERSONALITIES = ['nervous and twitchy','gruff but secretly kind','speaks in elaborate metaphors','obsessed with past glory','deeply devout','deeply distrustful of strangers','hungry for news','grieving a recent loss','overly formal','cheerfully cynical'];
+  const QUIRKS = ['fiddles with a coin','refers to themselves in third person','hums tunelessly','avoids eye contact','elaborate greeting ritual','always mentions hometown','carries a worn letter','chews a sprig of mint'];
+  const MOTIVATIONS = ['seeking revenge','trying to repay a debt','protecting a secret','searching for a lost family member','building wealth','serving their deity','fleeing their past','proving themselves','protecting their community'];
+  const SECRETS = ['witnessed a noble crime','is an informant for a faction','carries contraband','has a bounty in another city','is hiding a dangerous skill','knows a prophecy','owes a debt to a demon','is a retired adventurer'];
+  const name = `${rnd(FIRST)} ${rnd(LAST)}`;
+  return {
+    name, ancestry: rnd(ANCESTRIES), role: rnd(ROLES),
+    occupation: rnd(ROLES), attitude: rnd(ATTITUDES),
+    personality: `${rnd(PERSONALITIES)}. ${rnd(QUIRKS)}.`,
+    motivation: rnd(MOTIVATIONS), secret: rnd(SECRETS),
+    questHook: generate('Quest Hook', state),
+    status: 'Active', visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+
+function generateCompleteSettlement(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const name = generate('Settlement Name', state);
+  const TYPES = ['Village','Town','City','Hamlet','Keep','Port','Mining Camp','Trading Post','Monastery'];
+  const GOVTS = ['Mayor','Council of Elders','Merchant Guild','Local Lord','Temple Authority','Elected Council','Warlord'];
+  const PROBLEMS = ['A series of unexplained disappearances','Crops have been failing for months','A new gang of bandits controls trade routes','An ancient ruin nearby attracts dangerous attention','Political tension between two families','A plague spreading from the docks','Strange lights seen at night outside town'];
+  const RESOURCES = ['Iron ore','Timber','Farmland','Fishing','Trade crossroads','Magical springs','Ancient ruins','Skilled craftspeople'];
+  return {
+    name, type: rnd(TYPES), government: rnd(GOVTS),
+    population: rnd([50, 100, 200, 500, 1000, 2000, 5000, 10000]),
+    economy: rnd(RESOURCES), problems: [rnd(PROBLEMS)],
+    status: 'Active', visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    questHook: generate('Quest Hook', state),
+    notes: `Notable for its ${rnd(RESOURCES).toLowerCase()} trade.`,
+  };
+}
+
+function generateCompleteFaction(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const name = generate('Faction Name', state);
+  const TYPES = ['Criminal','Political','Religious','Military','Mercantile','Academic','Secret Society','Resistance','Cult','Guild'];
+  const GOALS = ['Accumulate wealth and power','Overthrow the current government','Protect the old ways','Spread their faith','Destroy a rival organisation','Find an ancient artefact','Control the trade routes','Uncover forbidden knowledge'];
+  const METHODS = ['Manipulation and blackmail','Open military force','Bribery and corruption','Assassination','Subterfuge and espionage','Propaganda','Alliance-building'];
+  const PUBLIC_FACES = ['A charitable organisation','A merchant guild','A religious order','A scholarly society','A civic club','A trade union'];
+  return {
+    name, type: rnd(TYPES),
+    goals: [rnd(GOALS), rnd(GOALS)].filter((v,i,a)=>a.indexOf(v)===i),
+    methods: [rnd(METHODS)],
+    publicFace: rnd(PUBLIC_FACES),
+    secretAgenda: rnd(GOALS),
+    status: 'Active', visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    notes: generate('Rumour', state),
+  };
+}
+
+function generateCompleteQuest(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Main Quest','Side Quest','Faction Quest','Personal Quest','Investigation','Delivery','Rescue','Exploration','Heist','Bounty'];
+  const STATUSES = ['Available','Active','Completed'];
+  const COMPLICATIONS = ['A key NPC turns out to be the villain','The reward is less than promised','An innocent is caught in the middle','A rival group is after the same goal','The situation is more complex than it appeared'];
+  const REWARDS = ['Gold and supplies','A deed to property','A rare magic item','Faction reputation','Information about a bigger threat','A loyal contact','Access to a secret location'];
+  const hook = generate('Quest Hook', state);
+  const name = hook.split('.')[0].slice(0, 60);
+  return {
+    name, questType: rnd(TYPES), status: rnd(STATUSES.slice(0,2)),
+    summary: hook, objectives: `Investigate and resolve: ${hook}`,
+    complications: [rnd(COMPLICATIONS)],
+    rewards: rnd(REWARDS),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
 }
 
 // ── Modal field helpers ───────────────────────────────────────────────────────
@@ -1834,13 +2055,59 @@ class TTRPGMainView extends ItemView {
   }
 }
 
+// ── Repair & reindex ──────────────────────────────────────────────────────────
+function repairAndReindex(state) {
+  const issues = [];
+  const ents = state.entities || {};
+  const seenIds = new Set();
+  for (const [key, arr] of Object.entries(ents)) {
+    if (!Array.isArray(arr)) continue;
+    arr.forEach((item, i) => {
+      if (!item) return;
+      // Missing ID
+      if (!item.id) { item.id = `${key}-repaired-${Date.now()}-${i}`; issues.push(`${key}[${i}]: assigned missing id`); }
+      // Duplicate ID
+      if (seenIds.has(item.id)) { const newId = `${item.id}-dup-${i}`; issues.push(`${key}[${i}]: duplicate id ${item.id} → ${newId}`); item.id = newId; }
+      seenIds.add(item.id);
+      // Missing timestamps
+      const now = new Date().toISOString();
+      if (!item.createdAt) { item.createdAt = now; issues.push(`${key}[${i}] ${item.id}: added missing createdAt`); }
+      if (!item.updatedAt) { item.updatedAt = now; issues.push(`${key}[${i}] ${item.id}: added missing updatedAt`); }
+      // Missing campaignId for campaign-owned entities
+      const CAMPAIGN_OWNED = ['npcs','creatures','bbegs','factions','quests','encounters','sessions','secrets','handouts','regions','settlements','locations','dungeons','maps','timers','enemyTemplates','nobleFamilies','hybridAncestries'];
+      if (CAMPAIGN_OWNED.includes(key) && !item.campaignId && state.activeCampaignId) {
+        item.campaignId = state.activeCampaignId;
+        issues.push(`${key}[${i}] ${item.id}: assigned campaignId from activeCampaignId`);
+      }
+      // Invalid visibility
+      const VALID_VIS = ['dm-only','player-visible','secret','revealed'];
+      if (item.visibility && !VALID_VIS.includes(item.visibility)) {
+        issues.push(`${key}[${i}] ${item.id}: invalid visibility "${item.visibility}" (not changed, requires manual fix)`);
+      }
+    });
+  }
+  // Check relationships
+  safeArr(state.relationships).forEach((rel, i) => {
+    if (!rel.id) { rel.id = `rel-repaired-${Date.now()}-${i}`; issues.push(`relationship[${i}]: assigned missing id`); }
+    if (rel.fromEntityType && rel.fromId) {
+      const arr = safeArr((state.entities || {})[rel.fromEntityType]);
+      if (!arr.find(x => x.id === rel.fromId)) issues.push(`relationship[${i}] ${rel.id}: fromId ${rel.fromId} not found in ${rel.fromEntityType}`);
+    }
+    if (rel.toEntityType && rel.toId) {
+      const arr = safeArr((state.entities || {})[rel.toEntityType]);
+      if (!arr.find(x => x.id === rel.toId)) issues.push(`relationship[${i}] ${rel.id}: toId ${rel.toId} not found in ${rel.toEntityType}`);
+    }
+  });
+  return issues;
+}
+
 // ── Safe mode recovery splash ──────────────────────────────────────────────────
 function renderSafeModeRecovery(root, plugin) {
   root.className = 'ttrpg-shell';
   const main = ce(root, 'main', 'te-main');
   const hd = ce(main, 'div', 'te-card'); hd.style.marginBottom = '16px';
   const hh = ce(hd, 'div', 'te-card-head'); ce(hh, 'span', 'te-card-icon', '🔒'); ce(hh, 'h3', 'te-card-title', 'Safe Mode Active');
-  ce(hd, 'p', 'te-card-body', 'TTRPG Engine is running in safe mode. Normal plugin features are suspended. Your data is loaded — use the recovery options below, then reload Obsidian.');
+  ce(hd, 'p', 'te-card-body', 'TTRPG Engine is running in safe mode. Normal plugin features are suspended. Your data is intact — use the recovery options below, then reload Obsidian.');
   const g = ce(main, 'div', 'te-grid');
   const opt = (icon, title, desc, label, onClick) => {
     const c = ce(g, 'div', 'te-card');
@@ -1848,10 +2115,25 @@ function renderSafeModeRecovery(root, plugin) {
     ce(c, 'p', 'te-card-body', desc);
     btn(ce(c, 'div', 'te-card-actions'), label, 'te-btn is-primary is-sm', onClick);
   };
-  opt('✅', 'Disable Safe Mode', 'Re-enable the full plugin. Reload Obsidian after clicking.', 'Disable Safe Mode', async () => { await disableSafeMode(plugin.app); new Notice('Safe mode disabled. Please reload Obsidian to restore normal operation.', 8000); });
-  opt('💾', 'Backup Data', 'Export a full backup of your campaign data before making changes.', 'Backup Now', async () => exportBackup(plugin));
-  opt('🔧', 'Diagnostics', 'View crash reports, system health, and repair data.', 'Open Diagnostics', () => new DiagnosticsModal(plugin.app, plugin).open());
-  opt('🔓', 'Clear Crash Lock', 'Remove the crash-lock file that may be blocking normal operation.', 'Clear Lock', async () => { await clearCrashLock(plugin.app); new Notice('Crash lock cleared.'); });
+  opt('✅', 'Disable Safe Mode', 'Re-enable the full plugin. Reload Obsidian after clicking.', 'Disable Safe Mode',
+    async () => { await disableSafeMode(plugin.app); new Notice('Safe mode disabled — please reload Obsidian.', 8000); });
+  opt('💾', 'Backup Data', 'Export a full backup of your campaign data before making any changes.', 'Backup Now',
+    async () => { await exportBackup(plugin); });
+  opt('🔧', 'Diagnostics', 'View crash reports, entity counts, data health, and repair tools.', 'Open Diagnostics',
+    () => new DiagnosticsModal(plugin.app, plugin).open());
+  opt('🔓', 'Clear Crash Lock', 'Remove the crash-lock file preventing normal load.', 'Clear Crash Lock',
+    async () => { await clearCrashLock(plugin.app); new Notice('Crash lock cleared — please reload Obsidian.', 6000); });
+  opt('🔁', 'Repair / Reindex', 'Scan entities for missing IDs, broken links, and orphaned records.', 'Run Repair',
+    async () => {
+      const issues = repairAndReindex(plugin.state);
+      await plugin.saveState();
+      new Notice(issues.length ? `Repair found ${issues.length} issue(s) — see Diagnostics.` : 'No issues found.', 6000);
+    });
+  opt('📋', 'View Crash Report', 'Read the last crash report recorded by the plugin.', 'View Report',
+    async () => {
+      const report = await readCrashReport(plugin.app);
+      new DiagnosticsModal(plugin.app, plugin, report || 'No crash report found.').open();
+    });
 }
 
 // ── Section router ─────────────────────────────────────────────────────────────
@@ -3417,6 +3699,25 @@ function renderGenerators(main, plugin) {
     btn(acts, 'Generate', 'te-btn is-primary', () => new GeneratorModal(plugin.app, plugin, type).open());
   });
 
+  sectionHead(main, 'Complete Entity Generators');
+  const ceg = ce(main, 'div', 'te-grid');
+  const entityGens = [
+    ['Complete NPC', '👤', 'Generate a full NPC — name, ancestry, personality, motivation, secret, and quest hook', generateCompleteNPC, 'npcs', NPCModal],
+    ['Complete Settlement', '🏘️', 'Generate a full settlement — name, type, government, economy, problems, and quest hook', generateCompleteSettlement, 'settlements', null],
+    ['Complete Faction', '⚔️', 'Generate a full faction — name, type, goals, methods, public face, and secret agenda', generateCompleteFaction, 'factions', FactionModal],
+    ['Complete Quest', '📋', 'Generate a full quest — name, type, objectives, complications, and rewards', generateCompleteQuest, 'quests', QuestModal],
+  ];
+  entityGens.forEach(([label, icon, desc, genFn, entityKey, ModalClass]) => {
+    const c = ce(ceg, 'div', 'te-card');
+    const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', icon); ce(hd, 'h3', 'te-card-title', label);
+    ce(c, 'p', 'te-card-body', desc);
+    const acts = ce(c, 'div', 'te-card-actions');
+    btn(acts, 'Generate', 'te-btn is-primary', () => {
+      const draft = genFn(plugin.state);
+      new EntityDraftModal(plugin.app, plugin, label, draft, entityKey, ModalClass).open();
+    });
+  });
+
   sectionHead(main, 'Generator History');
   const hist = safeArr(plugin.state.generatorHistory);
   if (!hist.length) { emptyState(main, 'No generated results yet.', 'Use the generators above to create content.'); return; }
@@ -3757,6 +4058,49 @@ function renderRunSession(main, plugin) {
     else if (lastGenType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [lastGenResult] }).open();
   });
   saveAsBtn.style.display = 'none';
+
+  // ── Session Event Log ─────────────────────────────────────────────────────
+  sectionHead(main, '📋 Session Event Log');
+  const sess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
+  if (sess) {
+    if (!Array.isArray(sess.eventLog)) sess.eventLog = [];
+    const logWrap = ce(main, 'div', 'te-card'); logWrap.style.padding = '12px';
+    const EVENT_TYPES = ['Note','NPC Met','Location Visited','Quest Advanced','Secret Revealed','Loot Awarded','Combat Started','Combat Ended','Player Decision','Consequence','Timer Advanced','Next Hook'];
+    let evtType = 'Note';
+    const typeRow = ce(logWrap, 'div', 'te-card-actions'); typeRow.style.flexWrap = 'wrap';
+    EVENT_TYPES.forEach(t => {
+      const b = btn(typeRow, t, 'te-btn is-sm' + (t === evtType ? ' is-primary' : ''), () => {
+        evtType = t;
+        Array.from(typeRow.querySelectorAll('button')).forEach((bb,i) => bb.className = 'te-btn is-sm' + (EVENT_TYPES[i] === t ? ' is-primary' : ''));
+      });
+    });
+    const addRow = ce(logWrap, 'div', 'te-chip-add-row'); addRow.style.marginTop = '8px';
+    const evtInp = ce(addRow, 'input'); evtInp.type = 'text'; evtInp.placeholder = 'Event note…'; evtInp.style.flex = '1';
+    btn(addRow, 'Add', 'te-btn is-primary', async () => {
+      const text = evtInp.value.trim(); if (!text) return;
+      sess.eventLog.push({ type: evtType, text, time: new Date().toISOString() });
+      evtInp.value = '';
+      upsert(state, 'sessions', sess); await plugin.saveState();
+      renderLog();
+    });
+    evtInp.addEventListener('keydown', e => { if (e.key === 'Enter') addRow.querySelector('button').click(); });
+    const logList = ce(logWrap, 'div', ''); logList.style.marginTop = '8px';
+    const renderLog = () => {
+      clear(logList);
+      const events = [...sess.eventLog].reverse();
+      if (!events.length) { ce(logList, 'p', 'te-empty-state', 'No events yet. Add notes above.'); return; }
+      events.forEach((evt, i) => {
+        const row = ce(logList, 'div', 'te-card-meta-row');
+        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border);font-size:.85rem';
+        const lbl = ce(row, 'span', 'te-card-meta-label'); lbl.textContent = evt.type;
+        ce(row, 'span', '', evt.text);
+        const t = ce(row, 'span', 'te-muted-text'); t.style.marginLeft = 'auto'; t.textContent = evt.time ? new Date(evt.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+      });
+    };
+    renderLog();
+  } else {
+    ce(main, 'p', 'te-empty-state', 'Start a session to enable the event log.');
+  }
 }
 
 // ── WAR MACHINE (Phase 11) ────────────────────────────────────────────────────
@@ -5306,6 +5650,50 @@ class DiceModal extends Modal {
   }
 }
 
+// EntityDraftModal — preview/edit a generated entity before saving
+class EntityDraftModal extends Modal {
+  constructor(app, plugin, generatorLabel, draft, entityKey, ModalClass) {
+    super(app);
+    this.plugin = plugin;
+    this.generatorLabel = generatorLabel;
+    this.draft = draft;
+    this.entityKey = entityKey;
+    this.ModalClass = ModalClass;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `Generated: ${this.generatorLabel}` });
+    const previewCard = ce(contentEl, 'div', 'te-modal-section');
+    previewCard.style.cssText = 'background:var(--te-bg-alt);padding:12px;border-radius:var(--te-r-md);margin-bottom:12px';
+    previewCard.createEl('h3', { text: this.draft.name || 'Untitled' });
+    const previewKeys = Object.entries(this.draft).filter(([k]) => !['id','campaignId','visibility','status'].includes(k));
+    previewKeys.forEach(([k, v]) => {
+      if (!v || (Array.isArray(v) && !v.length)) return;
+      const row = ce(previewCard, 'div', 'te-card-meta-row');
+      const lbl = ce(row, 'span', 'te-card-meta-label'); lbl.textContent = k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase());
+      const val = ce(row, 'span', '');
+      val.textContent = Array.isArray(v) ? v.join(', ') : String(v);
+    });
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, 'Save as Entity', 'te-btn is-primary', async () => {
+      if (this.ModalClass) {
+        this.close();
+        new this.ModalClass(this.plugin.app, this.plugin, this.draft).open();
+      } else {
+        const d = { ...this.draft, id: uid(this.entityKey) };
+        upsert(this.plugin.state, this.entityKey, d);
+        await this.plugin.saveState();
+        new Notice(`${this.generatorLabel} saved.`);
+        this.close();
+      }
+    });
+    btn(actRow, 'Regenerate', 'te-btn', () => { this.close(); /* caller must re-open */ });
+    btn(actRow, 'Discard', 'te-btn', () => this.close());
+  }
+}
+
 // GeneratorModal
 class GeneratorModal extends Modal {
   constructor(app, plugin, type) {
@@ -5664,6 +6052,173 @@ class NobleFamilyModal extends Modal {
   }
 }
 
+// LevelUpModal
+class LevelUpModal extends Modal {
+  constructor(app, plugin, character, fromLevel, toLevel) {
+    super(app);
+    this.plugin = plugin;
+    this.char = character;
+    this.fromLevel = fromLevel;
+    this.toLevel = toLevel;
+    this.cls = character.class || '';
+    this.hitDie = HIT_DICE[this.cls] || 8;
+    this.hpChoice = 'average';
+    this.hpRoll = 0;
+    this.hpManual = 0;
+    this.asiChoice = 'asi';
+    this.asiDeltas = {};
+    this.featChosen = '';
+    this.spellsAdded = [];
+    this.isAsiLevel = getAsiLevels(this.cls).includes(toLevel);
+    this.isCaster  = isSpellcaster(this.cls);
+    this.newSlots  = getSpellSlotsForLevel(this.cls, toLevel);
+    this.levelHistory = Array.isArray(character.levelHistory) ? character.levelHistory : [];
+    this.avgHp = Math.floor(this.hitDie / 2) + 1;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `🎉 Level Up! ${this.char.name || 'Character'} → Level ${this.toLevel}` });
+
+    const sumCard = ce(contentEl, 'div', 'te-modal-section');
+    sumCard.style.cssText = 'background:var(--te-bg-alt);border-radius:var(--te-r-md);padding:12px;margin-bottom:12px';
+    ce(sumCard, 'p', '', `Level ${this.fromLevel} → ${this.toLevel}  |  Class: ${this.cls || 'Unknown'}  |  Hit Die: d${this.hitDie}`);
+    const pbOld = profBonus(this.fromLevel), pbNew = profBonus(this.toLevel);
+    if (pbNew > pbOld) ce(sumCard, 'p', 'te-card-body', `⚡ Proficiency Bonus increases: +${pbOld} → +${pbNew}`);
+
+    // HP section
+    const sHP = ce(contentEl, 'div', 'te-modal-section');
+    sHP.createEl('h3', { text: 'HP Increase' });
+    const hpResult = ce(sHP, 'div', '');
+    hpResult.style.cssText = 'padding:8px;border:1px solid var(--te-accent);border-radius:var(--te-r-md);margin-bottom:8px;font-weight:600;background:var(--te-bg-alt)';
+    hpResult.textContent = `HP gained: ${this.avgHp} (average of d${this.hitDie})`;
+    addSelect(sHP, 'HP Method', this.hpChoice, ['average','roll','manual'], v => {
+      this.hpChoice = v;
+      if (v === 'average') hpResult.textContent = `HP gained: ${this.avgHp} (average)`;
+    });
+    const rollRow = ce(sHP, 'div', 'te-card-actions');
+    btn(rollRow, `🎲 Roll d${this.hitDie}`, 'te-btn is-sm', () => {
+      this.hpRoll = rollDie(this.hitDie); this.hpChoice = 'roll';
+      hpResult.textContent = `HP gained: ${this.hpRoll} (rolled d${this.hitDie})`;
+    });
+    const hpManInp = ce(sHP, 'input'); hpManInp.type = 'number'; hpManInp.placeholder = 'Manual HP amount'; hpManInp.style.cssText = 'width:100%;margin-top:6px';
+    hpManInp.addEventListener('input', () => {
+      this.hpManual = parseInt(hpManInp.value) || 0; this.hpChoice = 'manual';
+      hpResult.textContent = `HP gained: ${this.hpManual} (manual)`;
+    });
+
+    // ASI / Feat section
+    if (this.isAsiLevel) {
+      const sASI = ce(contentEl, 'div', 'te-modal-section');
+      sASI.createEl('h3', { text: `ASI or Feat (Level ${this.toLevel})` });
+      ce(sASI, 'p', 'te-card-body', 'You reached an ASI/Feat level. Choose one option.');
+      addSelect(sASI, 'Choice', this.asiChoice, ['asi','feat'], v => {
+        this.asiChoice = v;
+        asiSection.style.display = v === 'asi' ? '' : 'none';
+        featSection.style.display = v === 'feat' ? '' : 'none';
+      });
+      const asiSection = ce(sASI, 'div', '');
+      ce(asiSection, 'p', 'te-card-body', 'Spend +2 on one ability score, or +1/+1 on two (max 20 each).');
+      const ABILITIES = ['str','dex','con','int','wis','cha'];
+      const totLabel = ce(asiSection, 'div', 'te-card-body', 'Spent: 0 / 2');
+      const updateTot = () => {
+        const tot = Object.values(this.asiDeltas).reduce((s,v)=>s+(parseInt(v)||0),0);
+        totLabel.textContent = `Spent: ${tot} / 2`;
+        totLabel.style.color = tot > 2 ? 'var(--te-danger)' : tot === 2 ? 'var(--te-accent)' : '';
+      };
+      const abRow = ce(asiSection, 'div', '');
+      abRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
+      ABILITIES.forEach(ab => {
+        const abWrap = ce(abRow, 'div', '');
+        const cur = parseInt(this.char[ab]) || 10;
+        new Setting(abWrap).setName(`${ab.toUpperCase()} (${cur})`).addDropdown(d => {
+          d.addOption('0','±0'); d.addOption('1','+1'); d.addOption('2','+2');
+          d.setValue('0'); d.onChange(v => { this.asiDeltas[ab] = parseInt(v)||0; updateTot(); });
+        });
+      });
+      const featSection = ce(sASI, 'div', '');
+      featSection.style.display = 'none';
+      addField(featSection, 'Feat Name', this.featChosen, v => this.featChosen = v);
+      ce(featSection, 'p', 'te-card-body', 'Enter the feat name. Use the 5e Reference section to look up prerequisites.');
+    }
+
+    // Spell slots section
+    if (this.isCaster && this.newSlots) {
+      const sSp = ce(contentEl, 'div', 'te-modal-section');
+      sSp.createEl('h3', { text: 'Updated Spell Slots' });
+      const oldSlots = getSpellSlotsForLevel(this.cls, this.fromLevel);
+      const grid = ce(sSp, 'div', '');
+      grid.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:6px;font-size:.82rem';
+      this.newSlots.forEach((slots, i) => {
+        if (slots === 0) return;
+        const oldCount = oldSlots ? (oldSlots[i] || 0) : 0;
+        const gained = slots - oldCount;
+        const cell = ce(grid, 'div', 'te-card'); cell.style.padding = '8px;text-align:center';
+        ce(cell, 'div', '', `Lvl ${i+1}`);
+        ce(cell, 'div', 'te-stat-big', String(slots));
+        if (gained > 0) { const g = ce(cell, 'div', ''); g.style.color = 'var(--te-accent)'; g.textContent = `+${gained}`; }
+      });
+      ce(sSp, 'p', 'te-card-body', 'Visit the Spellbook to add spells for your new available levels.');
+    } else if (this.isCaster && SPELLCASTER_TYPE[this.cls] === 'pact') {
+      const pact = PACT_SLOTS[this.toLevel];
+      if (pact) {
+        const sSp = ce(contentEl, 'div', 'te-modal-section');
+        sSp.createEl('h3', { text: 'Warlock Pact Slots' });
+        ce(sSp, 'p', '', `${pact.slots} slot(s) of spell level ${pact.level}`);
+      }
+    }
+
+    // Class features note
+    const sFeats = ce(contentEl, 'div', 'te-modal-section');
+    sFeats.createEl('h3', { text: 'Class Features' });
+    ce(sFeats, 'p', 'te-card-body', `Check your ${this.cls || 'class'} description for features gained at level ${this.toLevel}. Use the 5e Reference section to find class features.`);
+    addField(sFeats, 'Features / Notes (optional)', '', v => this._featureNotes = v);
+
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, 'Apply Level Up', 'te-btn is-primary', async () => {
+      let hpGain = this.avgHp;
+      if (this.hpChoice === 'roll')   hpGain = this.hpRoll;
+      if (this.hpChoice === 'manual') hpGain = this.hpManual;
+
+      const asiApplied = {};
+      if (this.isAsiLevel && this.asiChoice === 'asi') {
+        ['str','dex','con','int','wis','cha'].forEach(ab => {
+          const delta = parseInt(this.asiDeltas[ab]) || 0;
+          if (delta > 0) { this.char[ab] = Math.min(20, (parseInt(this.char[ab])||10) + delta); asiApplied[ab] = delta; }
+        });
+      }
+
+      const oldMaxHp = parseInt(this.char.maxHp) || parseInt(this.char.hp) || 0;
+      this.char.maxHp = oldMaxHp + hpGain;
+
+      if (this.isCaster && this.newSlots) {
+        const slotsObj = {};
+        this.newSlots.forEach((s, i) => { if (s > 0) slotsObj[String(i+1)] = { max: s, used: 0 }; });
+        this.char.spellSlots = slotsObj;
+      }
+
+      const histEntry = {
+        fromLevel: this.fromLevel, toLevel: this.toLevel,
+        date: new Date().toISOString().slice(0,10),
+        hpGain, hpMethod: this.hpChoice,
+        asiChoice: this.asiChoice, asiApplied,
+        featChosen: this.asiChoice === 'feat' ? (this.featChosen || '') : '',
+        spellsAdded: this.spellsAdded,
+        featureNotes: this._featureNotes || '',
+      };
+      this.levelHistory.push(histEntry);
+      this.char.levelHistory = this.levelHistory;
+      upsert(this.plugin.state, 'characters', this.char);
+      await this.plugin.saveState();
+      const asiMsg = Object.keys(asiApplied).length ? ` ASI applied: ${Object.entries(asiApplied).map(([k,v])=>`+${v} ${k.toUpperCase()}`).join(', ')}.` : '';
+      new Notice(`${this.char.name} is now level ${this.toLevel}! Max HP +${hpGain}.${asiMsg}`, 8000);
+      this.close();
+    });
+    btn(actRow, 'Skip', 'te-btn', () => this.close());
+  }
+}
+
 // CharacterModal (Player Mode)
 class CharacterModal extends Modal {
   constructor(app, plugin, item) {
@@ -5773,9 +6328,12 @@ class CharacterModal extends Modal {
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Character name is required.'); return; }
+      const prevLevel = parseInt(this.item.level) || 1;
+      const newLevel  = parseInt(this.values.level) || 1;
       upsert(this.plugin.state, 'characters', this.values);
       await this.plugin.saveState();
       new Notice(`Character "${this.values.name}" saved.`);
+      if (newLevel > prevLevel) new LevelUpModal(this.app, this.plugin, this.values, prevLevel, newLevel).open();
       this.close();
     }, 'Save Character');
   }

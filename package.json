@@ -11,9 +11,11 @@
     "lint": "eslint main.js",
     "lint:fix": "eslint main.js --fix",
     "validate": "node scripts/validate-manifest.mjs",
+    "sync-check": "node scripts/sync-check.mjs",
+    "build": "node scripts/build.mjs",
     "check-release": "node scripts/check-release-files.mjs",
-    "test": "node tests/tile-map.test.js && node tests/phase259.test.js",
-    "release": "npm run check && npm run check-release && node scripts/package-release.mjs",
+    "test": "node tests/tile-map.test.js && node tests/phase259.test.js && node tests/phase260.test.js",
+    "release": "npm run check && npm run build && npm run check-release && node scripts/package-release.mjs",
     "version-bump": "node scripts/version-bump.mjs"
   },
   "keywords": [

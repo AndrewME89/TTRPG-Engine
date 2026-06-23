@@ -6,6 +6,57 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 260c
+
+### Added
+- **Complete Entity Generators**: Four "Complete Entity Generator" cards in Generators tab — Complete NPC, Complete Settlement, Complete Faction, Complete Quest — each returns a full structured object (all required fields populated) and opens `EntityDraftModal` for preview before saving
+- **`generateCompleteNPC(state)`**: Returns name, ancestry, role, occupation, attitude, personality, motivation, secret, questHook, status, visibility, campaignId
+- **`generateCompleteSettlement(state)`**: Returns name, type, size, government, population, economy, problems array, description, status, campaignId
+- **`generateCompleteFaction(state)`**: Returns name, type, goals/methods arrays, publicFace, secretAgenda, status, visibility, campaignId
+- **`generateCompleteQuest(state)`**: Returns name, questType, status, summary, objectives/complications/rewards arrays, campaignId
+- **`EntityDraftModal`**: Preview-and-save modal for generated entities — shows all fields, "Save as Entity" opens the correct builder modal, "Regenerate" refreshes the draft, "Discard" cancels
+- **Session Event Log**: Live event log at the bottom of Run Session — 12 type buttons (Note, NPC Met, Location Visited, Combat Start, Combat End, Loot Found, Spell Cast, Death/KO, PC Decision, Revelation, Quest Update, Other), text input with Enter support, persisted to `sess.eventLog`, displayed in reverse-chronological order with timestamps
+
+---
+
+## [Unreleased] — Phase 260b
+
+### Added
+- **Level-up constants**: `HIT_DICE` (all 13 classes d6–d12), `SPELLCASTER_TYPE` (full/half/pact/none per class), `FULL_CASTER_SLOTS` / `HALF_CASTER_SLOTS` / `PACT_SLOTS` tables, `ASI_LEVELS_DEFAULT/FIGHTER/ROGUE`
+- **`getAsiLevels(cls)`**: Returns correct ASI level array (Fighter gets 7 ASIs, Rogue gets 6, others get 5)
+- **`getSpellSlotsForLevel(cls, level)`**: Returns 9-element slot array for full/half casters, null for pact/none
+- **`isSpellcaster(cls)`**: Returns true for all caster types including pact
+- **`LevelUpModal`**: Level-up flow modal triggered automatically when Character Builder saves with a higher level — HP section (average/roll/manual with Roll Die button), ASI section (conditional on ASI level), Spell Slots section (conditional on caster type), Class Features note; Apply button commits HP gain, ASI deltas (capped at 20), and spell slot changes to the character record and records a `levelHistory` entry; Skip cancels without applying
+
+### Changed
+- **CharacterModal save**: Now detects level increase (`newLevel > prevLevel`), saves the character first, then automatically opens `LevelUpModal`
+
+---
+
+## [Unreleased] — Phase 260a
+
+### Added
+- **`repairAndReindex(state)`**: Scans all entity arrays — assigns missing IDs (`${key}-repaired-${i}`), renames duplicates (`${id}-dup-${i}`), adds missing `createdAt`/`updatedAt`, assigns `campaignId` from `state.activeCampaignId` to campaign-owned entities; returns issues array for reporting
+- **Safe Mode Recovery — Repair / Reindex**: New option in the safe mode recovery shell that calls `repairAndReindex()` and shows a summary notice of issues found/fixed
+- **Safe Mode Recovery — View Crash Report**: New option that renders the full crash error and stack trace in a scrollable container
+- **`ENTITY_MD_TEMPLATES`**: Expanded from 6 to 12 entries — added `secrets`, `bbegs`, `hybridAncestries`, `nobleFamilies`, `handouts`, `homebrew` templates with structured Markdown bodies (sections, bold labels, proper paragraph breaks)
+- **`scripts/sync-check.mjs`**: Verifies root `main.js` and `src/main.js` are byte-identical; exits 1 with a helpful message if they differ (preventing accidental divergence)
+
+### Changed
+- **`scripts/build.mjs`**: Rewritten to copy root → src (was src → root); now runs `node --check main.js` as first step and fails fast on syntax errors
+- **`npm run build`**: Now includes `check-release` step; `release` script chains check → build → check-release → package
+- **`package.json` scripts**: Added `sync-check` script; `build` and `release` scripts updated
+
+---
+
+## [Unreleased] — Phase 260e (tests)
+
+### Added
+- **`tests/phase260.test.js`**: 39 pure-function unit tests across 7 suites — `HIT_DICE` (5), `SPELLCASTER_TYPE/isSpellcaster` (8), `getSpellSlotsForLevel` (6), `getAsiLevels` (6), `repairAndReindex` (7), `generateCompleteNPC` (4), `generateCompleteFaction` (3)
+- **`npm test`**: Now chains all three test suites (`tile-map.test.js` + `phase259.test.js` + `phase260.test.js`) — 170 tests total
+
+---
+
 ## [Unreleased] — Phase 259e
 
 ### Added
