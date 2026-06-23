@@ -12,7 +12,7 @@
     "lint:fix": "eslint main.js --fix",
     "validate": "node scripts/validate-manifest.mjs",
     "check-release": "node scripts/check-release-files.mjs",
-    "test": "node tests/tile-map.test.js",
+    "test": "node tests/tile-map.test.js && node tests/phase259.test.js",
     "release": "npm run check && npm run check-release && node scripts/package-release.mjs",
     "version-bump": "node scripts/version-bump.mjs"
   },

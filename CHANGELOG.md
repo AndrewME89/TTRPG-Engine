@@ -6,6 +6,14 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 259e
+
+### Added
+- **`tests/phase259.test.js`**: 79 pure-function unit tests across 8 suites — `toTitleCase` (6), `renderTag` (10), `modifier/modStr/profBonus` (12), `slugify` (4), `safeArr` (5), `matchesSearch` (6), `activeCampaign` (4), `upsert/removeItem` (7), `generate` (10), `computeHybridBalance` (15)
+- **`npm test`**: Now chains both test suites (`tile-map.test.js` + `phase259.test.js`)
+
+---
+
 ## [Unreleased] — Phase 259d
 
 ### Added
