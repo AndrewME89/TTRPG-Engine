@@ -285,3 +285,16 @@
   .te-ability-grid { grid-template-columns:repeat(3,1fr); }
   .te-conditions-grid { grid-template-columns:1fr; }
 }
+
+/* ── 5e Reference section — Phase 259 ───────────────────────────────────── */
+.te-ref-card { margin-bottom:5px; transition:border-color 120ms; }
+.te-ref-card:hover { border-color:var(--te-accent); }
+.te-ref-source { font-size:.72rem; font-weight:700; padding:2px 6px; border:1px solid var(--te-border); border-radius:999px; color:var(--te-muted); margin-left:auto; flex-shrink:0; }
+.te-ref-detail { padding:10px 4px 4px; border-top:1px solid var(--te-border); }
+.te-ref-p { font-size:.85rem; line-height:1.55; color:var(--te-text); margin:4px 0; }
+.te-ref-sub { font-size:.84rem; color:var(--te-text); margin:6px 0 2px; }
+.te-ref-list { font-size:.84rem; line-height:1.5; margin:4px 0 4px 16px; color:var(--te-text); }
+.te-ref-table { width:100%; border-collapse:collapse; font-size:.82rem; margin:6px 0; }
+.te-ref-table th { background:var(--te-bg-alt); font-weight:700; padding:4px 8px; border:1px solid var(--te-border); text-align:left; }
+.te-ref-table td { padding:3px 8px; border:1px solid var(--te-border); }
+.te-ref-spell-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:3px; font-size:.82rem; margin-bottom:8px; color:var(--te-text); }
