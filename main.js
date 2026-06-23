@@ -1256,6 +1256,44 @@ const GEN_TABLES = {
     personality: ['nervous and twitchy','gruff but secretly kind','speaks in elaborate riddles','obsessed with past glory','deeply and loudly devout','deeply distrustful of magic','hungry for news from outside','grieving a recent loss','overly formal and stiff','cheerfully nihilistic'],
     quirk: ['constantly fiddles with a coin or trinket','refers to themselves in third person','hums tunelessly when thinking','avoids direct eye contact','gives an elaborate greeting ritual','always mentions their hometown','carries a worn letter they won\'t discuss','chews a sprig of mint leaf'],
   },
+  'Plot Twist': {
+    events: [
+      'A trusted ally is revealed to be working for the enemy.',
+      'The villain\'s true goal was not what the party assumed.',
+      'An innocent person was falsely accused — the real culprit is someone the party trusts.',
+      'The ancient relic is a trap, designed to summon something worse.',
+      'The party\'s patron has been lying about their intentions from the start.',
+      'The "rescue" target doesn\'t want to be saved.',
+      'The map leads to a tomb that belongs to the party member\'s ancestor.',
+      'The enemy and a party member share the same prophecy — only one can fulfil it.',
+      'The cure is worse than the disease.',
+      'The information broker has been selling intel about the party to multiple factions.',
+      'The "dead" antagonist has been alive the whole time, watching.',
+      'The chosen hero has been the villain all along, in a future the party must prevent.',
+    ],
+  },
+  'Town Event': {
+    events: [
+      'A merchant caravan arrives with exotic goods — and a hidden stowaway.',
+      'The local constable has gone missing; rumours blame the new alchemist.',
+      'A festival is underway, but someone stole the sacred idol the night before.',
+      'Refugees arrive from a burning village to the north, carrying warnings.',
+      'A travelling circus sets up camp; one of the performers is asking strange questions.',
+      'The well water has turned an unusual colour; livestock are falling ill.',
+      'A duel is scheduled at noon between two prominent citizens.',
+      'A wanted poster appears overnight — the face on it looks like one of the party.',
+      'The temple has been desecrated; the high priest blames a rival cult.',
+      'An anonymous letter is delivered to the party at their inn.',
+      'A child claims to have spoken with a ghost in the cemetery.',
+      'The town gate is barred from inside; no one will say why.',
+    ],
+  },
+  'Trap': {
+    type: ['Mechanical','Magic','Environmental','Alarm','Combination'],
+    trigger: ['pressure plate','tripwire','motion sensor (arcane)','false drawer pull','opening a locked chest','crossing a threshold','speaking a phrase aloud'],
+    effect: ['releases poisoned darts (DC 15 DEX)','drops a portcullis behind the party','floods the room with 1d6 feet of water','casts Sleep on all creatures in range','triggers a cave-in (6d6 bludgeoning)','summons 1d4 skeletons','brands the nearest creature with a tracking sigil','deals 4d10 fire damage (Reflex DC 14 half)'],
+    tell: ['slight depression in the flagstone','faint scorch marks on the walls','a groove worn in the floor by the door','dried blood leading up to the spot','a faint hum when you approach','a suspiciously clean patch of dust'],
+  },
 };
 
 function generate(type, state) {
@@ -1275,6 +1313,9 @@ function generate(type, state) {
     case 'Wild Magic Surge': return rnd(t.events);
     case 'Dungeon Room': return `A ${rnd(t.purpose)} ${rnd(t.feature)}.`;
     case 'NPC Trait': return `${rnd(t.personality)}. ${rnd(t.quirk)}.`;
+    case 'Plot Twist': return rnd(t.events);
+    case 'Town Event': return rnd(t.events);
+    case 'Trap': return `${rnd(t.type)} trap triggered by ${rnd(t.trigger)}: ${rnd(t.effect)}. Tell: ${rnd(t.tell)}.`;
     default: return '[Result]';
   }
 }
@@ -3761,6 +3802,9 @@ function renderGenerators(main, plugin) {
     ['Travel Event', '🚶', 'Random travel encounter or event'],
     ['Dungeon Room', '🚪', 'Room purpose and notable feature'],
     ['Wild Magic Surge', '🌀', 'Chaotic magical mishap result'],
+    ['Plot Twist', '🎭', 'Unexpected narrative reversal for your campaign'],
+    ['Town Event', '🏘️', 'Random event happening in the current settlement'],
+    ['Trap', '⚠️', 'Trap type, trigger, effect, and tell'],
   ];
   genTypes.forEach(([type, icon, desc]) => {
     const c = ce(g, 'div', 'te-card');
@@ -4108,7 +4152,7 @@ function renderRunSession(main, plugin) {
   genResultEl.style.cssText = 'min-height:40px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:.95rem;line-height:1.4';
   let lastGenType = 'NPC Name', lastGenResult = '';
   const genTypeRow = ce(genWrap, 'div', 'te-card-actions'); genTypeRow.style.flexWrap = 'wrap';
-  const GEN_QUICK = ['NPC Name','NPC Trait','Quest Hook','Rumour','Faction Name','Dungeon Room','Wild Magic Surge','Weather','Travel Event','Loot','Tavern Name'];
+  const GEN_QUICK = ['NPC Name','NPC Trait','Quest Hook','Rumour','Faction Name','Dungeon Room','Wild Magic Surge','Weather','Travel Event','Loot','Tavern Name','Plot Twist','Town Event','Trap'];
   let activeGenBtn = null;
   GEN_QUICK.forEach(t => {
     const b = btn(genTypeRow, t, 'te-btn is-sm' + (t === lastGenType ? ' is-primary' : ''), () => {
@@ -5405,6 +5449,7 @@ class NPCModal extends Modal {
     addSelect(s1, 'Status', this.values.status, ['Alive','Dead','Missing','Captured','Unknown','Retired'], v => this.values.status = v);
     addEntityPicker(s1, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
     addEntityMultiPicker(s1, 'Faction(s)', this.values.factionIds, this.plugin, 'factions', v => this.values.factionIds = v);
+    chipField(s1, 'Tags', this.values.tags, v => this.values.tags = v, { suggestions: ['Merchant','Noble','Informant','Villain','Ally','Enemy','Quest Giver','Recurring','Secret Keeper','Combat','Social','City','Wilderness'] });
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Combat Stats' });
@@ -5526,7 +5571,8 @@ class BBEGModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('bbeg'), name: '', title: '', status: 'Active',
-      goals: [], methods: [], resources: '', lieutenants: [],
+      goals: [], methods: [], resources: '', lieutenants: [], motivation: '',
+      linkedNpcIds: [],
       lairLocation: '', mythicPhases: '', escalationClocks: '',
       secrets: '', finalConfrontation: '',
       linkedFactions: [], linkedQuests: [], visibility: 'dm-only', campaignId: '',
@@ -5541,13 +5587,16 @@ class BBEGModal extends Modal {
     addField(contentEl, 'Villain Name *', this.values.name, v => this.values.name = v);
     addField(contentEl, 'Title / Epithet', this.values.title, v => this.values.title = v);
     addSelect(contentEl, 'Status', this.values.status, ['Active','Defeated','Imprisoned','Unknown','Fled'], v => this.values.status = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
 
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Goals & Methods' });
     chipField(s1, 'Goals', this.values.goals, v => this.values.goals = v, { suggestions: ['World domination','Revenge','Immortality','Power','Wealth','Destroy a god','Reshape reality','Other'] });
     chipField(s1, 'Methods', this.values.methods, v => this.values.methods = v, { suggestions: ['Manipulation','Armies','Magic','Assassination','Corruption','Subterfuge','Brute force'] });
     addField(s1, 'Resources', this.values.resources, v => this.values.resources = v, 'textarea');
+    addField(s1, 'Motivation / Backstory', this.values.motivation || '', v => this.values.motivation = v, 'textarea');
     chipField(s1, 'Lieutenants', this.values.lieutenants, v => this.values.lieutenants = v);
+    addEntityMultiPicker(s1, 'Lieutenant NPCs', this.values.linkedNpcIds, this.plugin, 'npcs', v => this.values.linkedNpcIds = v);
     addField(s1, 'Lair Location', this.values.lairLocation, v => this.values.lairLocation = v);
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
@@ -5663,7 +5712,8 @@ class QuestModal extends Modal {
     addField(contentEl, 'Rewards', this.values.rewards, v => this.values.rewards = v, 'textarea');
     addField(contentEl, 'Consequences (failure)', this.values.consequences, v => this.values.consequences = v, 'textarea');
     addField(contentEl, 'Player-Visible Summary', this.values.playerSummary, v => this.values.playerSummary = v, 'textarea');
-    addField(contentEl, 'DM Notes (hidden)', this.values.secrets, v => this.values.secrets = v, 'textarea');
+    addField(contentEl, 'DM Notes (hidden from players)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
+    addField(contentEl, 'Secrets (DM only)', this.values.secrets, v => this.values.secrets = v, 'textarea');
     addEntityMultiPicker(contentEl, 'Linked Encounters', this.values.linkedEncounterIds, this.plugin, 'encounters', v => this.values.linkedEncounterIds = v);
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Quest name is required.'); return; }

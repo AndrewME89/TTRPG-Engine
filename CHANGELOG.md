@@ -6,6 +6,19 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 263
+
+### Added
+- **NPCModal — Tags**: Tags chip field added to the Identity section (was already stored in `tags` array, now has UI); suggestions: Merchant, Noble, Informant, Villain, Ally, Enemy, Quest Giver, Recurring, Secret Keeper, Combat, Social, City, Wilderness
+- **BBEGModal enhancements**: Added `Visibility` select (dm-only/player-visible/secret), `Motivation / Backstory` textarea, and `Lieutenant NPCs` entity multi-picker backed by the NPCs list; `linkedNpcIds` stored on entity
+- **QuestModal — DM Notes fix**: `DM Notes (hidden from players)` field now correctly saves to `dmNotes` (was saving to `secrets`); `Secrets (DM only)` field retained as a separate field
+- **New generators — Plot Twist**: 12-entry plot twist table covering betrayals, misdirections, and dramatic reversals
+- **New generators — Town Event**: 12-entry town event table for settlement-level happenings during play
+- **New generators — Trap**: Generator combining trap type, trigger, effect, and tell sign into a single card result
+- **Generator UI**: Plot Twist, Town Event, and Trap cards added to both the Generators tab and the Run Session Quick Generators panel (now 14 types)
+
+---
+
 ## [Unreleased] — Phase 262
 
 ### Added
