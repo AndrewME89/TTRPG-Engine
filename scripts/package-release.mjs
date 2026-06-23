@@ -7,8 +7,20 @@ const releaseDir = 'release';
 const stageDir = path.join(releaseDir, manifest.id);
 const zipPath = path.join(releaseDir, `${manifest.id}-${manifest.version}-manual-install.zip`);
 
+// Run build first to ensure root → src sync is current
+try {
+  execFileSync(process.execPath, ['scripts/build.mjs'], { stdio: 'inherit' });
+} catch (err) {
+  console.error('Build failed — aborting release packaging.');
+  process.exit(1);
+}
+
 fs.rmSync(releaseDir, { recursive: true, force: true });
 fs.mkdirSync(stageDir, { recursive: true });
+
+// Also include src/ so sync-check passes after unzip
+const srcDir = 'src';
+if (!fs.existsSync(srcDir)) { fs.mkdirSync(srcDir, { recursive: true }); }
 
 for (const file of ['main.js', 'manifest.json', 'styles.css']) {
   fs.copyFileSync(file, path.join(stageDir, file));
@@ -16,6 +28,11 @@ for (const file of ['main.js', 'manifest.json', 'styles.css']) {
 
 if (fs.existsSync('assets')) {
   fs.cpSync('assets', path.join(stageDir, 'assets'), { recursive: true });
+}
+
+// Include src/ so npm run sync-check passes after unzip
+if (fs.existsSync('src')) {
+  fs.cpSync('src', path.join(stageDir, 'src'), { recursive: true });
 }
 
 if (fs.existsSync('data')) {

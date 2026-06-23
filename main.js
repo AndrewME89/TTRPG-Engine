@@ -1394,6 +1394,198 @@ function generateCompleteQuest(state) {
     visibility: 'dm-only', campaignId: state.activeCampaignId || '',
   };
 }
+function generateCompletePOI(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Shrine','Ruin','Cave','Tower','Monument','Hidden Cache','Ambush Site','Crossing','Well','Grove','Barrow','Beacon'];
+  const HAZARDS = ['patrolled by bandits','guarded by beasts','cursed','unstable ground','trapped entrance','contested by rival faction'];
+  const HOOKS = ['locals avoid it at night','rumoured treasure inside','a missing person was last seen here','strange lights at night','an old map marks it'];
+  const t = rnd(TYPES);
+  const name = `The ${rnd(['Broken','Forgotten','Ancient','Hidden','Ruined','Lost','Crumbling','Sunken'])} ${t}`;
+  return {
+    name, poiType: t,
+    summary: `${name} — ${rnd(HAZARDS)}. ${rnd(HOOKS)}.`,
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    linkedRegionId: '', linkedSettlementId: '',
+  };
+}
+function generateCompleteEncounter(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Combat','Social','Exploration','Puzzle','Chase','Ambush','Negotiation'];
+  const ENEMIES = ['bandits','cultists','undead','mercenaries','guards','beasts','monsters','rival adventurers'];
+  const TWISTS = ['reinforcements arrive mid-fight','a hostage is present','the terrain shifts','an NPC switches sides','a third faction intervenes'];
+  const t = rnd(TYPES);
+  const foe = rnd(ENEMIES);
+  return {
+    name: `${t}: ${foe.charAt(0).toUpperCase() + foe.slice(1)}`,
+    encounterType: t, status: 'Planned',
+    summary: `The party faces ${foe}. Twist: ${rnd(TWISTS)}.`,
+    enemies: [foe], difficulty: rnd(['Easy','Medium','Hard','Deadly']),
+    reward: rnd(['XP','Loot','Information','Favour','None']),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    locationType: '', linkedSessionId: '', linkedMapId: '',
+  };
+}
+function generateCompleteTavern(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const ADJ = ['Rusty','Golden','Silver','Broken','Wandering','Drunken','Lucky','Lost','Roaring','Quiet'];
+  const NOUN = ['Flagon','Axe','Dragon','Coin','Boot','Lantern','Antler','Wheel','Sword','Fox'];
+  const QUALITIES = ['Cheap and cheerful','Upscale and clean','Dingy but welcoming','Rough crowd, strong drinks','Quiet, locals only'];
+  const SPECIALS = ['live music tonight','a wanted poster on the wall','a mysterious stranger in the corner','brawl in progress','local festival underway'];
+  const name = `The ${rnd(ADJ)} ${rnd(NOUN)}`;
+  return {
+    name, locationType: 'Tavern',
+    summary: `${name}. ${rnd(QUALITIES)}. Notable: ${rnd(SPECIALS)}.`,
+    owner: generate('NPC Name', state),
+    rumour: generate('Rumour', state),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    linkedSettlementId: '',
+  };
+}
+function generateCompleteShop(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Blacksmith','Alchemist','General Store','Magic Item Dealer','Armourer','Fletcher','Tailor','Jeweller','Herbalist','Fence'];
+  const QUIRKS = ['owner is very old and half-deaf','the shop smells strange','suspicious prices','closed on odd days','specialises in rare imports','haunted by a former owner'];
+  const t = rnd(TYPES);
+  const owner = generate('NPC Name', state);
+  return {
+    name: `${owner}'s ${t}`,
+    locationType: 'Shop',
+    summary: `${t} run by ${owner}. ${rnd(QUIRKS)}.`,
+    shopType: t, owner,
+    inventory: [`Standard ${t.toLowerCase()} stock`, rnd(['One rare item available','A suspicious item for sale','A request for specific materials'])],
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    linkedSettlementId: '',
+  };
+}
+function generateCompleteRumour(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const SOURCES = ['an old drunk at the bar','a travelling merchant','a nervous local','a child who saw something','a dying soldier','a letter found in the road'];
+  const TRUTHS = ['Completely true','Mostly true, exaggerated','Half-true','False — planted misinformation','The speaker believes it but is wrong'];
+  const rumour = generate('Rumour', state);
+  return {
+    name: rumour.split('.')[0].slice(0, 60),
+    summary: rumour,
+    source: rnd(SOURCES), accuracy: rnd(TRUTHS),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+    status: 'Unverified',
+  };
+}
+function generateCompleteSecret(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['NPC Secret','Faction Secret','Location Secret','Historical Secret','PC Secret','World Secret'];
+  const CONSEQUENCES = ['changes allegiances if revealed','worth a fortune to the right buyer','dangerous to the revealer','undermines a major institution','opens a new quest line'];
+  const t = rnd(TYPES);
+  const name = generate('NPC Name', state);
+  return {
+    name: `Secret of ${name}`,
+    secretType: t, status: 'Undiscovered',
+    summary: `A ${t.toLowerCase()} — ${rnd(CONSEQUENCES)}.`,
+    holder: name, consequence: rnd(CONSEQUENCES),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+function generateCompleteDungeonRoom(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const PURPOSES = ['Guard Post','Treasure Vault','Prison Cell','Ritual Chamber','Laboratory','Barracks','Chapel','Throne Room','Kitchen','Library','Trap Room','Boss Lair'];
+  const FEATURES = ['a crumbling fresco on the wall','a dry fountain in the centre','scattered bones','a locked iron chest','strange symbols on the floor','a collapsed ceiling with a hole above','a single torch still burning','a pool of dark water'];
+  const EXITS = ['one door to the north','two doors east and west','a secret passage behind a bookshelf','a trapdoor in the floor','a ladder leading up'];
+  const p = rnd(PURPOSES);
+  return {
+    name: p, roomType: p,
+    summary: `${p}. Notable: ${rnd(FEATURES)}. Exits: ${rnd(EXITS)}.`,
+    features: [rnd(FEATURES), rnd(FEATURES)],
+    exits: rnd(EXITS),
+    hazard: rnd(['None','Trap','Patrol','Environmental hazard','Puzzle lock']),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+function generateCompleteLoot(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Coin','Weapon','Armour','Potion','Scroll','Gem','Art Object','Magic Item','Trade Goods','Mundane Gear'];
+  const RARITIES = ['Common','Uncommon','Rare','Very Rare','Legendary'];
+  const ITEM_POOLS = {
+    Coin: ['10 gp','50 gp','1d100 sp','2d6 pp'],
+    Weapon: ['longsword','dagger','shortbow','handaxe','spear'],
+    Armour: ['leather armour','chain shirt','shield','studded leather'],
+    Potion: ['Potion of Healing','Potion of Climbing','Potion of Water Breathing'],
+    Scroll: ['Spell scroll (1st level)','Spell scroll (2nd level)','Treasure map scroll'],
+    Gem: ['ruby','sapphire','emerald','topaz','diamond'],
+    'Art Object': ['silver goblet','painted portrait','carved idol','ornate brooch'],
+    'Magic Item': ['Cloak of Elvenkind','Bag of Holding','Ring of Protection','Wand of Magic Missiles'],
+    'Trade Goods': ['bolts of silk','spices','rare wood','alchemical supplies'],
+    'Mundane Gear': ['rope','torches','rations','crowbar','thieves tools'],
+  };
+  const t = rnd(TYPES);
+  const pool = ITEM_POOLS[t] || ITEM_POOLS.Coin;
+  return {
+    name: `${rnd(RARITIES)} ${t} Loot`,
+    lootType: t, rarity: rnd(RARITIES),
+    items: [rnd(pool), rnd(pool)],
+    totalValue: `${rnd([10,25,50,100,250,500,1000])} gp`,
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+function generateCompleteTravelEvent(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const TYPES = ['Encounter','Discovery','Hazard','Rest','NPC Meeting','Weather','Foraging'];
+  const result = generate('Travel Event', state);
+  const t = rnd(TYPES);
+  return {
+    name: `Travel Event: ${t}`,
+    eventType: t, summary: result,
+    duration: rnd(['1 hour','Half day','Full day','Two days']),
+    outcome: rnd(['Positive','Neutral','Negative','Mixed']),
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+function generateCompleteNobleHouse(state) {
+  const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+  const NAMES = ['Ashford','Blackwood','Coldwater','Dunmore','Edgemont','Fairhollow','Goldenvale','Harwick','Ironmoor','Jademont','Kessler','Langford'];
+  const STATUSES = ['Prosperous','Declining','Rising','Fractured','Exiled','Powerful','Secretive'];
+  const MOTTOS = ['Strength Through Unity','We Rise Together','Never Forgive, Never Forget','Blood and Iron','Gold Above All','Honour Without Price','In Shadow We Thrive'];
+  const SECRETS = ['a member is secretly a cultist','the house fortune is built on crime','the heir is not legitimate','they owe a debt to a demon','a member is a secret informant'];
+  return {
+    name: `House ${rnd(NAMES)}`,
+    status: rnd(STATUSES), motto: rnd(MOTTOS),
+    holdings: rnd(['A county and keep','A merchant fleet','Gold mines','Farmlands and a market town','A secret criminal network']),
+    secrets: [rnd(SECRETS)],
+    allies: [], enemies: [],
+    memberNpcIds: [], heirNpcIds: [], rivalFamilyIds: [],
+    visibility: 'dm-only', campaignId: state.activeCampaignId || '',
+  };
+}
+function compileEndSessionReview(session, state) {
+  if (!session) return { sections: [], recap: '' };
+  const log = Array.isArray(session.eventLog) ? session.eventLog : [];
+  const campId = session.campaignId || '';
+  const byType = t => log.filter(e => e.type === t).map(e => e.text);
+  const npcs = byType('NPC Met'), locations = byType('Location Visited');
+  const secrets = byType('Secret Revealed'), quests = byType('Quest Advanced');
+  const loot = byType('Loot Awarded'), timersLog = byType('Timer Advanced');
+  const notes = byType('Note'), hooks = byType('Next Hook');
+  const activeTimers = safeArr(state.entities.timers).filter(t => !campId || t.campaignId === campId);
+  const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!campId || q.campaignId === campId));
+  const sections = [
+    { label: 'NPCs Met', items: npcs },
+    { label: 'Locations Visited', items: locations },
+    { label: 'Secrets Revealed', items: secrets },
+    { label: 'Quests Advanced', items: quests },
+    { label: 'Loot Awarded', items: loot },
+    { label: 'Timer Advances', items: timersLog },
+    { label: 'DM Notes', items: notes },
+    { label: 'Next Session Hooks', items: hooks },
+    { label: 'Active Timers (End State)', items: activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`) },
+    { label: 'Active Quests', items: activeQuests.map(q => q.name) },
+  ].filter(s => s.items.length > 0);
+  const recapParts = [];
+  if (npcs.length) recapParts.push(`The party met ${npcs.join(', ')}.`);
+  if (locations.length) recapParts.push(`They visited ${locations.join(', ')}.`);
+  if (secrets.length) recapParts.push(`Secrets revealed: ${secrets.join('; ')}.`);
+  if (quests.length) recapParts.push(`Quests advanced: ${quests.join('; ')}.`);
+  if (loot.length) recapParts.push(`Loot gained: ${loot.join(', ')}.`);
+  if (hooks.length) recapParts.push(`Next session hooks: ${hooks.join('; ')}.`);
+  return { sections, recap: recapParts.join(' '), sessionName: session.name || 'Session', date: session.date || '' };
+}
 
 // ── Modal field helpers ───────────────────────────────────────────────────────
 function addField(el, label, value, onChange, type) {
@@ -2717,8 +2909,24 @@ function renderGeography(main, plugin) {
         ce(row2, 'span', 'te-card-meta-label', 'saved');
         ce(row2, 'span', '', new Date(mapRecord.updatedAt).toLocaleDateString());
       }
+      // Show entity links stored on this map
+      const linkKeys = ['linkedRegionId','linkedSettlementId','linkedLocationId','linkedDungeonId','linkedPoiId','linkedEncounterId','linkedSessionId'];
+      const linkLabels = { linkedRegionId:'Region', linkedSettlementId:'Settlement', linkedLocationId:'Location', linkedDungeonId:'Dungeon', linkedPoiId:'POI', linkedEncounterId:'Encounter', linkedSessionId:'Session' };
+      const mapLinks = mapRecord.tileLayout || mapRecord;
+      const linkedParts = linkKeys.map(k => {
+        const id = mapLinks[k] || mapRecord[k];
+        if (!id) return null;
+        const entityKey = k.replace('linked','').replace('Id','').toLowerCase() + 's';
+        const ent = safeArr(plugin.state.entities[entityKey]).find(e => e.id === id);
+        return `${linkLabels[k]}: ${ent ? (ent.name||id) : id}`;
+      }).filter(Boolean);
+      if (linkedParts.length) {
+        const lrow = ce(meta, 'div', 'te-card-meta-row');
+        ce(lrow, 'span', 'te-card-meta-label', 'links');
+        ce(lrow, 'span', 'te-muted-text', linkedParts.join(' · '));
+      }
       const acts = ce(c, 'div', 'te-card-actions');
-      btn(acts, '📂 Open in Builder', 'te-btn is-primary is-sm', async () => {
+      btn(acts, '📂 Open & Edit', 'te-btn is-primary is-sm', async () => {
         if (mapRecord.tileLayout) {
           Object.assign(plugin.state.tileMap, mapRecord.tileLayout);
           plugin.state.tileMap.mapId = mapRecord.id;
@@ -3125,6 +3333,8 @@ function renderTileMapBuilder(parent, plugin) {
     addLink('Region',     'linkedRegionId',     'regions');
     addLink('Settlement', 'linkedSettlementId', 'settlements');
     addLink('Location',   'linkedLocationId',   'locations');
+    addLink('Dungeon',    'linkedDungeonId',    'dungeons');
+    addLink('POI',        'linkedPoiId',        'pois');
     addLink('Encounter',  'linkedEncounterId',  'encounters');
     addLink('Session',    'linkedSessionId',    'sessions');
   };
@@ -3331,12 +3541,18 @@ function renderTileMapBuilder(parent, plugin) {
   renderCanvas();
   loadTileAssets(plugin).then(assets => {
     tileAssets = assets;
-    assetCountLabel.textContent = `${assets.length} asset${assets.length !== 1 ? 's' : ''}`;
+    const isEmoji = assets.length === 0 || assets.every(a => !a.src);
+    assetCountLabel.textContent = isEmoji ? '⚠ emoji-only' : `${assets.length} asset${assets.length !== 1 ? 's' : ''}`;
+    if (isEmoji) {
+      assetCountLabel.style.cssText = 'color:var(--te-warn,#e6a817);font-size:.8rem;padding:2px 6px;border-radius:4px;background:var(--te-warn-bg,rgba(230,168,23,0.12))';
+      assetCountLabel.title = 'No image assets installed — using emoji placeholders. Add .png/.jpg/.webp files to assets/tile-map/ for real tiles.';
+    }
     renderCategoryFilter();
     renderPalette();
     renderCanvas();
   }).catch(() => {
-    assetCountLabel.textContent = 'emoji mode';
+    assetCountLabel.textContent = '⚠ emoji-only';
+    assetCountLabel.style.cssText = 'color:var(--te-warn,#e6a817);font-size:.8rem';
     renderCategoryFilter(); renderPalette();
   });
 }
@@ -3853,6 +4069,16 @@ function renderGenerators(main, plugin) {
     ['Complete Settlement', '🏘️', 'Generate a full settlement — name, type, government, economy, problems, and quest hook', generateCompleteSettlement, 'settlements', null],
     ['Complete Faction', '⚔️', 'Generate a full faction — name, type, goals, methods, public face, and secret agenda', generateCompleteFaction, 'factions', FactionModal],
     ['Complete Quest', '📋', 'Generate a full quest — name, type, objectives, complications, and rewards', generateCompleteQuest, 'quests', QuestModal],
+    ['Complete POI', '📍', 'Generate a full point of interest — type, hazard, hook, and entity links', generateCompletePOI, 'pois', null],
+    ['Complete Encounter', '⚔️', 'Generate a full encounter — type, enemies, difficulty, twist, and reward', generateCompleteEncounter, 'encounters', EncounterModal],
+    ['Complete Tavern', '🍺', 'Generate a full tavern — name, quality, owner, rumour, and settlement link', generateCompleteTavern, 'locations', null],
+    ['Complete Shop', '🛒', 'Generate a full shop — type, owner, quirk, and stock summary', generateCompleteShop, 'locations', null],
+    ['Complete Rumour', '💬', 'Generate a full rumour — text, source, and accuracy rating', generateCompleteRumour, 'secrets', null],
+    ['Complete Secret', '🔒', 'Generate a full secret — type, holder, consequence, and status', generateCompleteSecret, 'secrets', null],
+    ['Complete Dungeon Room', '🚪', 'Generate a full dungeon room — purpose, features, exits, and hazard', generateCompleteDungeonRoom, 'locations', null],
+    ['Complete Loot', '💰', 'Generate a full loot entry — type, rarity, items, and value', generateCompleteLoot, 'loot', null],
+    ['Complete Travel Event', '🚶', 'Generate a full travel event — type, summary, duration, and outcome', generateCompleteTravelEvent, 'sessions', null],
+    ['Complete Noble House', '🏰', 'Generate a full noble house — name, status, motto, holdings, and secrets', generateCompleteNobleHouse, 'nobleFamilies', NobleFamilyModal],
   ];
   entityGens.forEach(([label, icon, desc, genFn, entityKey, ModalClass]) => {
     const c = ce(ceg, 'div', 'te-card');
@@ -4329,6 +4555,147 @@ function renderRunSession(main, plugin) {
     renderLog();
   } else {
     ce(main, 'p', 'te-empty-state', 'Start a session to enable the event log.');
+  }
+
+  // ── Loot Quick Add ────────────────────────────────────────────────────────
+  sectionHead(main, '💰 Loot Quick Add');
+  const lootSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
+  const lootCard = ce(main, 'div', 'te-card'); lootCard.style.padding = '12px';
+  const lootRow = ce(lootCard, 'div', 'te-chip-add-row');
+  const lootInp = ce(lootRow, 'input'); lootInp.type = 'text'; lootInp.placeholder = 'e.g. 50 gp, Potion of Healing…'; lootInp.style.flex = '1';
+  btn(lootRow, 'Log Loot', 'te-btn is-primary', async () => {
+    const text = lootInp.value.trim(); if (!text) return;
+    if (lootSess) {
+      if (!Array.isArray(lootSess.eventLog)) lootSess.eventLog = [];
+      lootSess.eventLog.push({ type: 'Loot Awarded', text, time: new Date().toISOString() });
+      upsert(state, 'sessions', lootSess);
+    }
+    await plugin.saveState();
+    lootInp.value = '';
+    new Notice(`Loot logged: ${text}`);
+  });
+  btn(lootCard, '⚙ Generate Loot', 'te-btn', () => {
+    const draft = generateCompleteLoot(state);
+    new EntityDraftModal(plugin.app, plugin, 'Complete Loot', draft, 'loot', null).open();
+  });
+
+  // ── Timers (Session) ──────────────────────────────────────────────────────
+  sectionHead(main, '⏱ Escalation Timers');
+  const campTimers = safeArr(state.entities.timers).filter(t => !state.activeCampaignId || t.campaignId === state.activeCampaignId);
+  const timerWrap = ce(main, 'div', '');
+  if (campTimers.length) {
+    const tg = ce(timerWrap, 'div', 'te-grid');
+    campTimers.forEach(t => {
+      const c = ce(tg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⏱️'); ce(h, 'h3', 'te-card-title', t.name);
+      const maxTicks = Math.max(1, parseInt(t.maxTicks) || 6);
+      const curTicks = Math.min(maxTicks, parseInt(t.currentTick) || 0);
+      const pct = Math.round((curTicks / maxTicks) * 100);
+      const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = pct + '%';
+      ce(c, 'p', 'te-progress-label', `${curTicks} / ${maxTicks} ticks (${pct}%)`);
+      if (t.consequence) { const m = ce(c, 'div', 'te-card-meta'); const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Consequence'); ce(r, 'span', '', String(t.consequence).slice(0, 80)); }
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, '+Tick', 'te-btn is-sm is-run', async () => {
+        t.currentTick = Math.min(maxTicks, curTicks + 1);
+        upsert(state, 'timers', t);
+        if (lootSess) { if (!Array.isArray(lootSess.eventLog)) lootSess.eventLog = []; lootSess.eventLog.push({ type: 'Timer Advanced', text: `${t.name} → ${t.currentTick}/${maxTicks}`, time: new Date().toISOString() }); upsert(state, 'sessions', lootSess); }
+        await plugin.saveState();
+      });
+      btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
+    });
+  } else {
+    ce(timerWrap, 'p', 'te-empty-state', 'No timers for this campaign. Add timers in War Machine.');
+  }
+  btn(timerWrap, '+ New Timer', 'te-btn', () => new TimerModal(plugin.app, plugin).open());
+
+  // ── Map Access ────────────────────────────────────────────────────────────
+  sectionHead(main, '🗺 Map Access');
+  const mapCard = ce(main, 'div', 'te-card'); mapCard.style.cssText = 'padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center';
+  ce(mapCard, 'span', 'te-muted-text', 'Jump to Tile Map to view or edit your session map.');
+  btn(mapCard, '🗺 Open Tile Map', 'te-btn is-primary', async () => { state.activeSection = 'tile-map'; await plugin.saveState(); });
+  const campMaps = safeArr(state.entities.tileMaps || []).filter(m => !state.activeCampaignId || m.campaignId === state.activeCampaignId);
+  if (campMaps.length) {
+    const mapSel = ce(mapCard, 'select'); mapSel.style.cssText = 'padding:5px 8px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+    ce(mapSel, 'option', '', '— jump to saved map —').value = '';
+    campMaps.forEach(m => { const o = ce(mapSel, 'option', '', m.name || 'Untitled'); o.value = m.id; });
+    mapSel.addEventListener('change', async () => { if (mapSel.value) { state.activeSection = 'tile-map'; state.pendingMapId = mapSel.value; await plugin.saveState(); } });
+  }
+
+  // ── Location Quick Lookup ─────────────────────────────────────────────────
+  sectionHead(main, '📍 Location / Faction / Secret Lookup');
+  const lookupCard = ce(main, 'div', 'te-card'); lookupCard.style.padding = '12px';
+  const lookupTabs = ['Locations','Factions','Secrets'];
+  let lookupTab = 'Locations';
+  const tabRow = ce(lookupCard, 'div', 'te-card-actions'); tabRow.style.marginBottom = '8px';
+  const lookupContent = ce(lookupCard, 'div', '');
+  const renderLookup = () => {
+    clear(lookupContent);
+    const sInp = ce(lookupContent, 'input'); sInp.type = 'text'; sInp.placeholder = `Search ${lookupTab}…`;
+    sInp.style.cssText = 'width:100%;padding:6px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem;margin-bottom:8px';
+    const listEl = ce(lookupContent, 'div', '');
+    const campId2 = state.activeCampaignId;
+    let items = [];
+    if (lookupTab === 'Locations') items = safeArr(state.entities.locations).filter(x => !campId2 || x.campaignId === campId2);
+    else if (lookupTab === 'Factions') items = safeArr(state.entities.factions).filter(x => !campId2 || x.campaignId === campId2);
+    else if (lookupTab === 'Secrets') items = safeArr(state.entities.secrets).filter(x => !campId2 || x.campaignId === campId2);
+    const rebuildList = () => {
+      clear(listEl);
+      const q2 = (sInp.value || '').toLowerCase();
+      const shown = items.filter(x => !q2 || (x.name||'').toLowerCase().includes(q2) || (x.summary||'').toLowerCase().includes(q2)).slice(0, 20);
+      if (!shown.length) { ce(listEl, 'p', 'te-empty-state', 'No results.'); return; }
+      shown.forEach(x => {
+        const row = ce(listEl, 'div', 'te-card-meta-row');
+        row.style.cssText = 'padding:5px 4px;border-bottom:1px solid var(--te-border);font-size:.85rem;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap';
+        const nm = ce(row, 'strong', ''); nm.textContent = x.name;
+        if (x.summary) { const s2 = ce(row, 'span', 'te-muted-text'); s2.textContent = x.summary.slice(0, 100); s2.style.flex = '1'; }
+        if (lookupTab === 'Secrets' && x.status) { const st = ce(row, 'span', 'te-card-meta-label'); st.textContent = x.status; }
+      });
+    };
+    sInp.addEventListener('input', rebuildList); rebuildList();
+  };
+  lookupTabs.forEach(t2 => {
+    btn(tabRow, t2, 'te-btn is-sm' + (t2 === lookupTab ? ' is-primary' : ''), () => {
+      lookupTab = t2;
+      Array.from(tabRow.querySelectorAll('button')).forEach((b2, i) => b2.className = 'te-btn is-sm' + (lookupTabs[i] === t2 ? ' is-primary' : ''));
+      renderLookup();
+    });
+  });
+  renderLookup();
+
+  // ── Complete Generators (Run Session) ─────────────────────────────────────
+  sectionHead(main, '⚡ Complete Entity Generators');
+  const rsGenGrid = ce(main, 'div', 'te-grid');
+  const RS_GENS = [
+    ['Complete NPC', '👤', generateCompleteNPC, 'npcs', NPCModal],
+    ['Complete Encounter', '⚔️', generateCompleteEncounter, 'encounters', EncounterModal],
+    ['Complete Tavern', '🍺', generateCompleteTavern, 'locations', null],
+    ['Complete Shop', '🛒', generateCompleteShop, 'locations', null],
+    ['Complete Quest', '📋', generateCompleteQuest, 'quests', QuestModal],
+    ['Complete Rumour', '💬', generateCompleteRumour, 'secrets', null],
+    ['Complete Secret', '🔒', generateCompleteSecret, 'secrets', null],
+    ['Complete Loot', '💰', generateCompleteLoot, 'loot', null],
+    ['Complete POI', '📍', generateCompletePOI, 'pois', null],
+    ['Complete Dungeon Room', '🚪', generateCompleteDungeonRoom, 'locations', null],
+  ];
+  RS_GENS.forEach(([label, icon, genFn, entityKey, ModalClass]) => {
+    const c = ce(rsGenGrid, 'div', 'te-card');
+    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', label);
+    const a = ce(c, 'div', 'te-card-actions');
+    btn(a, 'Generate & Preview', 'te-btn is-primary is-sm', () => {
+      const draft = genFn(state);
+      new EntityDraftModal(plugin.app, plugin, label, draft, entityKey, ModalClass).open();
+    });
+  });
+
+  // ── End Session Review ────────────────────────────────────────────────────
+  sectionHead(main, '📊 End Session Review');
+  const reviewCard = ce(main, 'div', 'te-card'); reviewCard.style.padding = '12px';
+  if (state.activeSessionId) {
+    const reviewSess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
+    ce(reviewCard, 'p', 'te-muted-text', 'Compile a full review of this session — event log, reveals, loot, quests, NPCs, locations, timers, and a player-safe recap.');
+    btn(reviewCard, '📊 Open End Session Review', 'te-btn is-primary', () => new EndSessionReviewModal(plugin.app, plugin, reviewSess).open());
+  } else {
+    ce(reviewCard, 'p', 'te-empty-state', 'Start a session to generate an End Session Review.');
   }
 }
 
@@ -5669,7 +6036,7 @@ class FactionModal extends Modal {
       allies: [], allyIds: [], enemies: [], enemyIds: [],
       publicFace: '', secretAgenda: '',
       reputation: '', rewards: '', consequences: '', visibility: 'dm-only',
-      staffRoles: [], memberNpcIds: [], territoryIds: [], linkedQuestIds: [],
+      staffRoles: [], memberNpcIds: [], memberPcIds: [], territoryIds: [], linkedQuestIds: [],
     }, this.item);
   }
   onOpen() {
@@ -5702,6 +6069,7 @@ class FactionModal extends Modal {
       { suggestions: ['Leader','Second-in-command','Quartermaster','Spy','Recruiter','Agent','Informant','Commander','Diplomat','Treasurer','Enforcer','Defector'] });
 
     addEntityMultiPicker(contentEl, 'Member NPCs', this.values.memberNpcIds, this.plugin, 'npcs', v => this.values.memberNpcIds = v);
+    addEntityMultiPicker(contentEl, 'Member PCs', this.values.memberPcIds, this.plugin, 'characters', v => this.values.memberPcIds = v);
     addEntityMultiPicker(contentEl, 'Territories', this.values.territoryIds, this.plugin, 'settlements', v => this.values.territoryIds = v);
     addEntityMultiPicker(contentEl, 'Linked Quests', this.values.linkedQuestIds, this.plugin, 'quests', v => this.values.linkedQuestIds = v);
 
@@ -5776,11 +6144,11 @@ class EncounterModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '',
+      id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '', locationType: '',
       participants: [], participantPcIds: [], participantNpcIds: [], enemyTemplateIds: [], creatureIds: [], enemyGroups: '', difficulty: 'Medium',
       terrain: '', tactics: '', objectives: '',
       victoryConditions: '', failureConditions: '', rewards: '',
-      linkedQuest: '', linkedQuestId: '', campaignId: '',
+      linkedQuest: '', linkedQuestId: '', linkedSessionId: '', linkedMapId: '', campaignId: '',
       notes: '', visibility: 'dm-only',
     }, this.item);
   }
@@ -5794,7 +6162,8 @@ class EncounterModal extends Modal {
     addSelect(contentEl, 'Encounter Type', this.values.type, ['Combat','Social','Exploration','Trap','Chase','Hazard','Skill Challenge','Puzzle','Boss Fight','Other'], v => this.values.type = v);
     addSelect(contentEl, 'Difficulty', this.values.difficulty, ['Trivial','Easy','Medium','Hard','Deadly','Mythic'], v => this.values.difficulty = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
-    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
+    addSelect(contentEl, 'Location Type', this.values.locationType || 'settlements', ['regions','settlements','locations','pois','dungeons'], v => { this.values.locationType = v; this.values.locationId = ''; this.onOpen(); });
+    addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, this.values.locationType || 'settlements', v => this.values.locationId = v);
     addEntityMultiPicker(contentEl, 'PC Participants', this.values.participantPcIds, this.plugin, 'characters', v => this.values.participantPcIds = v);
     addEntityMultiPicker(contentEl, 'NPC Participants', this.values.participantNpcIds, this.plugin, 'npcs', v => this.values.participantNpcIds = v);
     addEntityMultiPicker(contentEl, 'Enemy Templates', this.values.enemyTemplateIds, this.plugin, 'enemyTemplates', v => this.values.enemyTemplateIds = v);
@@ -5807,6 +6176,8 @@ class EncounterModal extends Modal {
     addField(contentEl, 'Failure Conditions', this.values.failureConditions, v => this.values.failureConditions = v, 'textarea');
     addField(contentEl, 'Rewards / Loot', this.values.rewards, v => this.values.rewards = v, 'textarea');
     addEntityPicker(contentEl, 'Linked Quest', this.values.linkedQuestId, this.plugin, 'quests', v => this.values.linkedQuestId = v);
+    addEntityPicker(contentEl, 'Linked Session', this.values.linkedSessionId || '', this.plugin, 'sessions', v => this.values.linkedSessionId = v);
+    addEntityPicker(contentEl, 'Linked Map', this.values.linkedMapId || '', this.plugin, 'maps', v => this.values.linkedMapId = v);
     addField(contentEl, 'DM Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Encounter name is required.'); return; }
@@ -5971,6 +6342,64 @@ class DiceModal extends Modal {
       ce(contentEl, 'div', 'te-section-head', 'Recent Rolls').style.marginTop = '16px';
       hist.forEach(h => { const p = ce(contentEl, 'p', 'te-card-body', `${h.label}: ${h.total}  [${(h.rolls||[]).join(', ')}]`); p.style.margin = '2px 0'; });
     }
+  }
+}
+
+// EndSessionReviewModal — compile and display full end-of-session review
+class EndSessionReviewModal extends Modal {
+  constructor(app, plugin, session) {
+    super(app);
+    this.plugin = plugin;
+    this.session = session;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `📊 End Session Review` });
+    if (this.session) {
+      contentEl.createEl('h3', { text: this.session.name || 'Session', cls: 'te-page-subtitle' });
+    }
+    const review = compileEndSessionReview(this.session, this.plugin.state);
+    if (!review.sections.length) {
+      ce(contentEl, 'p', 'te-empty-state', 'No events logged for this session. Use the Event Log to track what happened.');
+    } else {
+      review.sections.forEach(sec => {
+        const secEl = ce(contentEl, 'div', 'te-modal-section');
+        secEl.style.cssText = 'margin-bottom:12px';
+        secEl.createEl('h4', { text: sec.label });
+        sec.items.forEach(item => {
+          const row = ce(secEl, 'div', 'te-card-meta-row');
+          row.style.cssText = 'padding:3px 0;border-bottom:1px solid var(--te-border);font-size:.85rem';
+          ce(row, 'span', '', item);
+        });
+      });
+      if (review.recap) {
+        const recapEl = ce(contentEl, 'div', 'te-modal-section');
+        recapEl.style.cssText = 'margin-top:16px;padding:12px;background:var(--te-bg-alt);border-radius:var(--te-r-md)';
+        recapEl.createEl('h4', { text: '🎤 Player-Safe Recap' });
+        const p = ce(recapEl, 'p', ''); p.textContent = review.recap;
+        p.style.cssText = 'margin-top:6px;font-style:italic;line-height:1.5';
+        btn(recapEl, '📋 Copy Recap', 'te-btn is-sm', () => {
+          navigator.clipboard.writeText(review.recap).then(() => new Notice('Recap copied!'));
+        });
+      }
+    }
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, '📝 Export as Note', 'te-btn is-primary', async () => {
+      if (!this.session) return;
+      const lines = [`# End Session Review: ${review.sessionName}`, `Date: ${review.date || new Date().toLocaleDateString()}`, ''];
+      review.sections.forEach(sec => {
+        lines.push(`## ${sec.label}`);
+        sec.items.forEach(item => lines.push(`- ${item}`));
+        lines.push('');
+      });
+      if (review.recap) { lines.push('## Player-Safe Recap', '', review.recap, ''); }
+      const folder = campaignFolder(this.plugin);
+      await writeNote(this.plugin.app, `${folder}/Sessions/${slugify(review.sessionName)}-review.md`, lines.join('\n'));
+      new Notice('Session review exported as note.');
+    });
+    btn(actRow, 'Close', 'te-btn', () => this.close());
   }
 }
 
@@ -6322,6 +6751,7 @@ class NobleFamilyModal extends Modal {
       headOfHouseId: '', headOfHouse: '',
       status: 'Noble', holdings: '', titles: [], claims: '',
       members: [], heirs: [], marriages: [],
+      memberNpcIds: [], heirNpcIds: [], rivalFamilyIds: [],
       alliances: [], rivals: [], debts: '',
       secrets: '', scandals: '',
       regionId: '', settlementId: '',
@@ -6356,6 +6786,9 @@ class NobleFamilyModal extends Modal {
     s3.createEl('h3', { text: 'Relations' });
     addEntityMultiPicker(s3, 'Allied Factions', this.values.factionIds, this.plugin, 'factions', v => this.values.factionIds = v);
     addEntityMultiPicker(s3, 'Related Quests', this.values.relatedQuestIds, this.plugin, 'quests', v => this.values.relatedQuestIds = v);
+    addEntityMultiPicker(s3, 'Member NPCs', this.values.memberNpcIds, this.plugin, 'npcs', v => this.values.memberNpcIds = v);
+    addEntityMultiPicker(s3, 'Heir NPCs', this.values.heirNpcIds, this.plugin, 'npcs', v => this.values.heirNpcIds = v);
+    addEntityMultiPicker(s3, 'Rival Noble Families', this.values.rivalFamilyIds, this.plugin, 'nobleFamilies', v => this.values.rivalFamilyIds = v);
     chipField(s3, 'Members (names)', safeArr(this.values.members), v => this.values.members = v);
     chipField(s3, 'Alliances (house names)', safeArr(this.values.alliances), v => this.values.alliances = v);
     chipField(s3, 'Rivals (house names)', safeArr(this.values.rivals), v => this.values.rivals = v);
@@ -6435,6 +6868,8 @@ class LevelUpModal extends Modal {
     this.asiDeltas = {};
     this.featChosen = '';
     this.spellsAdded = [];
+    this.subclassChosen = character.subclass || '';
+    this.rulesetOverride = character.ruleset || 'PHB';
     this.isAsiLevel = getAsiLevels(this.cls).includes(toLevel);
     this.isCaster  = isSpellcaster(this.cls);
     this.newSlots  = getSpellSlotsForLevel(this.cls, toLevel);
@@ -6546,11 +6981,80 @@ class LevelUpModal extends Modal {
       }
     }
 
-    // Class features note
+    // Subclass selection (level 3 is the usual subclass choice level for most classes)
+    const subclassLevels = { Wizard:2, Cleric:1, Druid:2, Sorcerer:1, Warlock:1, Artificer:3 };
+    const isSubclassLevel = this.toLevel === (subclassLevels[this.cls] || 3);
+    if (isSubclassLevel || this.subclassChosen) {
+      const sSub = ce(contentEl, 'div', 'te-modal-section');
+      sSub.createEl('h3', { text: 'Subclass' });
+      if (isSubclassLevel) ce(sSub, 'p', 'te-card-body', `Level ${this.toLevel} is when ${this.cls || 'your class'} typically chooses a subclass.`);
+      addField(sSub, 'Subclass Name', this.subclassChosen, v => this.subclassChosen = v);
+    }
+
+    // Spell selection for casters (known/prepared spells gained at this level)
+    if (this.isCaster) {
+      const sSpSel = ce(contentEl, 'div', 'te-modal-section');
+      sSpSel.createEl('h3', { text: 'Spell Selection' });
+      const casterType = (typeof SPELLCASTER_TYPE !== 'undefined' ? SPELLCASTER_TYPE : {})[this.cls] || 'full';
+      ce(sSpSel, 'p', 'te-card-body', casterType === 'half' ? `Paladin/Ranger: you may learn new spells available at your new spell level.` : casterType === 'pact' ? `Warlock: choose spells known from your expanded list.` : `Add any new spells you're learning or preparing at level ${this.toLevel}.`);
+      const addedDisplay = ce(sSpSel, 'div', '');
+      addedDisplay.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;min-height:28px;padding:4px;background:var(--te-bg-alt);border-radius:var(--te-r-md);margin-bottom:8px';
+      const rebuildAdded = () => {
+        clear(addedDisplay);
+        if (!this.spellsAdded.length) { ce(addedDisplay, 'span', 'te-empty-state', 'No spells added yet.'); return; }
+        this.spellsAdded.forEach((sp, i) => {
+          const chip = ce(addedDisplay, 'span', 'te-chip');
+          chip.textContent = sp; chip.style.cssText = 'padding:2px 8px;background:var(--te-accent-light,rgba(109,99,255,.15));border-radius:12px;font-size:.82rem;display:inline-flex;align-items:center;gap:4px';
+          const rm = ce(chip, 'span', '', '×'); rm.style.cursor = 'pointer';
+          rm.addEventListener('click', () => { this.spellsAdded.splice(i,1); rebuildAdded(); });
+        });
+      };
+      rebuildAdded();
+      const spellBtnRow = ce(sSpSel, 'div', 'te-card-actions');
+      btn(spellBtnRow, '📖 Browse Spells', 'te-btn is-sm', async () => {
+        const allSpells = await this.plugin.refData.get('spells');
+        const maxSpellLevel = Math.ceil(this.toLevel / 2);
+        const classSpells = allSpells.filter(s => {
+          const lvl = typeof s.level === 'number' ? s.level : parseInt(s.level) || 0;
+          return lvl <= maxSpellLevel;
+        });
+        new RefDataPickerModal(this.plugin.app, classSpells.length ? classSpells : allSpells, 'Spell', spell => {
+          const name = spell.name || 'Spell';
+          if (!this.spellsAdded.includes(name)) { this.spellsAdded.push(name); rebuildAdded(); }
+        }).open();
+      });
+      addField(sSpSel, 'Or add spell by name', '', v => {
+        if (v.trim() && !this.spellsAdded.includes(v.trim())) { this.spellsAdded.push(v.trim()); rebuildAdded(); }
+      });
+    }
+
+    // Class features section
     const sFeats = ce(contentEl, 'div', 'te-modal-section');
     sFeats.createEl('h3', { text: 'Class Features' });
-    ce(sFeats, 'p', 'te-card-body', `Check your ${this.cls || 'class'} description for features gained at level ${this.toLevel}. Use the 5e Reference section to find class features.`);
-    addField(sFeats, 'Features / Notes (optional)', '', v => this._featureNotes = v);
+    const CLASS_FEATURE_HINTS = {
+      Barbarian: { 2:'Reckless Attack, Danger Sense', 3:'Primal Path', 4:'ASI', 5:'Extra Attack, Fast Movement', 6:'Path Feature', 7:'Feral Instinct', 8:'ASI', 9:'Brutal Critical' },
+      Bard: { 2:'Jack of All Trades, Song of Rest', 3:'Expertise, Bard College', 4:'ASI', 5:'Font of Inspiration', 6:'Countercharm, College Feature', 10:'Magical Secrets', 12:'ASI', 14:'Magical Secrets' },
+      Cleric: { 2:'Channel Divinity, Divine Domain Feature', 3:'Channel Divinity 2/rest', 4:'ASI', 5:'Destroy Undead', 6:'Channel Divinity 3/rest', 8:'Divine Strike/Potent Spellcasting' },
+      Druid: { 2:'Wild Shape, Druid Circle', 4:'ASI, Wild Shape Improvement', 6:'Circle Feature', 8:'ASI', 10:'Circle Feature', 12:'ASI' },
+      Fighter: { 2:'Action Surge', 3:'Martial Archetype', 4:'ASI', 5:'Extra Attack', 6:'ASI', 7:'Archetype Feature', 8:'ASI', 9:'Indomitable' },
+      Monk: { 2:'Ki, Unarmored Movement', 3:'Monastic Tradition, Deflect Missiles', 4:'ASI, Slow Fall', 5:'Extra Attack, Stunning Strike', 6:'Ki-Empowered Strikes, Tradition Feature' },
+      Paladin: { 2:'Divine Smite, Fighting Style, Spellcasting', 3:'Channel Divinity, Sacred Oath', 4:'ASI', 5:'Extra Attack', 6:'Aura of Protection' },
+      Ranger: { 2:'Fighting Style, Spellcasting, Primeval Awareness', 3:'Ranger Archetype, Primeval Awareness', 4:'ASI', 5:'Extra Attack', 6:'Favored Enemy Improvement' },
+      Rogue: { 2:'Cunning Action', 3:'Roguish Archetype', 4:'ASI', 5:'Uncanny Dodge', 6:'Expertise', 7:'Evasion', 8:'ASI', 9:'Roguish Archetype Feature' },
+      Sorcerer: { 2:'Font of Magic', 3:'Metamagic', 4:'ASI', 6:'Sorcerous Origin Feature', 8:'ASI', 10:'Metamagic', 12:'ASI', 14:'Sorcerous Origin Feature' },
+      Warlock: { 2:'Eldritch Invocations', 3:'Pact Boon', 4:'ASI', 5:'Eldritch Invocation', 6:'Otherworldly Patron Feature', 7:'Eldritch Invocation', 8:'ASI' },
+      Wizard: { 2:'Arcane Tradition', 4:'ASI', 6:'Arcane Tradition Feature', 8:'ASI', 10:'Arcane Tradition Feature', 12:'ASI', 14:'Arcane Tradition Feature' },
+    };
+    const hint = (CLASS_FEATURE_HINTS[this.cls] || {})[this.toLevel];
+    if (hint) ce(sFeats, 'p', 'te-card-body', `📋 Suggested for ${this.cls} level ${this.toLevel}: ${hint}`);
+    else ce(sFeats, 'p', 'te-card-body', `Check your ${this.cls || 'class'} description for features gained at level ${this.toLevel}.`);
+    addField(sFeats, 'Features / Notes (optional)', this._featureNotes || '', v => this._featureNotes = v, 'textarea');
+
+    // Ruleset override
+    const sRule = ce(contentEl, 'div', 'te-modal-section');
+    sRule.createEl('h3', { text: 'Ruleset' });
+    addSelect(sRule, 'Ruleset', this.rulesetOverride, ['PHB','PHB 2024','Homebrew','Manual Override'], v => this.rulesetOverride = v);
+    addToggle(sRule, 'Manual override (skip automation)', this._manualOverride || false, v => this._manualOverride = v);
 
     const actRow = ce(contentEl, 'div', 'te-modal-actions');
     btn(actRow, 'Apply Level Up', 'te-btn is-primary', async () => {
@@ -6575,21 +7079,34 @@ class LevelUpModal extends Modal {
         this.char.spellSlots = slotsObj;
       }
 
+      // Apply subclass choice
+      if (this.subclassChosen) this.char.subclass = this.subclassChosen;
+      // Apply ruleset
+      if (this.rulesetOverride) this.char.ruleset = this.rulesetOverride;
+      // Apply spells added
+      if (this.spellsAdded.length) {
+        const existing = safeArr(this.char.knownSpells || this.char.spells);
+        this.char.knownSpells = [...new Set([...existing, ...this.spellsAdded])];
+      }
       const histEntry = {
         fromLevel: this.fromLevel, toLevel: this.toLevel,
         date: new Date().toISOString().slice(0,10),
         hpGain, hpMethod: this.hpChoice,
         asiChoice: this.asiChoice, asiApplied,
         featChosen: this.asiChoice === 'feat' ? (this.featChosen || '') : '',
+        subclassChosen: this.subclassChosen || '',
         spellsAdded: this.spellsAdded,
         featureNotes: this._featureNotes || '',
+        ruleset: this.rulesetOverride || '',
       };
       this.levelHistory.push(histEntry);
       this.char.levelHistory = this.levelHistory;
       upsert(this.plugin.state, 'characters', this.char);
       await this.plugin.saveState();
       const asiMsg = Object.keys(asiApplied).length ? ` ASI applied: ${Object.entries(asiApplied).map(([k,v])=>`+${v} ${k.toUpperCase()}`).join(', ')}.` : '';
-      new Notice(`${this.char.name} is now level ${this.toLevel}! Max HP +${hpGain}.${asiMsg}`, 8000);
+      const subMsg = this.subclassChosen ? ` Subclass: ${this.subclassChosen}.` : '';
+      const spMsg = this.spellsAdded.length ? ` ${this.spellsAdded.length} spell(s) added.` : '';
+      new Notice(`${this.char.name} is now level ${this.toLevel}! Max HP +${hpGain}.${asiMsg}${subMsg}${spMsg}`, 8000);
       this.close();
     });
     btn(actRow, 'Skip', 'te-btn', () => this.close());
@@ -6604,12 +7121,13 @@ class CharacterModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('char'), name: '', race: '', class: '', background: '', level: 1, alignment: 'True Neutral',
+      campaignId: '',
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
       skills: [], savingThrows: [], features: [], spells: [],
       equipment: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
       xp: 0, spellSlots: {}, deathSaves: { successes: 0, failures: 0 },
-      backstory: '', notes: '',
+      backstory: '', notes: '', languages: [], knownSpells: [],
     }, this.item);
   }
   onOpen() {
@@ -6620,6 +7138,7 @@ class CharacterModal extends Modal {
 
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
+    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(s1, 'Character Name *', this.values.name, v => this.values.name = v);
     // Race datalist — populated from data/races.json + hardcoded fallback + hybrid ancestries
     new Setting(s1).setName('Race / Ancestry').addText(t => {
@@ -6686,8 +7205,50 @@ class CharacterModal extends Modal {
     const s4 = ce(contentEl, 'div', 'te-modal-section');
     s4.createEl('h3', { text: 'Proficiencies & Features' });
     chipField(s4, 'Skills', this.values.skills, v => this.values.skills = v, { suggestions: ['Acrobatics','Animal Handling','Arcana','Athletics','Deception','History','Insight','Intimidation','Investigation','Medicine','Nature','Perception','Performance','Persuasion','Religion','Sleight of Hand','Stealth','Survival'] });
+    chipField(s4, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Draconic','Thieves\' Cant'] });
+    this.plugin.refData.get('languages').then(langs => {
+      if (langs && langs.length) {
+        const langNames = langs.map(l => l.name).filter(Boolean).sort();
+        const existing = new Set(['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Thieves\' Cant']);
+        const extra = langNames.filter(n => !existing.has(n));
+        if (extra.length) {
+          const langField = s4.querySelectorAll('.setting-item');
+          // Just augment suggestions silently — chipField already rendered
+        }
+      }
+    }).catch(()=>{});
     chipField(s4, 'Saving Throw Proficiencies', this.values.savingThrows, v => this.values.savingThrows = v, { suggestions: ['STR','DEX','CON','INT','WIS','CHA'] });
     chipField(s4, 'Features & Traits', this.values.features, v => this.values.features = v);
+
+    // Spell section (shown for any character — casters fill it in)
+    const sCast = ce(contentEl, 'div', 'te-modal-section');
+    sCast.createEl('h3', { text: 'Spells' });
+    ce(sCast, 'p', 'te-card-body', 'Track your known or prepared spells. Browse by class with the picker.');
+    const spellDisplay = ce(sCast, 'div', '');
+    spellDisplay.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:28px;padding:4px;background:var(--te-bg-alt);border-radius:var(--te-r-md)';
+    const spellsRef = { val: safeArr(this.values.knownSpells) };
+    const rebuildSpellDisplay = () => {
+      clear(spellDisplay);
+      if (!spellsRef.val.length) { ce(spellDisplay, 'span', 'te-empty-state', 'No spells added yet.'); return; }
+      spellsRef.val.forEach((sp, i) => {
+        const chip = ce(spellDisplay, 'span', 'te-chip');
+        chip.textContent = typeof sp === 'string' ? sp : (sp.name || 'Spell');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--te-accent-light,rgba(109,99,255,.15));border-radius:12px;font-size:.82rem;cursor:pointer';
+        const rm = ce(chip, 'span', '', '×'); rm.style.cursor = 'pointer';
+        rm.addEventListener('click', () => { spellsRef.val.splice(i, 1); this.values.knownSpells = spellsRef.val; rebuildSpellDisplay(); });
+      });
+    };
+    rebuildSpellDisplay();
+    const spellActRow = ce(sCast, 'div', 'te-card-actions');
+    btn(spellActRow, '📖 Browse Spells', 'te-btn is-sm', async () => {
+      const allSpells = await this.plugin.refData.get('spells');
+      const cls = this.values.class || '';
+      const filtered = cls ? allSpells.filter(s => !s.classes || !s.classes.length || String(s.classes||'').toLowerCase().includes(cls.toLowerCase())) : allSpells;
+      new RefDataPickerModal(this.plugin.app, filtered.length ? filtered : allSpells, 'Spell', spell => {
+        const name = spell.name || 'Spell';
+        if (!spellsRef.val.includes(name)) { spellsRef.val.push(name); this.values.knownSpells = spellsRef.val; rebuildSpellDisplay(); }
+      }).open();
+    });
 
     // Spells (show for spellcasting classes)
     const isSpellcaster = SPELLCASTING_CLASSES.includes(this.values.class);
@@ -6734,6 +7295,7 @@ class HybridAncestryModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('hybrid'), name: '', dominantAncestry: '', recessiveAncestry: '', thirdInfluence: '',
+      campaignId: '',
       visibility: 'dm-only', status: 'Draft', approvalStatus: 'Pending Review',
       size: 'Medium', speed: 30, ageNotes: '', creatureType: 'Humanoid',
       languages: [], darkvision: 'None',
@@ -6755,6 +7317,7 @@ class HybridAncestryModal extends Modal {
     // Section 1: Identity
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
+    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(s1, 'Ancestry Name *', this.values.name, v => this.values.name = v);
     const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries)
       .filter(h => h.id !== this.values.id).map(h => h.name);
@@ -6921,35 +7484,59 @@ class HybridAncestryModal extends Modal {
     // Action row
     const actRow = ce(contentEl, 'div', 'te-card-actions');
     actRow.style.cssText = 'flex-wrap:wrap;gap:6px;margin:12px 0';
-    btn(actRow, 'Use for New PC', 'te-btn is-sm', () => {
+    btn(actRow, 'Use for New PC', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
-      new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+      const b = computeHybridBalance(this.values);
+      this.values.balanceRating = b.rating; this.values.balanceScore = b.score; this.values.warnings = b.warnings;
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = new Date().toISOString();
+      upsert(this.plugin.state, 'hybridAncestries', this.values);
+      await this.plugin.saveState();
+      new CharacterModal(this.plugin.app, this.plugin, { race: this.values.name, hybridAncestryId: this.values.id }).open();
     });
-    btn(actRow, 'Use for New NPC', 'te-btn is-sm', () => {
+    btn(actRow, 'Use for New NPC', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Enter an ancestry name first.'); return; }
-      new NPCModal(this.plugin.app, this.plugin, { race: this.values.name }).open();
+      const b = computeHybridBalance(this.values);
+      this.values.balanceRating = b.rating; this.values.balanceScore = b.score; this.values.warnings = b.warnings;
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = new Date().toISOString();
+      upsert(this.plugin.state, 'hybridAncestries', this.values);
+      await this.plugin.saveState();
+      new NPCModal(this.plugin.app, this.plugin, { race: this.values.name, hybridAncestryId: this.values.id }).open();
     });
     btn(actRow, 'Save as Homebrew', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
-      const hb = { id: uid('homebrew'), name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
+      const existingHb = safeArr(this.plugin.state.entities.homebrew).find(h => h.sourceHybridId === this.values.id || h.name === this.values.name);
+      const hb = existingHb
+        ? { ...existingHb, content: this._toMarkdown(), updatedAt: new Date().toISOString(), visibility: this.values.visibility }
+        : { id: uid('homebrew'), sourceHybridId: this.values.id, name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
       upsert(this.plugin.state, 'homebrew', hb);
       await this.plugin.saveState();
-      new Notice(`Homebrew entry "${hb.name}" created.`);
+      new Notice(existingHb ? `Homebrew "${hb.name}" updated.` : `Homebrew entry "${hb.name}" created.`);
     });
     btn(actRow, 'Save as Compendium', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
-      const entry = { id: uid('comp'), name: this.values.name, category: 'Ancestry', content: this._toMarkdown(), tags: ['hybrid'], visibility: 'player-visible', createdAt: new Date().toISOString() };
+      const existingComp = safeArr(this.plugin.state.entities.compendium).find(e => e.sourceHybridId === this.values.id || e.name === this.values.name);
+      const entry = existingComp
+        ? { ...existingComp, content: this._toMarkdown(), updatedAt: new Date().toISOString() }
+        : { id: uid('comp'), sourceHybridId: this.values.id, name: this.values.name, category: 'Ancestry', content: this._toMarkdown(), tags: ['hybrid'], visibility: 'player-visible', createdAt: new Date().toISOString() };
       upsert(this.plugin.state, 'compendium', entry);
       await this.plugin.saveState();
-      new Notice(`Compendium entry "${entry.name}" created.`);
+      new Notice(existingComp ? `Compendium "${entry.name}" updated.` : `Compendium entry "${entry.name}" created.`);
     });
-    btn(actRow, 'Export Player-Safe', 'te-btn is-sm', async () => {
+    btn(actRow, 'Export Player-Safe Note', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Save the hybrid first.'); return; }
       const folder = campaignFolder(this.plugin);
-      await ensureFolder(this.plugin.app, folder);
+      await ensureFolder(this.plugin.app, `${folder}/Hybrid Ancestries`);
       const fname = this.values.name.replace(/[\\/:*?"<>|]/g, '_');
-      await writeNote(this.plugin.app, `${folder}/${fname}-ancestry.md`, this._toMarkdown(true));
-      new Notice(`Player-safe ancestry note exported.`);
+      const notePath = `${folder}/Hybrid Ancestries/${fname}.md`;
+      await writeNote(this.plugin.app, notePath, this._toMarkdown(true));
+      this.values.linkedNotePath = notePath;
+      this.values.syncStatus = 'Exported';
+      this.values.lastExportedAt = new Date().toISOString();
+      upsert(this.plugin.state, 'hybridAncestries', this.values);
+      await this.plugin.saveState();
+      new Notice(`Player-safe note exported to ${notePath}`);
     });
 
     modalButtons(contentEl, this, async () => {
@@ -7505,7 +8092,7 @@ class ExportModal extends Modal {
       for (const sess of sessions) { await writeEntityNote(this.plugin, 'sessions', sess); }
       new Notice(`Exported ${sessions.length} session logs.`);
     });
-    option('👤', 'All NPCs', 'Sync all NPCs as individual Markdown notes.', async () => {
+    option('👤', 'All NPCs', 'Export all NPCs as individual Markdown notes.', async () => {
       const npcs = safeArr(this.plugin.state.entities.npcs);
       const folder = campaignFolder(this.plugin);
       for (const npc of npcs) { await writeEntityNote(this.plugin, 'npcs', npc); }
