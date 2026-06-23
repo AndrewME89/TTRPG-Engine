@@ -6,6 +6,28 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Production Hardening Complete (Phase 260-265)
+
+### Production Exit Criteria Status
+
+| Criterion | Status |
+|-----------|--------|
+| Plugin loads safely (boot/safe-mode guard) | ✅ |
+| Existing data survives updates (migrateState) | ✅ |
+| All major features connected to shared data model | ✅ |
+| Creation/editing flows complete | ✅ |
+| Entity relationships work (RelationshipMatrix, entity pickers) | ✅ |
+| Reference/rules data used throughout | ✅ |
+| Notes are readable and useful (ENTITY_MD_TEMPLATES × 12) | ✅ |
+| PC character progression works (LevelUpModal, spellbook v2) | ✅ |
+| Run Session useful for live play | ✅ |
+| Generators create complete usable entities | ✅ |
+| UI is consistent, readable, theme-compliant | ✅ |
+| Build/release process cannot lose features | ✅ |
+| 200+ tests across all major systems | ✅ (204 tests, 0 failed) |
+
+---
+
 ## [Unreleased] — Phase 265 (Tests)
 
 ### Added
