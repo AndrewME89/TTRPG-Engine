@@ -1114,6 +1114,53 @@ async function exportBackup(plugin) {
   new Notice(`Backup saved to ${path} (${total} entities)`);
 }
 
+class RestoreBackupModal extends Modal {
+  constructor(app, plugin) { super(app); this.plugin = plugin; }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: '📥 Restore from Backup' });
+    ce(contentEl, 'p', 'te-page-subtitle', 'Enter the vault path to a backup JSON file (e.g. My Campaign/Backups/backup-2025-01-01.json). This will replace all plugin data — backup first!');
+    const pathWrap = ce(contentEl, 'div', 'te-modal-section');
+    let backupPath = '';
+    new Setting(pathWrap).setName('Backup file path (in vault)').addText(t => { t.setPlaceholder('Campaign/Backups/backup-….json'); t.onChange(v => backupPath = v.trim()); });
+    const preview = ce(contentEl, 'div', 'te-card'); preview.style.cssText = 'display:none;padding:12px;margin-top:8px';
+    const previewBody = ce(preview, 'div', '');
+    btn(contentEl, 'Preview Backup', 'te-btn', async () => {
+      if (!backupPath) { new Notice('Enter a file path first.'); return; }
+      try {
+        const raw = await adapterRead(this.plugin.app, backupPath);
+        const bk = JSON.parse(raw);
+        if (!bk.state || !bk.version) { new Notice('Invalid backup file — missing state or version.'); return; }
+        clear(previewBody);
+        ce(previewBody, 'p', '', `Version: ${bk.version}`);
+        ce(previewBody, 'p', '', `Timestamp: ${bk.timestamp ? new Date(bk.timestamp).toLocaleString() : 'Unknown'}`);
+        const counts = bk.entityCounts || {};
+        const total = Object.values(counts).reduce((s, v) => s + v, 0);
+        ce(previewBody, 'p', '', `Total entities: ${total}`);
+        const top = Object.entries(counts).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]).slice(0, 8).map(([k,v]) => `${ENTITY_LABELS[k]||k}: ${v}`).join(', ');
+        ce(previewBody, 'p', 'te-muted-text', top);
+        preview.style.display = '';
+        this._pendingBackup = bk;
+      } catch (e) { new Notice(`Could not read backup: ${e.message}`); }
+    });
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, '⚠️ Restore (Replace All Data)', 'te-btn is-danger', async () => {
+      if (!this._pendingBackup) { new Notice('Preview the backup first.'); return; }
+      await exportBackup(this.plugin);
+      Object.assign(this.plugin.state, this._pendingBackup.state);
+      migrateState(this.plugin.state);
+      await this.plugin.saveState();
+      new Notice('Backup restored. Previous data backed up first.');
+      this.close();
+      this.plugin.refreshViews();
+    });
+    btn(actRow, 'Cancel', 'te-btn', () => this.close());
+  }
+  onClose() { clear(this.contentEl); }
+}
+
 // ── Dice & generators ─────────────────────────────────────────────────────────
 function rollDie(n) { return Math.floor(Math.random() * n) + 1; }
 function parseFormula(formula) {
@@ -2224,21 +2271,47 @@ function renderDashboard(main, plugin) {
   qcard(g, '📋', 'Active Quests', `${safeArr(state.entities.quests).filter(q => q.status === 'Active').length} active quests running.`, 'Open Quests', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
   qcard(g, '🖥️', 'DM Screen', 'Quick reference, conditions, combat rules, and session tools.', 'Open DM Screen', async () => { state.activeSection = 'dmscreen'; await plugin.saveState(); });
   qcard(g, '🎲', 'Generators', 'NPC names, quest hooks, loot, taverns, weather, and more.', 'Open Generators', async () => { state.activeSection = 'generators'; await plugin.saveState(); });
-  // My content diagnostic
+  // My content — clickable stat cards navigating to their section
   sectionHead(main, 'My Content / Saved Items');
+  const ENTITY_NAV = {
+    campaigns:'campaigns', worlds:'world', cosmologies:'world', realms:'world', regions:'geography',
+    settlements:'gazetteer', locations:'gazetteer', pois:'gazetteer', routes:'gazetteer',
+    npcs:'npcs', creatures:'npcs', bbegs:'npcs', factions:'world',
+    cultures:'world', languages:'world', deities:'world', pantheons:'world', nations:'world', religions:'world',
+    quests:'adventure', adventures:'adventure', encounters:'adventure',
+    sessions:'sessions', milestones:'sessions', secrets:'secrets', handouts:'secrets',
+    homebrew:'homebrew', tables:'library', compendium:'library', rules:'library',
+    characters:'pc-character', journals:'pc-journal',
+    maps:'geography', dungeons:'geography', nobleFamilies:'relationship-matrix',
+    hybridAncestries:'hybrid-ancestry', timers:'war-machine', enemyTemplates:'war-machine',
+    warFronts:'endgame', incursions:'endgame', endgameStates:'endgame',
+  };
   const dc = ce(main, 'div', 'te-card');
   const dcHead = ce(dc, 'div', 'te-card-head');
   ce(dcHead, 'span', 'te-card-icon', '📊');
-  ce(dcHead, 'h3', 'te-card-title', 'Content Diagnostic');
+  ce(dcHead, 'h3', 'te-card-title', 'Content Summary — click any tile to navigate');
+  const backupRow = ce(dc, 'div', 'te-card-actions');
+  btn(backupRow, '💾 Backup Now', 'te-btn is-sm', () => exportBackup(plugin));
+  btn(backupRow, '📥 Restore Backup', 'te-btn is-sm', () => new RestoreBackupModal(plugin.app, plugin).open());
+  btn(backupRow, '🔧 Repair & Reindex', 'te-btn is-sm', async () => {
+    const issues = repairAndReindex(state); await plugin.saveState();
+    new Notice(issues.length ? `Repaired ${issues.length} issue(s).` : 'No issues found.');
+  });
   const dcGrid = ce(dc, 'div', 'te-stat-grid');
   dcGrid.style.marginTop = '8px';
   const ek = Object.keys(state.entities);
   ek.forEach(k => {
     if (!safeArr(state.entities[k]).length) return;
     const sc = ce(dcGrid, 'div', 'te-stat-card');
-    sc.style.padding = '8px';
+    sc.style.cssText = 'padding:8px;cursor:pointer;transition:box-shadow .15s';
+    sc.title = `Go to ${ENTITY_LABELS[k] || k}`;
     ce(sc, 'div', 'te-stat-big', state.entities[k].length);
     ce(sc, 'div', 'te-stat-label', ENTITY_LABELS[k] || k);
+    if (ENTITY_NAV[k]) {
+      sc.addEventListener('click', async () => { state.activeSection = ENTITY_NAV[k]; await plugin.saveState(); });
+      sc.addEventListener('mouseenter', () => { sc.style.boxShadow = '0 0 0 2px var(--te-accent)'; });
+      sc.addEventListener('mouseleave', () => { sc.style.boxShadow = ''; });
+    }
   });
 }
 
@@ -4848,9 +4921,10 @@ function renderPCCharacter(main, plugin) {
     }
   }
 
-  // Stat grid
+  // Stat grid (initiative = DEX mod if not overridden)
+  const calcInit = char.initiative != null ? char.initiative : modStr(char.dex || 10);
   const sg = ce(c, 'div', 'te-stat-grid'); sg.style.marginTop = '8px';
-  [['AC', char.ac], ['Speed', char.speed], ['Initiative', char.initiative], ['Prof.', char.level ? '+' + profBonus(char.level) : '']].forEach(([k, v]) => { if (!v) return; const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', String(v)); ce(sc, 'div', 'te-stat-label', k); });
+  [['AC', char.ac], ['Speed', char.speed], ['Initiative', calcInit], ['Prof.', char.level ? '+' + profBonus(char.level) : '']].forEach(([k, v]) => { if (!v && v !== 0) return; const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', String(v)); ce(sc, 'div', 'te-stat-label', k); });
 
   // Ability scores
   const abilityGrid = ce(c, 'div', 'te-ability-grid');

@@ -6,6 +6,31 @@ Versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [Unreleased] — Phase 262
+
+### Added
+- **Dashboard — My Content clickable tiles**: All "Content Summary" stat cards now navigate to their corresponding section on click; hover shows accent outline
+- **Dashboard — Quick actions**: Backup Now, Restore Backup, and Repair & Reindex buttons in the Content Summary card
+- **`RestoreBackupModal`**: Preview a backup JSON file (vault path input), see version/timestamp/entity counts; "Restore" auto-backs up current data first, then restores and re-migrates state
+- **Character sheet calculated initiative**: `renderPCCharacter` stat grid now always shows Initiative as the DEX ability modifier if no override is set
+
+### Changed
+- **Dashboard**: "My Content / Saved Items" section retitled "Content Summary — click any tile to navigate"; stat cards are now interactive
+
+---
+
+## [Unreleased] — Phase 261
+
+### Added
+- **Spellbook v2** (`renderPCSpellbook`, now async): Full spell browser backed by `ReferenceDataService` (`spells.json`); level filter buttons (All/Cantrip/1–9), search input, expandable spell detail cards (school, cast time, range, duration); "+ Learn" action adds spell to character; known spells shown at top with expand-to-detail and Remove button
+- **Inventory Equipment Browser** (`renderPCInventory`, now async): Equipment browser backed by `ReferenceDataService` (`equipment.json`); search input, expandable detail, "+ Carry" action adds item to character inventory
+- **Currency unified to 5 coins**: CharacterModal defaults updated from `{gp, sp, cp}` to `{pp, gp, ep, sp, cp}` matching the Inventory view's five-coin display
+- **Run Session — Active NPCs panel**: Searchable list of campaign NPCs showing name, role, attitude, and motivation quote
+- **Run Session — Active Quests panel**: Grid of active campaign quests with objectives (up to 3 shown per quest)
+- **Run Session — Conditions Reference**: Expandable conditions list loaded async from `conditions.json` via `ReferenceDataService`
+
+---
+
 ## [Unreleased] — Phase 260c
 
 ### Added
