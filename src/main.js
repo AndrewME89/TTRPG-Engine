@@ -1242,7 +1242,7 @@ function itemCards(parent, plugin, key, opts) {
     const acts = ce(c, 'div', 'te-card-actions');
     btn(acts, 'Edit', 'te-btn is-sm', () => (opts.onEdit || defaultEdit)(plugin, key, item));
     if (opts.onExtra) opts.onExtra(acts, item);
-    btn(acts, 'Sync', 'te-btn is-sm', () => writeEntityNote(plugin, key, item));
+    btn(acts, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, key, item));
     btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => {
       removeItem(plugin.state, key, item.id);
       await plugin.saveState();
@@ -3603,7 +3603,7 @@ function renderGazetteer(main, plugin) {
       [['Type', s.type], ['Population', s.population], ['Government', s.government]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'settlements', s, settlementFields).open());
-      btn(a, 'Sync', 'te-btn is-sm', () => writeEntityNote(plugin, 'settlements', s));
+      btn(a, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'settlements', s));
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'settlements', s.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No settlements yet.'); }
@@ -3620,7 +3620,7 @@ function renderGazetteer(main, plugin) {
       [['Type', d.type], ['Rooms', safeArr(d.rooms).length + ' rooms'], ['Threat Level', d.threatLevel]].forEach(([k, v]) => { if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, 'Edit', 'te-btn is-sm', () => new DungeonModal(plugin.app, plugin, d).open());
-      btn(a, 'Sync', 'te-btn is-sm', () => writeEntityNote(plugin, 'dungeons', d));
+      btn(a, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'dungeons', d));
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'dungeons', d.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No dungeons yet.', 'Use "+ Dungeon" to create a keyed dungeon or location.'); }
@@ -3697,7 +3697,66 @@ function renderRunSession(main, plugin) {
       let saveT = null;
       ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(async () => { sess.notes = ta.value; upsert(state, 'sessions', sess); await plugin.saveState(); }, 800); });
     }
+  } else {
+    ce(main, 'p', 'te-empty-state', 'Start a session to enable notes.');
   }
+
+  // ── Inline Dice Roller ────────────────────────────────────────────────────
+  sectionHead(main, '🎲 Quick Dice Roller');
+  const diceWrap = ce(main, 'div', 'te-card'); diceWrap.style.cssText = 'padding:12px';
+  const diceResultEl = ce(diceWrap, 'div', 'te-result-box', 'Enter a formula and roll.');
+  diceResultEl.style.cssText = 'min-height:36px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:1.1rem;font-weight:600';
+  const quickDice = ce(diceWrap, 'div', 'te-card-actions'); quickDice.style.flexWrap = 'wrap';
+  ['d4','d6','d8','d10','d12','d20','d100'].forEach(d => {
+    btn(quickDice, d, 'te-btn is-sm', () => {
+      const sides = parseInt(d.slice(1));
+      const roll = Math.floor(Math.random() * sides) + 1;
+      diceResultEl.textContent = `${d}: ${roll}`;
+    });
+  });
+  const formulaRow = ce(diceWrap, 'div', 'te-chip-add-row'); formulaRow.style.marginTop = '8px';
+  const formulaInp = ce(formulaRow, 'input'); formulaInp.type = 'text'; formulaInp.placeholder = '2d6+3'; formulaInp.style.flex = '1';
+  btn(formulaRow, 'Roll', 'te-btn is-primary', () => {
+    const f = formulaInp.value.trim() || '1d20';
+    const match = f.match(/^(\d+)d(\d+)([+-]\d+)?$/i);
+    if (!match) { diceResultEl.textContent = 'Invalid formula (use NdN or NdN±M)'; return; }
+    const count = Math.max(1, Math.min(100, parseInt(match[1]))), sides = parseInt(match[2]), mod = parseInt(match[3] || 0);
+    const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
+    const total = rolls.reduce((a, b) => a + b, 0) + mod;
+    diceResultEl.textContent = `${f} → ${total}${count > 1 ? ` (${rolls.join(', ')}${mod !== 0 ? ` ${mod > 0 ? '+' : ''}${mod}` : ''})` : ''}`;
+  });
+  formulaInp.addEventListener('keydown', e => { if (e.key === 'Enter') formulaRow.querySelector('button').click(); });
+
+  // ── Quick Generators ──────────────────────────────────────────────────────
+  sectionHead(main, '⚡ Quick Generators');
+  const genWrap = ce(main, 'div', 'te-card'); genWrap.style.cssText = 'padding:12px';
+  const genResultEl = ce(genWrap, 'div', 'te-result-box', 'Pick a type and generate.');
+  genResultEl.style.cssText = 'min-height:40px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:.95rem;line-height:1.4';
+  let lastGenType = 'NPC Name', lastGenResult = '';
+  const genTypeRow = ce(genWrap, 'div', 'te-card-actions'); genTypeRow.style.flexWrap = 'wrap';
+  const GEN_QUICK = ['NPC Name','NPC Trait','Quest Hook','Rumour','Faction Name','Dungeon Room','Wild Magic Surge','Weather','Travel Event','Loot','Tavern Name'];
+  let activeGenBtn = null;
+  GEN_QUICK.forEach(t => {
+    const b = btn(genTypeRow, t, 'te-btn is-sm' + (t === lastGenType ? ' is-primary' : ''), () => {
+      lastGenType = t;
+      Array.from(genTypeRow.querySelectorAll('button')).forEach(x => x.className = 'te-btn is-sm');
+      b.className = 'te-btn is-sm is-primary';
+    });
+    if (t === lastGenType) activeGenBtn = b;
+  });
+  const genActRow = ce(genWrap, 'div', 'te-card-actions'); genActRow.style.marginTop = '8px';
+  btn(genActRow, 'Generate', 'te-btn is-primary', () => {
+    lastGenResult = generate(lastGenType, state);
+    genResultEl.textContent = lastGenResult;
+    saveAsBtn.style.display = ['NPC Name','Faction Name','Quest Hook'].includes(lastGenType) ? '' : 'none';
+  });
+  const saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
+    if (!lastGenResult) return;
+    if (lastGenType === 'NPC Name') new NPCModal(plugin.app, plugin, { name: lastGenResult }).open();
+    else if (lastGenType === 'Faction Name') new FactionModal(plugin.app, plugin, { name: lastGenResult }).open();
+    else if (lastGenType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [lastGenResult] }).open();
+  });
+  saveAsBtn.style.display = 'none';
 }
 
 // ── WAR MACHINE (Phase 11) ────────────────────────────────────────────────────
@@ -4831,7 +4890,7 @@ class CreatureModal extends Modal {
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       senses: '', languages: '', traits: '', actions: '', reactions: '',
       legendaryActions: '', lairActions: '', lore: '', habitat: '', loot: '',
-      visibility: 'dm-only', tags: [],
+      visibility: 'dm-only', tags: [], campaignId: '',
     }, this.item);
   }
   onOpen() {
@@ -4839,6 +4898,7 @@ class CreatureModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Creature` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Size', this.values.size, SIZES, v => this.values.size = v);
     addSelect(contentEl, 'Creature Type', this.values.creatureType, CREATURE_TYPES, v => this.values.creatureType = v);
@@ -4897,7 +4957,7 @@ class BBEGModal extends Modal {
       goals: [], methods: [], resources: '', lieutenants: [],
       lairLocation: '', mythicPhases: '', escalationClocks: '',
       secrets: '', finalConfrontation: '',
-      linkedFactions: [], linkedQuests: [], visibility: 'dm-only',
+      linkedFactions: [], linkedQuests: [], visibility: 'dm-only', campaignId: '',
     }, this.item);
   }
   onOpen() {
@@ -4905,6 +4965,7 @@ class BBEGModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} BBEG / Major Villain` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Villain Name *', this.values.name, v => this.values.name = v);
     addField(contentEl, 'Title / Epithet', this.values.title, v => this.values.title = v);
     addSelect(contentEl, 'Status', this.values.status, ['Active','Defeated','Imprisoned','Unknown','Fled'], v => this.values.status = v);
@@ -5050,7 +5111,7 @@ class EncounterModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '',
-      participants: [], enemyGroups: '', difficulty: 'Medium',
+      participants: [], participantPcIds: [], participantNpcIds: [], enemyGroups: '', difficulty: 'Medium',
       terrain: '', tactics: '', objectives: '',
       victoryConditions: '', failureConditions: '', rewards: '',
       linkedQuest: '', linkedQuestId: '', campaignId: '',
@@ -5068,7 +5129,8 @@ class EncounterModal extends Modal {
     addSelect(contentEl, 'Difficulty', this.values.difficulty, ['Trivial','Easy','Medium','Hard','Deadly','Mythic'], v => this.values.difficulty = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     addEntityPicker(contentEl, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
-    chipField(contentEl, 'Participants (PCs)', this.values.participants, v => this.values.participants = v);
+    addEntityMultiPicker(contentEl, 'PC Participants', this.values.participantPcIds, this.plugin, 'characters', v => this.values.participantPcIds = v);
+    addEntityMultiPicker(contentEl, 'NPC Participants', this.values.participantNpcIds, this.plugin, 'npcs', v => this.values.participantNpcIds = v);
     addField(contentEl, 'Enemy Groups', this.values.enemyGroups, v => this.values.enemyGroups = v, 'textarea');
     addField(contentEl, 'Terrain', this.values.terrain, v => this.values.terrain = v);
     addField(contentEl, 'Tactics', this.values.tactics, v => this.values.tactics = v, 'textarea');
@@ -5098,7 +5160,7 @@ class SessionModal extends Modal {
       id: uid('session'), name: '', sessionNumber: '', realDate: new Date().toISOString().slice(0, 10),
       gameDate: '', partyMembers: [], recap: '', prepNotes: '',
       scenes: '', npcsMet: [], questsAdvanced: [], secretsRevealed: [],
-      lootAwarded: '', xpMilestones: '', cliffhanger: '', nextSessionNotes: '',
+      lootAwarded: '', xpMilestones: '', cliffhanger: '', nextSessionNotes: '', campaignId: '',
     }, this.item);
   }
   onOpen() {
@@ -5109,6 +5171,7 @@ class SessionModal extends Modal {
     const nextNum = safeArr(this.plugin.state.entities.sessions).length + 1;
     if (!this.values.name) this.values.name = `Session ${this.values.sessionNumber || nextNum}`;
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Session Log` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Session Name', this.values.name, v => this.values.name = v);
     addField(contentEl, 'Session #', this.values.sessionNumber || String(nextNum), v => this.values.sessionNumber = v);
     addField(contentEl, 'Real Date', this.values.realDate, v => this.values.realDate = v);
@@ -5143,7 +5206,7 @@ class SecretModal extends Modal {
     this.values = Object.assign({
       id: uid('secret'), name: '', secretType: 'NPC Secret',
       relatedEntities: [], revealTrigger: '', revealStatus: 'Hidden',
-      content: '', dmNotes: '', visibility: 'secret',
+      content: '', dmNotes: '', visibility: 'secret', campaignId: '',
     }, this.item);
   }
   onOpen() {
@@ -5151,6 +5214,7 @@ class SecretModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Secret` });
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Secret Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Secret Type', this.values.secretType, ['NPC Secret','Faction Secret','Location Secret','World Secret','Quest Twist','Villain Truth','Player Backstory','Cosmology Reveal','Other'], v => this.values.secretType = v);
     addSelect(contentEl, 'Reveal Status', this.values.revealStatus, ['Hidden','Partially Revealed','Fully Revealed'], v => this.values.revealStatus = v);
