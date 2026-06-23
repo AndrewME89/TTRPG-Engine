@@ -7205,18 +7205,9 @@ class CharacterModal extends Modal {
     const s4 = ce(contentEl, 'div', 'te-modal-section');
     s4.createEl('h3', { text: 'Proficiencies & Features' });
     chipField(s4, 'Skills', this.values.skills, v => this.values.skills = v, { suggestions: ['Acrobatics','Animal Handling','Arcana','Athletics','Deception','History','Insight','Intimidation','Investigation','Medicine','Nature','Perception','Performance','Persuasion','Religion','Sleight of Hand','Stealth','Survival'] });
-    chipField(s4, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Draconic','Thieves\' Cant'] });
-    this.plugin.refData.get('languages').then(langs => {
-      if (langs && langs.length) {
-        const langNames = langs.map(l => l.name).filter(Boolean).sort();
-        const existing = new Set(['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Thieves\' Cant']);
-        const extra = langNames.filter(n => !existing.has(n));
-        if (extra.length) {
-          const langField = s4.querySelectorAll('.setting-item');
-          // Just augment suggestions silently — chipField already rendered
-        }
-      }
-    }).catch(()=>{});
+    { const sel = s4.lastElementChild && s4.lastElementChild.querySelector('select'); if (sel) this.plugin.refData.get('skills').then(skills => { const ex = new Set(['Acrobatics','Animal Handling','Arcana','Athletics','Deception','History','Insight','Intimidation','Investigation','Medicine','Nature','Perception','Performance','Persuasion','Religion','Sleight of Hand','Stealth','Survival']); [...new Set(skills.map(s => s.name).filter(Boolean))].filter(n => !ex.has(n)).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); }); }).catch(()=>{}); }
+    chipField(s4, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Thieves\' Cant'] });
+    { const sel = s4.lastElementChild && s4.lastElementChild.querySelector('select'); if (sel) this.plugin.refData.get('languages').then(langs => { const ex = new Set(['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Thieves\' Cant']); [...new Set(langs.map(l => l.name).filter(Boolean))].filter(n => !ex.has(n)).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); }); }).catch(()=>{}); }
     chipField(s4, 'Saving Throw Proficiencies', this.values.savingThrows, v => this.values.savingThrows = v, { suggestions: ['STR','DEX','CON','INT','WIS','CHA'] });
     chipField(s4, 'Features & Traits', this.values.features, v => this.values.features = v);
 
