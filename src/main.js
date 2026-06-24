@@ -514,6 +514,7 @@ function createDefaultState() {
     version: PLUGIN_VERSION,
     mode: 'DM',
     activeSection: 'dashboard',
+    activeSubSection: '',
     sidebarCollapsed: false,
     activeCampaignId: '',
     search: '',
@@ -2294,37 +2295,24 @@ class TTRPGMainView extends ItemView {
     });
 
     const dmNavGroups = [
-      { label: 'DM Tools', items: [
-        { id: 'dashboard',   icon: '🏰', label: 'Dashboard' },
-        { id: 'campaigns',   icon: '📜', label: 'Campaigns' },
-        { id: 'bible',       icon: '📖', label: 'Campaign Bible' },
-        { id: 'dmscreen',    icon: '🖥️', label: 'DM Screen' },
-        { id: 'run-session', icon: '▶️', label: 'Run Session' },
+      { label: 'Command', items: [
+        { id: 'dashboard',          icon: '🏰', label: 'Dashboard' },
+        { id: 'campaign-command',   icon: '📜', label: 'Campaign Command' },
       ]},
-      { label: 'World & Story', items: [
-        { id: 'world',       icon: '🌍', label: 'World & Lore' },
-        { id: 'geography',   icon: '🗺️', label: 'Geography & Maps' },
-        { id: 'gazetteer',   icon: '📍', label: 'Gazetteer' },
-        { id: 'npcs',        icon: '👤', label: 'NPCs & Creatures' },
-        { id: 'factions',    icon: '⚔️', label: 'Factions' },
-        { id: 'faction-matrix', icon: '🕸️', label: 'Relationship Matrix' },
-        { id: 'adventure',   icon: '📝', label: 'Adventures & Quests' },
-        { id: 'encounters',  icon: '🎯', label: 'Encounters & Combat' },
-        { id: 'hybrid-ancestry', icon: '🧬', label: 'Hybrid Ancestry' },
+      { label: 'World', items: [
+        { id: 'world-atlas',        icon: '🌍', label: 'World Atlas' },
+        { id: 'cast-powers',        icon: '👤', label: 'Cast & Powers' },
       ]},
-      { label: 'Campaign Ops', items: [
-        { id: 'rules',       icon: '⚙️', label: 'Rules & Mechanics' },
-        { id: 'downtime',    icon: '⏳', label: 'Downtime & Bases' },
-        { id: 'sessions',    icon: '📅', label: 'Sessions & Timeline' },
-        { id: 'secrets',     icon: '🔒', label: 'Secrets & Reveals' },
-        { id: 'war-machine', icon: '🔧', label: 'War Machine' },
-        { id: 'endgame',     icon: '🌋', label: 'Endgame' },
+      { label: 'Story', items: [
+        { id: 'adventure-planner',  icon: '📝', label: 'Adventure Planner' },
+        { id: 'secrets-handouts',   icon: '🔒', label: 'Secrets & Handouts' },
       ]},
       { label: 'Library', items: [
-        { id: 'library',     icon: '📚', label: 'Compendium & Library' },
-        { id: 'reference',   icon: '📖', label: '5e Reference' },
-        { id: 'homebrew',    icon: '🧪', label: 'Homebrew' },
-        { id: 'generators',  icon: '🎲', label: 'Generators' },
+        { id: 'compendium-library', icon: '📚', label: 'Compendium & Library' },
+        { id: 'generators',         icon: '🎲', label: 'Generators' },
+      ]},
+      { label: 'Tools', items: [
+        { id: 'settings-tools',     icon: '⚙️', label: 'Settings & Tools' },
       ]},
     ];
 
@@ -2352,6 +2340,7 @@ class TTRPGMainView extends ItemView {
         const isActive = state.activeSection === id;
         const b = btn(grp, '', 'te-nav-btn' + (isActive ? ' is-active' : ''), async () => {
           state.activeSection = id;
+          state.activeSubSection = '';
           await this.plugin.saveState();
         });
         ce(b, 'span', 'te-nav-icon', icon);
@@ -2449,45 +2438,313 @@ function renderSafeModeRecovery(root, plugin) {
 // ── Section router ─────────────────────────────────────────────────────────────
 function renderSection(main, plugin, section) {
   const map = {
-    // DM Engine
-    dashboard: renderDashboard,
-    campaigns: renderCampaigns,
-    bible: renderCampaignBible,
-    'run-session': renderRunSession,
-    dmscreen: renderDmScreen,
-    world: renderWorld,
-    geography: renderGeography,
-    gazetteer: renderGazetteer,
-    npcs: renderNpcs,
-    factions: renderFactions,
-    'faction-matrix': renderFactionMatrix,
-    'relationship-matrix': renderRelationshipMatrix,
-    adventure: renderAdventure,
-    encounters: renderEncounters,
-    rules: renderRules,
-    downtime: renderDowntime,
-    sessions: renderSessions,
-    secrets: renderSecrets,
-    'war-machine': renderWarMachine,
-    endgame: renderEndgame,
-    library: renderLibrary,
-    reference: renderReference,
-    homebrew: renderHomebrew,
-    generators: renderGenerators,
-    // Legacy
-    player: renderPCOverview,
+    // New workspaces
+    dashboard:            renderDashboard,
+    'campaign-command':   renderCampaignCommand,
+    'world-atlas':        renderWorldAtlas,
+    'cast-powers':        renderCastPowers,
+    'adventure-planner':  renderAdventurePlanner,
+    'secrets-handouts':   renderSecretsHandouts,
+    'compendium-library': renderCompendiumLibrary,
+    'settings-tools':     renderSettingsTools,
+    generators:           renderGenerators,
     // PC Companion
-    'pc-overview':   renderPCOverview,
-    'pc-character':  renderPCCharacter,
-    'pc-inventory':  renderPCInventory,
-    'pc-spellbook':  renderPCSpellbook,
-    'pc-quests':     renderPCQuests,
-    'pc-handouts':   renderPCHandouts,
-    'pc-journal':    renderPCJournal,
-    'pc-lore':       renderPCLore,
-    'hybrid-ancestry': renderHybridAncestry,
+    'pc-overview':        renderPCOverview,
+    'pc-character':       renderPCCharacter,
+    'pc-inventory':       renderPCInventory,
+    'pc-spellbook':       renderPCSpellbook,
+    'pc-quests':          renderPCQuests,
+    'pc-handouts':        renderPCHandouts,
+    'pc-journal':         renderPCJournal,
+    'pc-lore':            renderPCLore,
+    'hybrid-ancestry':    renderHybridAncestry,
+    // Legacy aliases → workspace with pre-set sub-section
+    campaigns:            (el, p) => { p.state.activeSubSection = 'campaigns'; renderCampaignCommand(el, p); },
+    bible:                (el, p) => { p.state.activeSubSection = 'bible'; renderCampaignCommand(el, p); },
+    'run-session':        (el, p) => { p.state.activeSubSection = 'run-session'; renderCampaignCommand(el, p); },
+    sessions:             (el, p) => { p.state.activeSubSection = 'sessions'; renderCampaignCommand(el, p); },
+    milestones:           (el, p) => { p.state.activeSubSection = 'milestones'; renderCampaignCommand(el, p); },
+    dmscreen:             (el, p) => { p.state.activeSubSection = 'dmscreen'; renderCampaignCommand(el, p); },
+    world:                (el, p) => { p.state.activeSubSection = 'lore'; renderWorldAtlas(el, p); },
+    geography:            (el, p) => { p.state.activeSubSection = 'geography'; renderWorldAtlas(el, p); },
+    gazetteer:            (el, p) => { p.state.activeSubSection = 'gazetteer'; renderWorldAtlas(el, p); },
+    npcs:                 (el, p) => { p.state.activeSubSection = 'npcs'; renderCastPowers(el, p); },
+    factions:             (el, p) => { p.state.activeSubSection = 'factions'; renderCastPowers(el, p); },
+    'faction-matrix':     (el, p) => { p.state.activeSubSection = 'matrix'; renderCastPowers(el, p); },
+    'relationship-matrix':(el, p) => { p.state.activeSubSection = 'matrix'; renderCastPowers(el, p); },
+    'noble-families':     (el, p) => { p.state.activeSubSection = 'noble-families'; renderCastPowers(el, p); },
+    adventure:            (el, p) => { p.state.activeSubSection = 'adventures'; renderAdventurePlanner(el, p); },
+    encounters:           (el, p) => { p.state.activeSubSection = 'encounters'; renderAdventurePlanner(el, p); },
+    downtime:             (el, p) => { p.state.activeSubSection = 'downtime'; renderAdventurePlanner(el, p); },
+    'war-machine':        (el, p) => { p.state.activeSubSection = 'war-machine'; renderAdventurePlanner(el, p); },
+    endgame:              (el, p) => { p.state.activeSubSection = 'endgame'; renderAdventurePlanner(el, p); },
+    secrets:              (el, p) => { renderSecretsHandouts(el, p); },
+    library:              (el, p) => { p.state.activeSubSection = 'compendium'; renderCompendiumLibrary(el, p); },
+    reference:            (el, p) => { p.state.activeSubSection = 'reference'; renderCompendiumLibrary(el, p); },
+    homebrew:             (el, p) => { p.state.activeSubSection = 'homebrew'; renderCompendiumLibrary(el, p); },
+    rules:                (el, p) => { p.state.activeSubSection = 'compendium'; renderCompendiumLibrary(el, p); },
+    // Legacy fallback
+    player:               renderPCOverview,
   };
   (map[section] || renderDashboard)(main, plugin);
+}
+
+// ── WORKSPACE HELPERS & CONTAINERS ────────────────────────────────────────────
+
+function workspaceTabs(parent, tabs, plugin) {
+  const state = plugin.state;
+  const bar = ce(parent, 'div', 'te-workspace-tabs');
+  tabs.forEach(({ id, label }) => {
+    const active = (state.activeSubSection || tabs[0].id) === id;
+    btn(bar, label, 'te-workspace-tab' + (active ? ' is-active' : ''), async () => {
+      state.activeSubSection = id;
+      await plugin.saveState();
+    });
+  });
+}
+
+function renderCampaignCommand(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'campaigns',   label: '📜 Campaigns' },
+    { id: 'bible',       label: '📖 Campaign Bible' },
+    { id: 'sessions',    label: '📅 Sessions' },
+    { id: 'milestones',  label: '🏆 Milestones' },
+    { id: 'dmscreen',    label: '🖥️ DM Screen' },
+    { id: 'run-session', label: '▶ Run Session' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'campaigns';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'campaigns')     renderCampaigns(wrap, plugin);
+  else if (sub === 'bible')    renderCampaignBible(wrap, plugin);
+  else if (sub === 'sessions') renderSessions(wrap, plugin);
+  else if (sub === 'milestones') renderMilestonesSection(wrap, plugin);
+  else if (sub === 'dmscreen') renderDmScreen(wrap, plugin);
+  else if (sub === 'run-session') renderRunSession(wrap, plugin);
+  else renderCampaigns(wrap, plugin);
+}
+
+function renderMilestonesSection(main, plugin) {
+  const state = plugin.state;
+  const camp = activeCampaign(state);
+  pageHead(main, plugin, 'Milestones', 'Track campaign milestones and XP/reward checkpoints.', [
+    { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones').open() },
+  ]);
+  const items = safeArr(state.entities.milestones).filter(m => !camp || m.campaignId === camp.id);
+  if (!items.length) { ce(main, 'p', 'te-empty', 'No milestones yet.'); return; }
+  const tbl = ce(main, 'div', 'te-list');
+  items.forEach(m => {
+    const row = ce(tbl, 'div', 'te-list-item');
+    ce(row, 'span', 'te-list-name', m.name || 'Unnamed Milestone');
+    ce(row, 'span', 'te-list-meta', m.status || '');
+    const acts = ce(row, 'div', 'te-list-actions');
+    btn(acts, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m).open());
+    btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'milestones', m.id); await plugin.saveState(); });
+  });
+}
+
+function renderWorldAtlas(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'lore',       label: '🌍 World & Lore' },
+    { id: 'geography',  label: '🗺️ Geography & Maps' },
+    { id: 'gazetteer',  label: '📍 Gazetteer' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'lore';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'lore')           renderWorld(wrap, plugin);
+  else if (sub === 'geography') renderGeography(wrap, plugin);
+  else if (sub === 'gazetteer') renderGazetteer(wrap, plugin);
+  else renderWorld(wrap, plugin);
+}
+
+function renderCastPowers(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'npcs',            label: '👤 NPCs & Creatures' },
+    { id: 'factions',        label: '⚔️ Factions' },
+    { id: 'noble-families',  label: '🏰 Noble Families' },
+    { id: 'matrix',          label: '🕸️ Relationship Matrix' },
+    { id: 'hybrid-ancestry', label: '🧬 Hybrid Ancestry' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'npcs';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'npcs')                renderNpcs(wrap, plugin);
+  else if (sub === 'factions')       renderFactions(wrap, plugin);
+  else if (sub === 'noble-families') renderNobleFamiliesSection(wrap, plugin);
+  else if (sub === 'matrix')         renderRelationshipMatrix(wrap, plugin);
+  else if (sub === 'hybrid-ancestry') renderHybridAncestry(wrap, plugin);
+  else renderNpcs(wrap, plugin);
+}
+
+function renderNobleFamiliesSection(main, plugin) {
+  const state = plugin.state;
+  const camp = activeCampaign(state);
+  pageHead(main, plugin, 'Noble Families', 'Aristocratic lineages, dynasties, and houses of power.', [
+    { label: '+ Noble Family', onClick: () => new GenericModal(plugin.app, plugin, 'nobleFamilies').open() },
+  ]);
+  const items = safeArr(state.entities.nobleFamilies).filter(f => !camp || f.campaignId === camp.id);
+  if (!items.length) { ce(main, 'p', 'te-empty', 'No noble families yet.'); return; }
+  const tbl = ce(main, 'div', 'te-list');
+  items.forEach(f => {
+    const row = ce(tbl, 'div', 'te-list-item');
+    ce(row, 'span', 'te-list-name', f.name || 'Unnamed Family');
+    ce(row, 'span', 'te-list-meta', f.motto || '');
+    const acts = ce(row, 'div', 'te-list-actions');
+    btn(acts, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'nobleFamilies', f).open());
+    btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'nobleFamilies', f.id); await plugin.saveState(); });
+  });
+}
+
+function renderAdventurePlanner(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'adventures',  label: '📝 Adventures' },
+    { id: 'encounters',  label: '🎯 Encounters' },
+    { id: 'downtime',    label: '⏳ Downtime & Bases' },
+    { id: 'war-machine', label: '🔧 War Machine' },
+    { id: 'endgame',     label: '🌋 Endgame' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'adventures';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'adventures')       renderAdventure(wrap, plugin);
+  else if (sub === 'encounters')  renderEncounters(wrap, plugin);
+  else if (sub === 'downtime')    renderDowntime(wrap, plugin);
+  else if (sub === 'war-machine') renderWarMachine(wrap, plugin);
+  else if (sub === 'endgame')     renderEndgame(wrap, plugin);
+  else renderAdventure(wrap, plugin);
+}
+
+function renderSecretsHandouts(main, plugin) {
+  renderSecrets(main, plugin);
+}
+
+function renderCompendiumLibrary(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'compendium', label: '📚 Compendium' },
+    { id: 'reference',  label: '📖 5e Reference' },
+    { id: 'homebrew',   label: '🧪 Homebrew' },
+    { id: 'my-content', label: '📊 My Content' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'compendium';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'compendium')     renderLibrary(wrap, plugin);
+  else if (sub === 'reference') renderReference(wrap, plugin);
+  else if (sub === 'homebrew')  renderHomebrew(wrap, plugin);
+  else if (sub === 'my-content') renderMyContent(wrap, plugin);
+  else renderLibrary(wrap, plugin);
+}
+
+function renderMyContent(main, plugin) {
+  const state = plugin.state;
+  pageHead(main, plugin, 'My Content', 'Overview of everything you have created in this campaign.');
+  const ENTITY_NAV = {
+    campaigns:'campaign-command', worlds:'world-atlas', cosmologies:'world-atlas', realms:'world-atlas',
+    regions:'world-atlas', settlements:'world-atlas', locations:'world-atlas', pois:'world-atlas',
+    routes:'world-atlas', npcs:'cast-powers', creatures:'cast-powers', bbegs:'cast-powers',
+    factions:'cast-powers', cultures:'world-atlas', languages:'world-atlas',
+    deities:'world-atlas', pantheons:'world-atlas', nations:'world-atlas', religions:'world-atlas',
+    quests:'adventure-planner', adventures:'adventure-planner', encounters:'adventure-planner',
+    sessions:'campaign-command', milestones:'campaign-command', secrets:'secrets-handouts',
+    handouts:'secrets-handouts', homebrew:'compendium-library', tables:'compendium-library',
+    compendium:'compendium-library', rules:'compendium-library',
+    maps:'world-atlas', dungeons:'world-atlas', nobleFamilies:'cast-powers',
+    hybridAncestries:'cast-powers', timers:'adventure-planner', enemyTemplates:'adventure-planner',
+    acts:'adventure-planner', domains:'world-atlas',
+  };
+  const sg = ce(main, 'div', 'te-stat-grid');
+  const skip = new Set(['characters','journals','calendars','projects','bastions','compendium','tables','rules','conditions','damageTypes','homebrew','generatorHistory','diceHistory']);
+  Object.entries(state.entities).forEach(([key, arr]) => {
+    if (skip.has(key) || !Array.isArray(arr) || arr.length === 0) return;
+    const c = ce(sg, 'div', 'te-stat-card te-stat-card--link');
+    ce(c, 'div', 'te-stat-big', arr.length);
+    ce(c, 'div', 'te-stat-label', ENTITY_LABELS[key] || key);
+    c.addEventListener('click', async () => {
+      const dest = ENTITY_NAV[key];
+      if (dest) { state.activeSection = dest; state.activeSubSection = ''; await plugin.saveState(); }
+    });
+  });
+}
+
+function renderSettingsTools(main, plugin) {
+  const state = plugin.state;
+  const tabs = [
+    { id: 'diagnostics', label: '🔬 Diagnostics' },
+    { id: 'repair',      label: '🔧 Repair & Reindex' },
+    { id: 'backup',      label: '💾 Backup & Export' },
+    { id: 'import',      label: '📥 Import' },
+    { id: 'settings',    label: '⚙️ Settings' },
+  ];
+  workspaceTabs(main, tabs, plugin);
+  const sub = state.activeSubSection || 'diagnostics';
+  const wrap = ce(main, 'div', 'te-workspace-content');
+  if (sub === 'diagnostics') renderDiagnosticsPanel(wrap, plugin);
+  else if (sub === 'repair') renderRepairPanel(wrap, plugin);
+  else if (sub === 'backup') renderBackupPanel(wrap, plugin);
+  else if (sub === 'import') renderImportPanel(wrap, plugin);
+  else if (sub === 'settings') renderSettingsPanel(wrap, plugin);
+  else renderDiagnosticsPanel(wrap, plugin);
+}
+
+function renderDiagnosticsPanel(main, plugin) {
+  pageHead(main, plugin, 'Diagnostics', 'Scan your data for issues.');
+  let resultsDiv = null;
+  btn(main, '🔬 Run Diagnostics', 'te-btn is-primary', async () => {
+    if (resultsDiv) resultsDiv.remove();
+    resultsDiv = ce(main, 'div', 'te-diagnostics-results');
+    const result = await runDiagnostics(plugin);
+    if (result.issues.length === 0) {
+      ce(resultsDiv, 'p', 'te-success', '✅ No issues found.');
+    } else {
+      ce(resultsDiv, 'h3', '', `⚠️ ${result.issues.length} issue(s) found:`);
+      result.issues.forEach(i => ce(resultsDiv, 'p', 'te-issue', i));
+    }
+    if (result.info.length) {
+      ce(resultsDiv, 'h3', '', 'Info:');
+      result.info.forEach(i => ce(resultsDiv, 'p', 'te-info', i));
+    }
+  });
+}
+
+function renderRepairPanel(main, plugin) {
+  pageHead(main, plugin, 'Repair & Reindex', 'Fix missing IDs, broken references, and migrate legacy fields.');
+  btn(main, '🔧 Run Repair & Reindex', 'te-btn is-primary', async () => {
+    const issues = repairAndReindex(plugin.state);
+    await plugin.saveState();
+    const out = ce(main, 'div', 'te-repair-results');
+    ce(out, 'p', 'te-success', `✅ Repair complete. ${issues.length} item(s) processed.`);
+    issues.slice(0, 20).forEach(i => ce(out, 'p', 'te-info', i));
+  });
+}
+
+function renderBackupPanel(main, plugin) {
+  pageHead(main, plugin, 'Backup & Export', 'Export your full campaign data as JSON.');
+  btn(main, '💾 Export Full Backup', 'te-btn is-primary', () => {
+    const blob = JSON.stringify({ version: plugin.state.version, timestamp: new Date().toISOString(), state: plugin.state }, null, 2);
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(blob);
+    a.download = 'ttrpg-engine-backup.json';
+    a.click();
+  });
+}
+
+function renderImportPanel(main, plugin) {
+  pageHead(main, plugin, 'Import', 'Import campaign data from a JSON backup.');
+  const file = ce(main, 'input', '');
+  file.type = 'file';
+  file.accept = '.json';
+  btn(main, '📥 Import File', 'te-btn is-primary', () => file.click());
+}
+
+function renderSettingsPanel(main, plugin) {
+  pageHead(main, plugin, 'Settings', 'Plugin configuration and preferences.');
+  ce(main, 'p', 'te-muted', 'Settings configuration available in this panel.');
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
