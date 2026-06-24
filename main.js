@@ -1791,10 +1791,10 @@ function compileEndSessionReview(session, state) {
   const byType = t => log.filter(e => e.type === t).map(e => e.text);
   const npcs = byType('NPC Met'), locations = byType('Location Visited');
   const secrets = byType('Secret Revealed'), quests = byType('Quest Advanced');
-  const loot = byType('Loot Awarded'), timersLog = byType('Timer Advanced');
+  const loot = [...byType('Loot Awarded'), ...byType('Loot Generated')], timersLog = byType('Timer Advanced');
   const notes = byType('Note'), hooks = byType('Next Hook');
   const decisions = byType('Player Decision'), consequences = byType('Consequence');
-  const combatStart = byType('Combat Started'), genResults = byType('Generator Result');
+  const combatStart = byType('Combat Started'), genResults = [...byType('Generator Result'), ...byType('Generator Used')];
   const activeTimers = safeArr(state.entities.timers).filter(t => !campId || t.campaignId === campId);
   const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!campId || q.campaignId === campId));
   const sections = [
@@ -1851,6 +1851,11 @@ function compileEndSessionReview(session, state) {
   addSection('Active Timers (End State)', activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`));
   addSection('Open Quests', activeQuests.map(q => q.name));
   addSection('Next Session Hooks', hooks);
+  if (session.notes && session.notes.trim()) {
+    lines.push('## Scratchpad Notes');
+    lines.push(session.notes.trim());
+    lines.push('');
+  }
 
   // Chronological log
   if (log.length) {
@@ -5101,7 +5106,7 @@ function renderRunSession(main, plugin, tabs) {
     const ctxH = ce(ctxCard, 'div', 'te-card-head'); ce(ctxH, 'span', 'te-card-icon', '🎯'); ce(ctxH, 'h3', 'te-card-title', 'Session Context');
     const ctxGrid = ce(ctxCard, 'div', 'te-stat-grid');
 
-    const makeCtxSelect = (label, key, entityKey, nameField = 'name') => {
+    const makeCtxSelect = (label, key, entityKey, logType, nameField = 'name') => {
       const sc = ce(ctxGrid, 'div', 'te-stat-card');
       ce(sc, 'div', 'te-stat-label', label);
       const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
@@ -5109,10 +5114,125 @@ function renderRunSession(main, plugin, tabs) {
       const items = safeArr(state.entities[entityKey]).filter(x => !state.activeCampaignId || x.campaignId === state.activeCampaignId);
       items.forEach(x => { const o = ce(sel, 'option', '', x[nameField] || x.name || x.id); o.value = x.id; });
       sel.value = ctx[key] || '';
-      sel.addEventListener('change', async () => { ctx[key] = sel.value; upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); });
+      sel.addEventListener('change', async () => {
+        const prev = ctx[key];
+        ctx[key] = sel.value;
+        if (logType && sel.value !== prev) {
+          const chosen = items.find(x => x.id === sel.value);
+          if (chosen) logSessionEvent(plugin, logType, chosen.name || sel.value);
+        }
+        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+      });
     };
-    makeCtxSelect('Current Location', 'currentLocationId', 'locations');
-    makeCtxSelect('Current Map', 'currentMapId', 'tileMaps');
+    makeCtxSelect('Current Location', 'currentLocationId', 'locations', 'Location Changed');
+    makeCtxSelect('Current Map', 'currentMapId', 'tileMaps', null);
+
+    // Active NPCs chip control
+    const npcCtxWrap = ce(ctxCard, 'div', ''); npcCtxWrap.style.marginTop = '8px';
+    const npcCtxLabel = ce(npcCtxWrap, 'div', 'te-stat-label', 'Active NPCs'); npcCtxLabel.style.marginBottom = '4px';
+    const activeNpcChips = ce(npcCtxWrap, 'div', 'te-chip-row');
+    const rebuildNpcChips = () => {
+      clear(activeNpcChips);
+      safeArr(ctx.activeNpcIds).forEach((npcId, i) => {
+        const npc = safeArr(state.entities.npcs).find(n => n.id === npcId);
+        if (!npc) return;
+        const chip = ce(activeNpcChips, 'span', 'te-chip', npc.name);
+        const x = ce(chip, 'button', 'te-chip-x', '×');
+        x.title = 'Remove from scene';
+        x.addEventListener('click', async () => {
+          ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+          logSessionEvent(plugin, 'NPC Deactivated', npc.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildNpcChips();
+        });
+        // Mark dead button
+        const deadBtn = ce(chip, 'button', 'te-chip-x', '💀');
+        deadBtn.title = 'Mark dead'; deadBtn.style.marginLeft = '2px';
+        deadBtn.addEventListener('click', async () => {
+          npc.status = 'Dead'; upsert(state, 'npcs', npc);
+          ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+          logSessionEvent(plugin, 'NPC Died', npc.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildNpcChips();
+        });
+      });
+    };
+    rebuildNpcChips();
+    const npcAddRow = ce(npcCtxWrap, 'div', 'te-chip-add-row'); npcAddRow.style.marginTop = '4px';
+    const npcSearch = ce(npcAddRow, 'input'); npcSearch.type = 'text'; npcSearch.placeholder = 'Add NPC…'; npcSearch.style.flex = '1'; npcSearch.style.fontSize = '.82rem';
+    const campNpcsCtx = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
+    btn(npcAddRow, '+ Add', 'te-btn te-btn-xs is-sm', async () => {
+      const q = npcSearch.value.toLowerCase().trim();
+      const match = campNpcsCtx.find(n => (n.name||'').toLowerCase() === q) ||
+                    campNpcsCtx.find(n => (n.name||'').toLowerCase().includes(q));
+      if (!match) { new Notice('No NPC found. Try a different name.'); return; }
+      if (!safeArr(ctx.activeNpcIds).includes(match.id)) {
+        ctx.activeNpcIds = [...safeArr(ctx.activeNpcIds), match.id];
+        logSessionEvent(plugin, 'NPC Activated', match.name);
+        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        rebuildNpcChips();
+      }
+      npcSearch.value = '';
+    });
+    npcSearch.addEventListener('keydown', e => { if (e.key === 'Enter') npcAddRow.querySelector('button').click(); });
+
+    // Active Quests chip control
+    const qCtxWrap = ce(ctxCard, 'div', ''); qCtxWrap.style.marginTop = '8px';
+    const qCtxLabel = ce(qCtxWrap, 'div', 'te-stat-label', 'Active Quests'); qCtxLabel.style.marginBottom = '4px';
+    const activeQChips = ce(qCtxWrap, 'div', 'te-chip-row');
+    const rebuildQChips = () => {
+      clear(activeQChips);
+      safeArr(ctx.activeQuestIds).forEach(qId => {
+        const q = safeArr(state.entities.quests).find(x => x.id === qId);
+        if (!q) return;
+        const chip = ce(activeQChips, 'span', 'te-chip', q.name);
+        const completeBtn = ce(chip, 'button', 'te-chip-x', '✅');
+        completeBtn.title = 'Complete quest'; completeBtn.style.marginLeft = '2px';
+        completeBtn.addEventListener('click', async () => {
+          q.status = 'Completed'; upsert(state, 'quests', q);
+          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+          logSessionEvent(plugin, 'Quest Completed', q.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildQChips();
+        });
+        const failBtn = ce(chip, 'button', 'te-chip-x', '❌');
+        failBtn.title = 'Fail quest'; failBtn.style.marginLeft = '2px';
+        failBtn.addEventListener('click', async () => {
+          q.status = 'Failed'; upsert(state, 'quests', q);
+          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+          logSessionEvent(plugin, 'Quest Failed', q.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildQChips();
+        });
+        const rmQ = ce(chip, 'button', 'te-chip-x', '×');
+        rmQ.title = 'Remove from scene';
+        rmQ.addEventListener('click', async () => {
+          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+          logSessionEvent(plugin, 'Quest Deactivated', q.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildQChips();
+        });
+      });
+    };
+    rebuildQChips();
+    const qAddRow = ce(qCtxWrap, 'div', 'te-chip-add-row'); qAddRow.style.marginTop = '4px';
+    const qSearch = ce(qAddRow, 'input'); qSearch.type = 'text'; qSearch.placeholder = 'Activate quest…'; qSearch.style.flex = '1'; qSearch.style.fontSize = '.82rem';
+    const campQuests = safeArr(state.entities.quests).filter(q => !state.activeCampaignId || q.campaignId === state.activeCampaignId);
+    btn(qAddRow, '+ Add', 'te-btn te-btn-xs is-sm', async () => {
+      const qq = qSearch.value.toLowerCase().trim();
+      const match = campQuests.find(q => (q.name||'').toLowerCase() === qq) ||
+                    campQuests.find(q => (q.name||'').toLowerCase().includes(qq));
+      if (!match) { new Notice('No quest found. Try a different name.'); return; }
+      if (!safeArr(ctx.activeQuestIds).includes(match.id)) {
+        ctx.activeQuestIds = [...safeArr(ctx.activeQuestIds), match.id];
+        if (match.status !== 'Active') { match.status = 'Active'; upsert(state, 'quests', match); }
+        logSessionEvent(plugin, 'Quest Activated', match.name);
+        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        rebuildQChips();
+      }
+      qSearch.value = '';
+    });
+    qSearch.addEventListener('keydown', e => { if (e.key === 'Enter') qAddRow.querySelector('button').click(); });
   }
 
   sectionHead(main, 'Initiative Tracker');
@@ -5168,22 +5288,26 @@ function renderRunSession(main, plugin, tabs) {
   diceResultEl.style.cssText = 'min-height:36px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:1.1rem;font-weight:600';
   const quickDice = ce(diceWrap, 'div', 'te-card-actions'); quickDice.style.flexWrap = 'wrap';
   ['d4','d6','d8','d10','d12','d20','d100'].forEach(d => {
-    btn(quickDice, d, 'te-btn is-sm', () => {
+    btn(quickDice, d, 'te-btn is-sm', async () => {
       const sides = parseInt(d.slice(1));
       const roll = Math.floor(Math.random() * sides) + 1;
-      diceResultEl.textContent = `${d}: ${roll}`;
+      const resultText = `${d}: ${roll}`;
+      diceResultEl.textContent = resultText;
+      if (activeSess) { logSessionEvent(plugin, 'Dice Rolled', resultText); await saveStateQuiet(plugin); }
     });
   });
   const formulaRow = ce(diceWrap, 'div', 'te-chip-add-row'); formulaRow.style.marginTop = '8px';
   const formulaInp = ce(formulaRow, 'input'); formulaInp.type = 'text'; formulaInp.placeholder = '2d6+3'; formulaInp.style.flex = '1';
-  btn(formulaRow, 'Roll', 'te-btn is-primary', () => {
+  btn(formulaRow, 'Roll', 'te-btn is-primary', async () => {
     const f = formulaInp.value.trim() || '1d20';
     const match = f.match(/^(\d+)d(\d+)([+-]\d+)?$/i);
     if (!match) { diceResultEl.textContent = 'Invalid formula (use NdN or NdN±M)'; return; }
     const count = Math.max(1, Math.min(100, parseInt(match[1]))), sides = parseInt(match[2]), mod = parseInt(match[3] || 0);
     const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
     const total = rolls.reduce((a, b) => a + b, 0) + mod;
-    diceResultEl.textContent = `${f} → ${total}${count > 1 ? ` (${rolls.join(', ')}${mod !== 0 ? ` ${mod > 0 ? '+' : ''}${mod}` : ''})` : ''}`;
+    const resultText = `${f} → ${total}${count > 1 ? ` (${rolls.join(', ')}${mod !== 0 ? ` ${mod > 0 ? '+' : ''}${mod}` : ''})` : ''}`;
+    diceResultEl.textContent = resultText;
+    if (activeSess) { logSessionEvent(plugin, 'Dice Rolled', resultText); await saveStateQuiet(plugin); }
   });
   formulaInp.addEventListener('keydown', e => { if (e.key === 'Enter') formulaRow.querySelector('button').click(); });
 
@@ -5209,7 +5333,7 @@ function renderRunSession(main, plugin, tabs) {
     lastGenResult = generate(lastGenType, state);
     genResultEl.textContent = lastGenResult;
     saveAsBtn.style.display = ['NPC Name','Faction Name','Quest Hook'].includes(lastGenType) ? '' : 'none';
-    logToSessBtn.style.display = lastGenType === 'Loot' ? '' : 'none';
+    logToSessBtn.style.display = activeSess ? '' : 'none';
   });
   const saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
     if (!lastGenResult) return;
@@ -5219,10 +5343,11 @@ function renderRunSession(main, plugin, tabs) {
   });
   saveAsBtn.style.display = 'none';
   const logToSessBtn = btn(genActRow, 'Log to Session', 'te-btn', async () => {
-    if (!lastGenResult) return;
-    logSessionEvent(plugin, 'Loot Awarded', lastGenResult);
+    if (!lastGenResult || !activeSess) return;
+    const evtType = lastGenType === 'Loot' ? 'Loot Generated' : 'Generator Used';
+    logSessionEvent(plugin, evtType, `[${lastGenType}] ${lastGenResult}`);
     await saveStateQuiet(plugin);
-    new Notice('Loot logged to session.');
+    new Notice('Logged to session.');
   });
   logToSessBtn.style.display = 'none';
 
