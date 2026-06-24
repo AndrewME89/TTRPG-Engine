@@ -519,7 +519,7 @@ function createDefaultState() {
     activeCampaignId: '',
     search: '',
     calendar: { name: '', year: 1, month: '', day: 1, moons: '', seasons: '', holidays: '' },
-    settings: { compact: false },
+    settings: { compact: false, noteRootFolder: 'TTRPG Engine', noteFolderMode: 'workspace', nestLocationsUnderParents: true, nestQuestsUnderAdventures: false },
     initiativeTracker: { combatants: [], currentIndex: 0, round: 1, active: false },
     tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map', gridSize: 60, width: 1800, height: 1200, assetRoot: TILE_ASSET_ROOT, selectedMapId: '', mapId: '', distanceScale: '5 ft', linkedRegionId: '', linkedSettlementId: '', linkedLocationId: '', linkedDungeonId: '', linkedPoiId: '', linkedEncounterId: '', linkedSessionId: '' },
     playerTab: 'overview',
@@ -639,6 +639,14 @@ function migrateState(state) {
 // ── Utilities ────────────────────────────────────────────────────────────────
 function uid(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
 function slugify(v) { return String(v || 'untitled').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim().replace(/\s+/g, '-').slice(0, 80) || 'untitled'; }
+function safeFileName(name, fallback) {
+  const cleaned = String(name || fallback || 'Untitled')
+    .replace(/[\\/:*?"<>|#^[\]]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+  return cleaned || String(fallback || 'Untitled');
+}
 function ce(parent, tag, cls, text) {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
@@ -663,9 +671,18 @@ function toTitleCase(s) {
   return String(s || '').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim()
     .replace(/\b\w/g, c => c.toUpperCase()).slice(0, 100) || 'Untitled';
 }
+function noteRoot(plugin) {
+  return safeFileName(plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+}
 function campaignFolder(plugin) {
   const c = activeCampaign(plugin.state);
-  return c ? (toTitleCase(c.name) || 'Unassigned') : 'Unassigned';
+  const cName = c ? (safeFileName(c.name, 'Unassigned')) : 'Unassigned';
+  const mode = plugin.state.settings.noteFolderMode || 'workspace';
+  if (mode === 'legacy') return cName;
+  return `${noteRoot(plugin)}/Campaigns/${cName}`;
+}
+function globalFolder(plugin) {
+  return `${noteRoot(plugin)}/Global`;
 }
 function modifier(score) { return Math.floor((Number(score || 10) - 10) / 2); }
 function modStr(score) { const m = modifier(score); return (m >= 0 ? '+' : '') + m; }
@@ -868,11 +885,200 @@ function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) 
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────
-async function ensureFolder(app, path) {
-  try {
-    const norm = normalizePath(path);
-    if (!(await app.vault.adapter.exists(norm))) await app.vault.createFolder(norm);
-  } catch {}
+// ── Workspace-based entity note folder map ────────────────────────────────────
+const ENTITY_NOTE_FOLDERS = {
+  // Campaign Command Centre
+  campaigns:       'Campaign Command Centre/Campaign Overview',
+  acts:            'Campaign Command Centre/Acts',
+  milestones:      'Campaign Command Centre/Milestones',
+  // World Atlas
+  worlds:          'World Atlas/Worlds',
+  cosmologies:     'World Atlas/Cosmology',
+  realms:          'World Atlas/Realms',
+  regions:         'World Atlas/Regions',
+  nations:         'World Atlas/Nations',
+  domains:         'World Atlas/Domains',
+  settlements:     'World Atlas/Settlements',
+  districts:       'World Atlas/Districts',
+  locations:       'World Atlas/Locations',
+  dungeons:        'World Atlas/Dungeons',
+  rooms:           'World Atlas/Dungeons/Rooms',
+  pois:            'World Atlas/Points of Interest',
+  routes:          'World Atlas/Routes',
+  maps:            'World Atlas/Maps',
+  // Cast & Powers
+  npcs:            'Cast & Powers/NPCs',
+  creatures:       'Cast & Powers/Creatures',
+  bbegs:           'Cast & Powers/BBEGs',
+  factions:        'Cast & Powers/Factions',
+  nobleFamilies:   'Cast & Powers/Noble Families',
+  hybridAncestries:'Cast & Powers/Hybrid Ancestries',
+  cultures:        'Cast & Powers/Cultures',
+  languages:       'Cast & Powers/Languages',
+  religions:       'Cast & Powers/Religions',
+  pantheons:       'Cast & Powers/Pantheons',
+  deities:         'Cast & Powers/Deities',
+  // Adventure Planner
+  adventures:      'Adventure Planner/Adventures',
+  quests:          'Adventure Planner/Quests',
+  encounters:      'Adventure Planner/Encounters',
+  loot:            'Adventure Planner/Loot',
+  // Sessions
+  sessions:        'Sessions/Session Logs',
+  timelines:       'Sessions/Timeline',
+  calendars:       'Sessions/Calendar',
+  // Secrets & Handouts
+  secrets:         'Secrets & Handouts/Secrets',
+  reveals:         'Secrets & Handouts/Reveals',
+  handouts:        'Secrets & Handouts/Handouts',
+  // Compendium
+  compendium:      'Compendium/My Content',
+  homebrew:        'Compendium/Homebrew',
+  tables:          'Compendium/Roll Tables',
+  rules:           'Compendium/Rules & Mechanics',
+};
+
+// Settlement type subfolder map
+const SETTLEMENT_TYPE_FOLDERS = {
+  hamlet: 'Hamlets', village: 'Villages', town: 'Towns',
+  city: 'Cities', capital: 'Capitals', metropolis: 'Cities',
+};
+
+/**
+ * Resolve the full vault note path for an entity.
+ * @param {string} entityType  - entity collection key (e.g. 'npcs')
+ * @param {object} entity      - the entity object
+ * @param {object} state       - plugin state
+ * @param {object} plugin      - plugin instance (for settings/root)
+ * @returns {string}           - full vault-relative path including .md extension
+ */
+function resolveEntityNotePath(entityType, entity, state, plugin) {
+  const mode = state.settings.noteFolderMode || 'workspace';
+  const root = safeFileName(state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+  const name = safeFileName(entity.name || entity.title || entity.id, 'Untitled');
+
+  // Legacy mode: old flat paths
+  if (mode === 'legacy') {
+    const camp = activeCampaign(state);
+    const campFolder = camp ? safeFileName(camp.name, 'Unassigned') : 'Unassigned';
+    const sub = ENTITY_FOLDER_LABELS[entityType] || entityType;
+    return normalizePath(`${campFolder}/${sub}/${name}.md`);
+  }
+
+  // Flat mode: root/EntityFolder/name.md (no campaign subfolder)
+  if (mode === 'flat') {
+    const sub = ENTITY_NOTE_FOLDERS[entityType] || (ENTITY_FOLDER_LABELS[entityType] || entityType);
+    return normalizePath(`${root}/${sub}/${name}.md`);
+  }
+
+  // Workspace mode (default): root/Campaigns/{Campaign}/{Workspace}/{Sub}/{name}.md
+  const camp = activeCampaign(state);
+  const campName = camp ? safeFileName(camp.name, 'Unassigned') : 'Unassigned';
+  const campBase = `${root}/Campaigns/${campName}`;
+  const workspaceFolder = ENTITY_NOTE_FOLDERS[entityType];
+
+  if (!workspaceFolder) {
+    // Unmapped type: put in Compendium/My Content
+    return normalizePath(`${campBase}/Compendium/My Content/${name}.md`);
+  }
+
+  // Parent-aware nesting for specific types
+  const nestLocations = state.settings.nestLocationsUnderParents !== false;
+  const nestQuests = state.settings.nestQuestsUnderAdventures === true;
+
+  if (entityType === 'settlements' && entity.type) {
+    const typeKey = String(entity.type).toLowerCase();
+    const typeFolder = SETTLEMENT_TYPE_FOLDERS[typeKey];
+    if (typeFolder) return normalizePath(`${campBase}/World Atlas/Settlements/${typeFolder}/${name}.md`);
+  }
+
+  if (entityType === 'locations' && nestLocations) {
+    if (entity.settlementId) {
+      const settlement = safeArr(state.entities.settlements).find(s => s.id === entity.settlementId);
+      if (settlement) {
+        const sName = safeFileName(settlement.name, 'Settlement');
+        const typeKey = String(settlement.type || '').toLowerCase();
+        const typeFolder = SETTLEMENT_TYPE_FOLDERS[typeKey];
+        const sFolder = typeFolder ? `Settlements/${typeFolder}/${sName}` : `Settlements/${sName}`;
+        return normalizePath(`${campBase}/World Atlas/${sFolder}/Locations/${name}.md`);
+      }
+    }
+    if (entity.regionId) {
+      const region = safeArr(state.entities.regions).find(r => r.id === entity.regionId);
+      if (region) {
+        return normalizePath(`${campBase}/World Atlas/Regions/${safeFileName(region.name, 'Region')}/Locations/${name}.md`);
+      }
+    }
+  }
+
+  if (entityType === 'districts' && nestLocations) {
+    if (entity.settlementId) {
+      const settlement = safeArr(state.entities.settlements).find(s => s.id === entity.settlementId);
+      if (settlement) {
+        const sName = safeFileName(settlement.name, 'Settlement');
+        const typeKey = String(settlement.type || '').toLowerCase();
+        const typeFolder = SETTLEMENT_TYPE_FOLDERS[typeKey];
+        const sFolder = typeFolder ? `Settlements/${typeFolder}/${sName}` : `Settlements/${sName}`;
+        return normalizePath(`${campBase}/World Atlas/${sFolder}/Districts/${name}.md`);
+      }
+    }
+  }
+
+  if (entityType === 'pois' && nestLocations) {
+    const ref = entity.locationRef || {};
+    if (ref.entityType === 'regions' || entity.regionId) {
+      const regionId = entity.regionId || ref.entityId;
+      const region = safeArr(state.entities.regions).find(r => r.id === regionId);
+      if (region) return normalizePath(`${campBase}/World Atlas/Regions/${safeFileName(region.name, 'Region')}/Points of Interest/${name}.md`);
+    }
+    if (ref.entityType === 'settlements' || entity.settlementId) {
+      const settlementId = entity.settlementId || ref.entityId;
+      const settlement = safeArr(state.entities.settlements).find(s => s.id === settlementId);
+      if (settlement) {
+        const sName = safeFileName(settlement.name, 'Settlement');
+        return normalizePath(`${campBase}/World Atlas/Settlements/${sName}/Points of Interest/${name}.md`);
+      }
+    }
+  }
+
+  if (entityType === 'rooms' && nestLocations) {
+    if (entity.dungeonId) {
+      const dungeon = safeArr(state.entities.dungeons).find(d => d.id === entity.dungeonId);
+      if (dungeon) return normalizePath(`${campBase}/World Atlas/Dungeons/${safeFileName(dungeon.name, 'Dungeon')}/Rooms/${name}.md`);
+    }
+    if (entity.locationId) {
+      const location = safeArr(state.entities.locations).find(l => l.id === entity.locationId);
+      if (location) return normalizePath(`${campBase}/World Atlas/Locations/${safeFileName(location.name, 'Location')}/Rooms/${name}.md`);
+    }
+  }
+
+  if (entityType === 'quests' && nestQuests && entity.adventureId) {
+    const adv = safeArr(state.entities.adventures).find(a => a.id === entity.adventureId);
+    if (adv) return normalizePath(`${campBase}/Adventure Planner/Adventures/${safeFileName(adv.name, 'Adventure')}/Quests/${name}.md`);
+  }
+
+  if (entityType === 'encounters' && nestQuests) {
+    if (entity.adventureId) {
+      const adv = safeArr(state.entities.adventures).find(a => a.id === entity.adventureId);
+      if (adv) return normalizePath(`${campBase}/Adventure Planner/Adventures/${safeFileName(adv.name, 'Adventure')}/Encounters/${name}.md`);
+    }
+  }
+
+  return normalizePath(`${campBase}/${workspaceFolder}/${name}.md`);
+}
+
+async function ensureFolder(app, folderPath) {
+  if (!folderPath || !folderPath.trim()) return;
+  const norm = normalizePath(folderPath);
+  // Create each path segment recursively
+  const parts = norm.split('/').filter(p => p.length > 0);
+  let current = '';
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    try {
+      if (!(await app.vault.adapter.exists(current))) await app.vault.createFolder(current);
+    } catch {}
+  }
 }
 async function writeNote(app, path, content) {
   const norm = normalizePath(path);
@@ -1042,15 +1248,27 @@ const ENTITY_MD_TEMPLATES = {
     return b;
   },
 };
-function entityMd(key, item) {
-  const FM_KEYS = ['name','title','status','type','campaignId','visibility','updatedAt'];
-  const lines = ['---'];
+function entityMd(key, item, plugin) {
+  const state = plugin ? plugin.state : null;
+  const camp = state ? activeCampaign(state) : null;
+  const workspace = ENTITY_NOTE_FOLDERS[key] ? ENTITY_NOTE_FOLDERS[key].split('/')[0] : '';
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = ['---', 'ttrpg-engine: true'];
+  lines.push(`entityType: ${key}`);
+  if (item.id) lines.push(`entityId: ${item.id}`);
+  if (item.campaignId || (camp && camp.id)) lines.push(`campaignId: ${item.campaignId || camp.id}`);
+  if (camp) lines.push(`campaign: "${safeFileName(camp.name, '')}"`);
+  if (workspace) lines.push(`workspace: ${workspace}`);
+  const FM_KEYS = ['name','title','status','type','visibility'];
   FM_KEYS.forEach(k => {
     if (item[k] !== undefined && item[k] !== '') {
       const val = Array.isArray(item[k]) ? item[k].join(', ') : String(item[k] || '');
-      lines.push(`${k}: ${val}`);
+      lines.push(`${k}: "${val}"`);
     }
   });
+  lines.push(`createdBy: TTRPG Engine`);
+  lines.push(`createdAt: ${(item.createdAt || '').slice(0, 10) || today}`);
+  lines.push(`updatedAt: ${(item.updatedAt || '').slice(0, 10) || today}`);
   lines.push('---', '');
   const tmpl = ENTITY_MD_TEMPLATES[key];
   if (tmpl) lines.push(tmpl(item));
@@ -1058,13 +1276,10 @@ function entityMd(key, item) {
   return lines.join('\n');
 }
 async function writeEntityNote(plugin, key, item) {
-  const folder = campaignFolder(plugin);
-  const subFolder = ENTITY_FOLDER_LABELS[key] || key;
-  const dir = `${folder}/${subFolder}`;
-  await ensureFolder(plugin.app, folder);
+  const path = resolveEntityNotePath(key, item, plugin.state, plugin);
+  const dir = path.replace(/\/[^/]+\.md$/, '');
   await ensureFolder(plugin.app, dir);
-  const path = `${dir}/${slugify(item.name || item.title || item.id)}.md`;
-  await writeNote(plugin.app, path, entityMd(key, item));
+  await writeNote(plugin.app, path, entityMd(key, item, plugin));
   item.lastSynced = new Date().toISOString();
   item.syncStatus = 'Synced';
   upsert(plugin.state, key, item);
@@ -1074,7 +1289,7 @@ async function writeEntityNote(plugin, key, item) {
 async function exportPlayerSafePacket(plugin) {
   const state = plugin.state;
   const folder = campaignFolder(plugin);
-  const dir = `${folder}/Player Packet`;
+  const dir = `${folder}/Secrets & Handouts/Player Packets`;
   await ensureFolder(plugin.app, folder);
   await ensureFolder(plugin.app, dir);
   const camp = activeCampaign(state);
@@ -1102,7 +1317,7 @@ async function exportPlayerSafePacket(plugin) {
 }
 async function exportBackup(plugin) {
   const folder = campaignFolder(plugin);
-  const dir = `${folder}/Backups`;
+  const dir = `${folder}/Campaign Command Centre/Exports`;
   await ensureFolder(plugin.app, folder);
   await ensureFolder(plugin.app, dir);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -2354,6 +2569,71 @@ class TTRPGMainView extends ItemView {
   }
 }
 
+// ── Note migration diagnostic ─────────────────────────────────────────────────
+async function diagnoseLegacyNotes(plugin) {
+  const app = plugin.app;
+  const state = plugin.state;
+  const root = safeFileName(state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+  const camp = activeCampaign(state);
+  if (!camp) return { found: [], report: 'No active campaign — cannot scan legacy paths.' };
+
+  const legacyBase = safeFileName(camp.name, 'Unassigned');
+  const found = [];
+
+  // Check each entity type for notes at legacy paths
+  for (const [key, arr] of Object.entries(state.entities)) {
+    if (!Array.isArray(arr)) continue;
+    const legacyFolder = ENTITY_FOLDER_LABELS[key] || key;
+    for (const item of arr) {
+      const name = safeFileName(item.name || item.title || item.id, 'Untitled');
+      const legacyPath = normalizePath(`${legacyBase}/${legacyFolder}/${slugify(item.name || item.title || item.id)}.md`);
+      const newPath = resolveEntityNotePath(key, item, state, plugin);
+      if (legacyPath !== newPath) {
+        const exists = await app.vault.adapter.exists(legacyPath);
+        if (exists) {
+          found.push({ entityType: key, entityId: item.id, name, legacyPath, newPath });
+        }
+      }
+    }
+  }
+
+  const lines = [`# TTRPG Engine — Legacy Note Scan`, `*Scanned: ${new Date().toLocaleDateString()}*`, ''];
+  lines.push(`Campaign: **${camp.name}**`);
+  lines.push(`Notes found at legacy paths: **${found.length}**`, '');
+
+  if (found.length === 0) {
+    lines.push('✅ No legacy notes found outside the configured workspace structure.');
+  } else {
+    lines.push('> **Note:** Migration is user-triggered. This report is read-only.', '');
+    lines.push('| Entity Type | Name | Legacy Path | New Path |');
+    lines.push('|---|---|---|---|');
+    found.forEach(f => {
+      lines.push(`| ${f.entityType} | ${f.name} | \`${f.legacyPath}\` | \`${f.newPath}\` |`);
+    });
+  }
+
+  return { found, report: lines.join('\n') };
+}
+
+async function migrateLegacyNotes(plugin) {
+  const { found } = await diagnoseLegacyNotes(plugin);
+  const moved = [], skipped = [];
+
+  for (const f of found) {
+    const destExists = await plugin.app.vault.adapter.exists(f.newPath);
+    if (destExists) { skipped.push(f); continue; }
+    try {
+      const dir = f.newPath.replace(/\/[^/]+\.md$/, '');
+      await ensureFolder(plugin.app, dir);
+      const file = plugin.app.vault.getAbstractFileByPath(f.legacyPath);
+      if (file) { await plugin.app.vault.rename(file, f.newPath); moved.push(f); }
+      else skipped.push(f);
+    } catch { skipped.push(f); }
+  }
+
+  return { moved, skipped };
+}
+
 // ── Repair & reindex ──────────────────────────────────────────────────────────
 function repairAndReindex(state) {
   const issues = [];
@@ -2708,6 +2988,30 @@ function renderDiagnosticsPanel(main, plugin) {
     if (result.info.length) {
       ce(resultsDiv, 'h3', '', 'Info:');
       result.info.forEach(i => ce(resultsDiv, 'p', 'te-info', i));
+    }
+  });
+  sectionHead(main, 'Vault Note Migration');
+  ce(main, 'p', 'te-muted', 'Scan for notes saved at legacy (flat) paths. Existing notes are never moved automatically.');
+  let migrDiv = null;
+  btn(main, '🔍 Scan for Legacy Notes', 'te-btn', async () => {
+    if (migrDiv) migrDiv.remove();
+    migrDiv = ce(main, 'div', 'te-diagnostics-results');
+    ce(migrDiv, 'p', 'te-muted', 'Scanning vault…');
+    const { found, report } = await diagnoseLegacyNotes(plugin);
+    migrDiv.empty();
+    ce(migrDiv, 'p', found.length ? 'te-warn' : 'te-success',
+      found.length ? `Found ${found.length} note(s) at legacy paths.` : '✅ No legacy notes found.');
+    if (found.length) {
+      btn(migrDiv, '📦 Migrate to Workspace Folders', 'te-btn is-primary', async () => {
+        const { moved, skipped } = await migrateLegacyNotes(plugin);
+        ce(migrDiv, 'p', 'te-success', `✅ Moved: ${moved.length}  Skipped (already exists): ${skipped.length}`);
+      });
+      const folder = campaignFolder(plugin);
+      btn(migrDiv, '💾 Export Migration Report', 'te-btn', async () => {
+        await ensureFolder(plugin.app, `${folder}/Campaign Command Centre/Exports`);
+        await writeNote(plugin.app, normalizePath(`${folder}/Campaign Command Centre/Exports/migration-report.md`), report);
+        new Notice('Migration report exported.');
+      });
     }
   });
 }
@@ -3388,7 +3692,7 @@ function renderTileMapBuilder(parent, plugin) {
     try {
       const blob = await exportMapToPng(tmState, tileAssets);
       const buf  = await blob.arrayBuffer();
-      const pngPath = normalizePath(`${folder}/Maps/${slugify(tmState.mapName)}.png`);
+      const pngPath = normalizePath(`${folder}/World Atlas/Maps/${slugify(tmState.mapName)}.png`);
       const existing = plugin.app.vault.getAbstractFileByPath(pngPath);
       if (existing) await plugin.app.vault.modifyBinary(existing, buf);
       else          await plugin.app.vault.createBinary(pngPath, buf);
@@ -4375,7 +4679,7 @@ function renderGenerators(main, plugin) {
     } else {
       btn(acts, 'Save as Note', 'te-btn is-sm', async () => {
         h.savedAt = new Date().toISOString();
-        await writeNote(plugin.app, `${campaignFolder(plugin)}/Generated/${slugify(h.type)}-${Date.now()}.md`, `# ${h.type}\n\n${h.result}`);
+        await writeNote(plugin.app, normalizePath(`${campaignFolder(plugin)}/Compendium/Generated/${slugify(h.type)}-${Date.now()}.md`), `# ${h.type}\n\n${h.result}`);
         await plugin.saveState();
         new Notice('Saved to vault.');
       });
@@ -4491,8 +4795,10 @@ async function exportCampaignBible(plugin) {
   if (safeArr(bib.themes).length) md += `**Themes:** ${bib.themes.join(', ')}\n\n`;
   if (safeArr(bib.acts).length) { md += `## Act Structure\n\n`; bib.acts.forEach((a, i) => { md += `### Act ${i + 1}: ${a.title || ''}\n\n${a.summary || ''}\n\n`; }); }
   if (bib.playerPrimer) md += `## Player Primer\n\n${bib.playerPrimer}\n\n`;
-  await writeNote(plugin.app, `${folder}/Campaign Bible.md`, md);
-  new Notice(`Campaign Bible exported to ${folder}/Campaign Bible.md`);
+  const biblePath = `${folder}/Campaign Command Centre/Campaign Bible.md`;
+  await ensureFolder(plugin.app, `${folder}/Campaign Command Centre`);
+  await writeNote(plugin.app, biblePath, md);
+  new Notice(`Campaign Bible exported to ${biblePath}`);
 }
 
 // ── GAZETTEER (Phase 9) ────────────────────────────────────────────────────────
@@ -6653,7 +6959,9 @@ class EndSessionReviewModal extends Modal {
       });
       if (review.recap) { lines.push('## Player-Safe Recap', '', review.recap, ''); }
       const folder = campaignFolder(this.plugin);
-      await writeNote(this.plugin.app, `${folder}/Sessions/${slugify(review.sessionName)}-review.md`, lines.join('\n'));
+      const sessionDir = `${folder}/Sessions/Session Logs`;
+      await ensureFolder(this.plugin.app, sessionDir);
+      await writeNote(this.plugin.app, normalizePath(`${sessionDir}/${slugify(review.sessionName)}-review.md`), lines.join('\n'));
       new Notice('Session review exported as note.');
     });
     btn(actRow, 'Close', 'te-btn', () => this.close());
@@ -6899,6 +7207,18 @@ class SettingsModal extends Modal {
       b.setButtonText('Change Campaign').onClick(() => { this.close(); this.plugin.state.activeSection = 'campaigns'; this.plugin.saveState(); });
     });
     addToggle(contentEl, 'Compact Mode', this.values.compact, v => this.values.compact = v);
+    new Setting(contentEl).setName('Note Root Folder').setDesc('Top-level vault folder for all TTRPG Engine notes (default: TTRPG Engine).')
+      .addText(t => { t.setValue(this.values.noteRootFolder || 'TTRPG Engine'); t.onChange(v => this.values.noteRootFolder = v.trim() || 'TTRPG Engine'); });
+    new Setting(contentEl).setName('Note Folder Mode').setDesc('workspace = nested workspace folders (recommended), flat = simple folders under root, legacy = old flat structure')
+      .addDropdown(d => {
+        d.addOption('workspace', 'Workspace (recommended)');
+        d.addOption('flat', 'Flat');
+        d.addOption('legacy', 'Legacy');
+        d.setValue(this.values.noteFolderMode || 'workspace');
+        d.onChange(v => this.values.noteFolderMode = v);
+      });
+    addToggle(contentEl, 'Nest Locations Under Parent Settlements/Regions', this.values.nestLocationsUnderParents !== false, v => this.values.nestLocationsUnderParents = v);
+    addToggle(contentEl, 'Nest Quests & Encounters Under Adventures', this.values.nestQuestsUnderAdventures || false, v => this.values.nestQuestsUnderAdventures = v);
     new Setting(contentEl).setName('Kill Switch').setDesc(`Create ${KILL_SWITCH_FILES[0]} in the plugin folder to prevent loading on next restart.`);
     const diagBtn = btn(contentEl, '🔍 Diagnostic Summary', 'te-btn', () => {
       const e = this.plugin.state.entities;
@@ -7775,9 +8095,10 @@ class HybridAncestryModal extends Modal {
     btn(actRow, 'Export Player-Safe Note', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Save the hybrid first.'); return; }
       const folder = campaignFolder(this.plugin);
-      await ensureFolder(this.plugin.app, `${folder}/Hybrid Ancestries`);
-      const fname = this.values.name.replace(/[\\/:*?"<>|]/g, '_');
-      const notePath = `${folder}/Hybrid Ancestries/${fname}.md`;
+      const hybridDir = `${folder}/Cast & Powers/Hybrid Ancestries`;
+      await ensureFolder(this.plugin.app, hybridDir);
+      const fname = safeFileName(this.values.name, 'Hybrid Ancestry');
+      const notePath = normalizePath(`${hybridDir}/${fname}.md`);
       await writeNote(this.plugin.app, notePath, this._toMarkdown(true));
       this.values.linkedNotePath = notePath;
       this.values.syncStatus = 'Exported';
@@ -8066,18 +8387,35 @@ class CampaignWizardModal extends Modal {
     }
     // Create folder structure
     if (d.createFolders) {
-      const folder = slugify(d.name);
-      for (const sub of ['NPCs','Quests','Encounters','Sessions','Secrets','Handouts','Factions','Regions','Settlements','Compendium','Backups']) {
-        await ensureFolder(this.plugin.app, `${folder}/${sub}`);
+      const root = safeFileName(this.plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+      const campName = safeFileName(d.name, 'Campaign');
+      const base = `${root}/Campaigns/${campName}`;
+      for (const ws of [
+        'Campaign Command Centre/Campaign Overview',
+        'Campaign Command Centre/Acts',
+        'Campaign Command Centre/Milestones',
+        'Campaign Command Centre/Exports',
+        'World Atlas/Worlds', 'World Atlas/Regions', 'World Atlas/Settlements',
+        'World Atlas/Locations', 'World Atlas/Dungeons', 'World Atlas/Maps',
+        'Cast & Powers/NPCs', 'Cast & Powers/Factions',
+        'Adventure Planner/Adventures', 'Adventure Planner/Quests', 'Adventure Planner/Encounters',
+        'Sessions/Session Logs',
+        'Secrets & Handouts/Secrets', 'Secrets & Handouts/Handouts',
+        'Compendium/Homebrew', 'Compendium/Generated',
+      ]) {
+        await ensureFolder(this.plugin.app, `${base}/${ws}`);
       }
     }
     // Create starter note
     if (d.startingNote) {
-      const folder = slugify(d.name);
+      const root = safeFileName(this.plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+      const campName = safeFileName(d.name, 'Campaign');
+      const base = `${root}/Campaigns/${campName}`;
       let md = `# ${d.name}\n\n> ${d.tagline || ''}\n\n## Premise\n\n${d.premise || ''}\n\n`;
       if (d.playerPrimer) md += `## Player Primer\n\n${d.playerPrimer}\n\n`;
       md += `## Rules Baseline\n\n- **Ruleset:** ${d.ruleset}\n- **Levels:** ${d.levelRange}\n- **Levelling:** ${d.levellingMethod}\n- **Rests:** ${d.restRules}\n`;
-      await writeNote(this.plugin.app, `${folder}/${slugify(d.name)}.md`, md);
+      await ensureFolder(this.plugin.app, `${base}/Campaign Command Centre`);
+      await writeNote(this.plugin.app, normalizePath(`${base}/Campaign Command Centre/Campaign Overview.md`), md);
     }
     await this.plugin.saveState();
     new Notice(`Campaign "${d.name}" created!`, 5000);
