@@ -2128,7 +2128,24 @@ const REF_DATA_FILES = {
   languages: 'languages.json', conditions: 'conditions.json', deities: 'deities.json',
   actions: 'actions.json', rewards: 'rewards.json', traps: 'traps.json',
   objects: 'objects.json', vehicles: 'vehicles.json', senses: 'senses.json',
+  bestiary: 'bestiary.json', monsterFluff: 'bestiary.json',
+  classes: 'class.json', subclasses: 'class.json', classFeatures: 'class.json', subclassFeatures: 'class.json',
+  adventures: 'adventure.json', books: 'book.json', generated: 'generated.json',
 };
+function extractReferenceArray(type, raw) {
+  if (Array.isArray(raw)) return raw;
+  switch (type) {
+    case 'bestiary': return raw.monster || [];
+    case 'monsterFluff': return raw.monsterFluff || [];
+    case 'classes': return raw.class || [];
+    case 'subclasses': return raw.subclass || [];
+    case 'classFeatures': return raw.classFeature || [];
+    case 'subclassFeatures': return raw.subclassFeature || [];
+    case 'adventures': case 'books': return raw.data || [];
+    case 'generated': return Array.isArray(raw.data) ? raw.data : [];
+    default: return raw.data || [];
+  }
+}
 const SPELL_SCHOOLS = {
   A:'Abjuration', C:'Conjuration', D:'Divination', E:'Enchantment',
   I:'Illusion', N:'Necromancy', T:'Transmutation', V:'Evocation',
@@ -2149,24 +2166,38 @@ const REF_TABS = [
   { key:'vehicles',    label:'Vehicles',    icon:'🚢' },
   { key:'objects',     label:'Objects',     icon:'📦' },
   { key:'senses',      label:'Senses',      icon:'👁️' },
+  { key:'bestiary',    label:'Bestiary',    icon:'🐉' },
+  { key:'classes',     label:'Classes',     icon:'⚔️' },
+  { key:'subclasses',  label:'Subclasses',  icon:'🎓' },
+  { key:'adventures',  label:'Adventures',  icon:'📖' },
+  { key:'books',       label:'Books',       icon:'📚' },
 ];
 class ReferenceDataService {
-  constructor(plugin) { this.plugin = plugin; this._cache = {}; }
-  async get(type) {
-    if (this._cache[type]) return this._cache[type];
-    const filename = REF_DATA_FILES[type];
-    if (!filename) return [];
+  constructor(plugin) { this.plugin = plugin; this._cache = {}; this._rawCache = {}; }
+  async _loadRaw(filename) {
+    if (this._rawCache[filename] !== undefined) return this._rawCache[filename];
     try {
       const raw = await adapterRead(this.plugin.app, `${PLUGIN_DIR}/data/${filename}`);
-      this._cache[type] = JSON.parse(raw);
-    } catch { this._cache[type] = []; }
+      this._rawCache[filename] = JSON.parse(raw);
+    } catch (e) {
+      this._rawCache[filename] = null;
+    }
+    return this._rawCache[filename];
+  }
+  async get(type) {
+    if (this._cache[type] !== undefined) return this._cache[type];
+    const filename = REF_DATA_FILES[type];
+    if (!filename) { this._cache[type] = []; return []; }
+    const raw = await this._loadRaw(filename);
+    if (!raw) { this._cache[type] = []; return []; }
+    this._cache[type] = extractReferenceArray(type, raw);
     return this._cache[type];
   }
   search(items, query) {
     if (!query) return items;
     const q = query.toLowerCase();
     return items.filter(it => {
-      return [it.name, it.source, it.type, it.school, String(it.level||''), it.pantheon, it.category]
+      return [it.name, it.source, it.type, it.school, String(it.level||''), it.pantheon, it.category, it.className, String(it.cr||'')]
         .filter(Boolean).join(' ').toLowerCase().includes(q);
     });
   }
@@ -2253,6 +2284,14 @@ function refItemMeta(type, item) {
     case 'skills': return item.ability ? `(${item.ability})` : '';
     case 'deities': return [item.pantheon, item.alignment].filter(Boolean).join(' · ');
     case 'languages': return safeArr(item.typicalSpeakers).slice(0, 3).join(', ');
+    case 'bestiary': {
+      const cr = typeof item.cr === 'object' ? (item.cr.cr || item.cr) : item.cr;
+      const type2 = typeof item.type === 'object' ? (item.type.type || '') : (item.type || '');
+      return [item.size?.[0], type2, cr ? `CR ${cr}` : ''].filter(Boolean).join(' · ');
+    }
+    case 'classes': return [item.hd ? `d${item.hd.faces}` : '', item.spellcastingAbility ? `Spellcasting: ${item.spellcastingAbility.toUpperCase()}` : ''].filter(Boolean).join(' · ');
+    case 'subclasses': return [item.className, item.source].filter(Boolean).join(' · ');
+    case 'adventures': case 'books': return item.source || '';
     default: return item.type || '';
   }
 }
@@ -2282,6 +2321,39 @@ function refItemDetail(el, type, item) {
   if (type === 'equipment') {
     const meta2 = [item.weight ? `Weight: ${item.weight} lb` : '', item.weaponCategory ? `Cat: ${item.weaponCategory}` : ''].filter(Boolean).join(' · ');
     if (meta2) ce(el, 'p', 'te-muted-text', meta2);
+  }
+  if (type === 'bestiary') {
+    const ac = getMonsterArmorClass(item);
+    const hp = getMonsterAverageHp(item);
+    const cr = getMonsterCr(item);
+    const grid = ce(el, 'div', 'te-stat-grid');
+    [['AC', ac], ['Avg HP', hp], ['CR', cr], ['Speed', item.speed ? Object.entries(item.speed).map(([k,v])=>`${k} ${v}ft`).join(', ') : '—']].forEach(([l,v]) => {
+      if (v == null || v === '') return;
+      const sc = ce(grid, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', String(v)); ce(sc, 'div', 'te-stat-label', l);
+    });
+    const abilRow = ce(el, 'div', ''); abilRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:8px 0';
+    ['str','dex','con','int','wis','cha'].forEach(ab => {
+      if (item[ab] == null) return;
+      const w = ce(abilRow, 'div', 'te-stat-card'); ce(w, 'div', 'te-stat-big', item[ab]); ce(w, 'div', 'te-stat-label', ab.toUpperCase());
+    });
+    if (item.trait?.length) { ce(el, 'h4', '', 'Traits'); renderEntries(el, item.trait.map(t => ({ type:'entries', name: t.name, entries: t.entries }))); }
+    if (item.action?.length) { ce(el, 'h4', '', 'Actions'); renderEntries(el, item.action.map(a => ({ type:'entries', name: a.name, entries: a.entries }))); }
+    if (item.reaction?.length) { ce(el, 'h4', '', 'Reactions'); renderEntries(el, item.reaction.map(r => ({ type:'entries', name: r.name, entries: r.entries }))); }
+    if (item.legendary?.length) { ce(el, 'h4', '', 'Legendary Actions'); renderEntries(el, item.legendary.map(l => ({ type:'entries', name: l.name, entries: l.entries }))); }
+    return;
+  }
+  if (type === 'classes') {
+    const hd = item.hd ? `d${item.hd.faces}` : '';
+    const profs = Array.isArray(item.proficiency) ? item.proficiency.map(p=>p.toUpperCase()).join(', ') : '';
+    if (hd) ce(el, 'p', 'te-muted-text', `Hit Die: ${hd}`);
+    if (profs) ce(el, 'p', 'te-muted-text', `Saving Throws: ${profs}`);
+    if (item.spellcastingAbility) ce(el, 'p', 'te-muted-text', `Spellcasting: ${item.spellcastingAbility.toUpperCase()}`);
+    return;
+  }
+  if (type === 'subclasses') {
+    if (item.className) ce(el, 'p', 'te-muted-text', `Class: ${item.className}`);
+    if (item.shortName) ce(el, 'p', 'te-muted-text', `Subclass: ${item.shortName}`);
+    return;
   }
   renderEntries(el, item.entries);
 }
@@ -7361,6 +7433,52 @@ class SettingsModal extends Modal {
   }
 }
 
+// ── Monster helper functions ──────────────────────────────────────────────────
+function getMonsterArmorClass(m) {
+  if (!m || m.ac == null) return 10;
+  if (typeof m.ac === 'number') return m.ac;
+  if (Array.isArray(m.ac)) {
+    const first = m.ac[0];
+    if (typeof first === 'number') return first;
+    if (first && typeof first.ac === 'number') return first.ac;
+  }
+  return 10;
+}
+function getMonsterAverageHp(m) {
+  if (!m || m.hp == null) return 10;
+  if (typeof m.hp === 'number') return m.hp;
+  if (m.hp && typeof m.hp.average === 'number') return m.hp.average;
+  return 10;
+}
+function getMonsterDex(m) { return (m && typeof m.dex === 'number') ? m.dex : 10; }
+function getMonsterInitiativeMod(m) { return modifier(getMonsterDex(m)); }
+function getMonsterCr(m) {
+  if (!m || m.cr == null) return '';
+  if (typeof m.cr === 'string' || typeof m.cr === 'number') return String(m.cr);
+  if (typeof m.cr === 'object') return String(m.cr.cr || m.cr);
+  return '';
+}
+const CR_XP = { '0':10,'1/8':25,'1/4':50,'1/2':100,'1':200,'2':450,'3':700,'4':1100,'5':1800,'6':2300,'7':2900,'8':3900,'9':5000,'10':5900,'11':7200,'12':8400,'13':10000,'14':11500,'15':13000,'16':15000,'17':18000,'18':20000,'19':22000,'20':25000,'21':33000,'22':41000,'23':50000,'24':62000,'25':75000,'26':90000,'27':105000,'28':120000,'29':135000,'30':155000 };
+function getMonsterXp(m) { return CR_XP[getMonsterCr(m)] || 0; }
+function normaliseBestiaryMonsterForCombat(m) {
+  return {
+    name: m.name || 'Monster',
+    type: 'Monster',
+    ac: getMonsterArmorClass(m),
+    hp: getMonsterAverageHp(m),
+    maxHp: getMonsterAverageHp(m),
+    tempHp: 0,
+    dex: getMonsterDex(m),
+    initiative: 0, initLocked: false,
+    conditions: [],
+    cr: getMonsterCr(m),
+    xp: getMonsterXp(m),
+    sourceReferenceType: 'bestiary',
+    sourceReferenceName: m.name || '',
+    sourceReferenceSource: m.source || '',
+  };
+}
+
 // AddCombatantModal
 class AddCombatantModal extends Modal {
   constructor(app, plugin, type) {
@@ -7368,7 +7486,7 @@ class AddCombatantModal extends Modal {
     this.plugin = plugin;
     this.type = type || 'NPC';
     this.values = { name: '', initiative: 0, initLocked: false, hp: 10, maxHp: 10, tempHp: 0, ac: 10, dex: 10, conditions: [], type: this.type };
-    this.mode = 'manual'; // 'manual' | 'entity'
+    this.mode = 'manual'; // 'manual' | 'entity' | 'bestiary'
     this.selectedEntityType = 'npcs';
     this.selectedEntityId = '';
   }
@@ -7386,6 +7504,53 @@ class AddCombatantModal extends Modal {
     modeRow.style.marginBottom = '12px';
     btn(modeRow, 'Pick Existing Entity', this.mode === 'entity' ? 'te-btn is-primary is-sm' : 'te-btn is-sm', () => { this.mode = 'entity'; this._render(contentEl); });
     btn(modeRow, 'Enter Manually', this.mode === 'manual' ? 'te-btn is-primary is-sm' : 'te-btn is-sm', () => { this.mode = 'manual'; this._render(contentEl); });
+    if (this.type === 'Monster') {
+      btn(modeRow, 'Pick from Bestiary', this.mode === 'bestiary' ? 'te-btn is-primary is-sm' : 'te-btn is-sm', () => { this.mode = 'bestiary'; this._render(contentEl); });
+    }
+
+    if (this.mode === 'bestiary') {
+      const bestiaryWrap = ce(contentEl, 'div', '');
+      const searchIn = ce(bestiaryWrap, 'input', '');
+      searchIn.type = 'text'; searchIn.placeholder = 'Search bestiary…';
+      searchIn.style.cssText = 'width:100%;margin-bottom:8px;padding:6px 8px;border-radius:var(--te-r-md);border:1px solid var(--te-border);background:var(--te-bg);color:var(--te-text)';
+      const listWrap = ce(bestiaryWrap, 'div', '');
+      listWrap.style.cssText = 'max-height:300px;overflow-y:auto';
+      const buildBestiaryList = async (q) => {
+        clear(listWrap);
+        ce(listWrap, 'p', 'te-muted-text', 'Loading bestiary…');
+        const monsters = await this.plugin.refData.get('bestiary');
+        clear(listWrap);
+        if (!monsters.length) { ce(listWrap, 'p', 'te-empty-state', 'No bestiary data found.'); return; }
+        const filtered = q ? monsters.filter(m => (m.name||'').toLowerCase().includes(q.toLowerCase()) || (getMonsterCr(m)||'').includes(q)) : monsters;
+        filtered.slice(0, 40).forEach(m => {
+          const row = ce(listWrap, 'div', 'te-card');
+          row.style.cssText = 'padding:6px 10px;cursor:pointer;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center';
+          row.onmouseenter = () => row.style.background = 'var(--te-bg-alt)';
+          row.onmouseleave = () => row.style.background = '';
+          const left = ce(row, 'div', '');
+          ce(left, 'strong', '', m.name || 'Unknown');
+          const typeStr = typeof m.type === 'object' ? (m.type.type || '') : (m.type || '');
+          if (typeStr) ce(left, 'span', 'te-muted-text', ` ${typeStr}`);
+          const right2 = ce(row, 'div', 'te-muted-text');
+          const cr = getMonsterCr(m);
+          right2.textContent = [cr ? `CR ${cr}` : '', `AC ${getMonsterArmorClass(m)}`, `HP ${getMonsterAverageHp(m)}`].filter(Boolean).join(' · ');
+          row.addEventListener('click', () => {
+            const combatant = normaliseBestiaryMonsterForCombat(m);
+            Object.assign(this.values, combatant);
+            this.mode = 'manual';
+            this._render(contentEl);
+          });
+        });
+        if (filtered.length > 40) ce(listWrap, 'p', 'te-empty-state', `Showing 40 of ${filtered.length} — refine search.`);
+        else if (!filtered.length) ce(listWrap, 'p', 'te-empty-state', 'No matches.');
+      };
+      buildBestiaryList('');
+      searchIn.addEventListener('input', () => buildBestiaryList(searchIn.value));
+      const cancelRow = ce(contentEl, 'div', 'te-modal-actions');
+      cancelRow.style.marginTop = '10px';
+      btn(cancelRow, 'Cancel', 'te-btn', () => this.close());
+      return; // don't render manual fields in bestiary mode
+    }
 
     if (this.mode === 'entity') {
       // Entity type selector
@@ -7871,7 +8036,7 @@ class CharacterModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('char'), name: '', race: '', class: '', background: '', level: 1, alignment: 'True Neutral',
+      id: uid('char'), name: '', race: '', class: '', subclass: '', background: '', level: 1, alignment: 'True Neutral',
       campaignId: '',
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
@@ -7912,6 +8077,26 @@ class CharacterModal extends Modal {
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.class || '');
       t.onChange(v => this.values.class = v);
+      this.plugin.refData.get('classes').then(classes => {
+        const existing = new Set(CLASSES);
+        [...new Set(classes.map(c => c.name).filter(Boolean))].filter(n => !existing.has(n)).forEach(n => {
+          const o = dl.createEl('option'); o.value = n;
+        });
+      }).catch(()=>{});
+    });
+    // Subclass datalist
+    new Setting(s1).setName('Subclass').addText(t => {
+      const subDl = s1.createEl('datalist'); subDl.id = 'char-subclass-dl';
+      t.inputEl.setAttribute('list', subDl.id);
+      t.setValue(this.values.subclass || '');
+      t.onChange(v => this.values.subclass = v);
+      this.plugin.refData.get('subclasses').then(subs => {
+        const cls = this.values.class || '';
+        const filtered = cls ? subs.filter(s => !s.className || s.className.toLowerCase() === cls.toLowerCase()) : subs;
+        [...new Set(filtered.map(s => s.name || s.shortName).filter(Boolean))].forEach(n => {
+          const o = subDl.createEl('option'); o.value = n;
+        });
+      }).catch(()=>{});
     });
     new Setting(s1).setName('Background').addText(t => {
       const dl = s1.createEl('datalist'); dl.id = 'char-bg-dl';
