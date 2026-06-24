@@ -1774,7 +1774,7 @@ function generateCompleteNobleHouse(state) {
   };
 }
 function compileEndSessionReview(session, state) {
-  if (!session) return { sections: [], recap: '' };
+  if (!session) return { sections: [], recap: '', markdown: '' };
   const log = Array.isArray(session.eventLog) ? session.eventLog : [];
   const campId = session.campaignId || '';
   const byType = t => log.filter(e => e.type === t).map(e => e.text);
@@ -1782,6 +1782,8 @@ function compileEndSessionReview(session, state) {
   const secrets = byType('Secret Revealed'), quests = byType('Quest Advanced');
   const loot = byType('Loot Awarded'), timersLog = byType('Timer Advanced');
   const notes = byType('Note'), hooks = byType('Next Hook');
+  const decisions = byType('Player Decision'), consequences = byType('Consequence');
+  const combatStart = byType('Combat Started'), genResults = byType('Generator Result');
   const activeTimers = safeArr(state.entities.timers).filter(t => !campId || t.campaignId === campId);
   const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!campId || q.campaignId === campId));
   const sections = [
@@ -1792,10 +1794,65 @@ function compileEndSessionReview(session, state) {
     { label: 'Loot Awarded', items: loot },
     { label: 'Timer Advances', items: timersLog },
     { label: 'DM Notes', items: notes },
+    { label: 'Player Decisions', items: decisions },
+    { label: 'Consequences', items: consequences },
+    { label: 'Combat', items: combatStart },
+    { label: 'Generator Results', items: genResults },
     { label: 'Next Session Hooks', items: hooks },
     { label: 'Active Timers (End State)', items: activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`) },
-    { label: 'Active Quests', items: activeQuests.map(q => q.name) },
+    { label: 'Open Quests', items: activeQuests.map(q => q.name) },
   ].filter(s => s.items.length > 0);
+
+  // Minimal YAML frontmatter + rich markdown body
+  const camp = activeCampaign(state);
+  const lines = [];
+  lines.push('---');
+  lines.push('ttrpg-engine: true');
+  lines.push('entityType: session-review');
+  lines.push(`sessionId: ${session.id || ''}`);
+  lines.push(`campaignId: ${campId}`);
+  lines.push(`createdAt: ${new Date().toISOString()}`);
+  lines.push('---');
+  lines.push('');
+  lines.push(`# ${session.name || 'Session Review'}`);
+  if (session.date) lines.push(`**Date:** ${session.date}`);
+  if (camp) lines.push(`**Campaign:** ${camp.name}`);
+  lines.push('');
+
+  const addSection = (heading, items) => {
+    if (!items.length) return;
+    lines.push(`## ${heading}`);
+    items.forEach(item => lines.push(`- ${item}`));
+    lines.push('');
+  };
+
+  addSection('Locations Visited', locations);
+  addSection('NPCs Encountered', npcs);
+  addSection('Quests Advanced', quests);
+  addSection('Secrets Revealed', secrets);
+  addSection('Loot Awarded', loot);
+  addSection('Combat', combatStart);
+  addSection('Generator Results', genResults);
+  addSection('Player Decisions', decisions);
+  addSection('Consequences', consequences);
+  addSection('DM Notes', notes);
+  addSection('Timer Advances', timersLog);
+  addSection('Active Timers (End State)', activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`));
+  addSection('Open Quests', activeQuests.map(q => q.name));
+  addSection('Next Session Hooks', hooks);
+
+  // Chronological log
+  if (log.length) {
+    lines.push('## Chronological Event Log');
+    [...log].forEach(evt => {
+      const time = evt.time ? new Date(evt.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+      const round = evt.round ? ` (Round ${evt.round})` : '';
+      lines.push(`- **[${evt.type}]**${round}${time ? ` \`${time}\`` : ''} ${evt.text}`);
+    });
+    lines.push('');
+  }
+
+  // Player-safe recap paragraph
   const recapParts = [];
   if (npcs.length) recapParts.push(`The party met ${npcs.join(', ')}.`);
   if (locations.length) recapParts.push(`They visited ${locations.join(', ')}.`);
@@ -1803,7 +1860,10 @@ function compileEndSessionReview(session, state) {
   if (quests.length) recapParts.push(`Quests advanced: ${quests.join('; ')}.`);
   if (loot.length) recapParts.push(`Loot gained: ${loot.join(', ')}.`);
   if (hooks.length) recapParts.push(`Next session hooks: ${hooks.join('; ')}.`);
-  return { sections, recap: recapParts.join(' '), sessionName: session.name || 'Session', date: session.date || '' };
+  const recap = recapParts.join(' ');
+  if (recap) { lines.push('## Player Recap'); lines.push(recap); lines.push(''); }
+
+  return { sections, recap, sessionName: session.name || 'Session', date: session.date || '', markdown: lines.join('\n') };
 }
 
 // ── Modal field helpers ───────────────────────────────────────────────────────
@@ -1881,7 +1941,7 @@ function modalButtons(el, modal, onSave, saveLabel) {
 }
 
 // ── Section header builder ────────────────────────────────────────────────────
-function pageHead(main, plugin, title, subtitle, actions) {
+function pageHead(main, plugin, title, subtitle, actions, tabs) {
   const h = ce(main, 'div', 'te-page-head');
   ce(h, 'h1', '', title);
   if (subtitle) ce(h, 'p', 'te-page-subtitle', subtitle);
@@ -1889,6 +1949,18 @@ function pageHead(main, plugin, title, subtitle, actions) {
   const camp = activeCampaign(plugin.state);
   const chip = ce(h, 'span', 'te-campaign-chip' + (camp ? ' is-set' : ''));
   chip.textContent = camp ? ('📜 ' + camp.name) : '📜 No active campaign';
+  // Workspace tabs — rendered below campaign chip, above action buttons
+  if (tabs && tabs.length) {
+    const state = plugin.state;
+    const tabBar = ce(h, 'div', 'te-workspace-tabs');
+    tabs.forEach(({ id, label }) => {
+      const active = (state.activeSubSection || tabs[0].id) === id;
+      btn(tabBar, label, 'te-workspace-tab' + (active ? ' is-active' : ''), async () => {
+        state.activeSubSection = id;
+        await plugin.saveState();
+      });
+    });
+  }
   if (actions && actions.length) {
     const row = ce(h, 'div', 'te-page-actions');
     actions.forEach(a => btn(row, a.label, 'te-btn' + (a.primary ? ' is-primary' : '') + (a.run ? ' is-run' : '') + (a.danger ? ' is-danger' : ''), a.onClick));
@@ -2215,8 +2287,8 @@ function refItemDetail(el, type, item) {
 }
 
 // ── 5e Reference section ──────────────────────────────────────────────────────
-async function renderReference(main, plugin) {
-  pageHead(main, plugin, '5e Reference', 'Searchable rules reference — spells, feats, equipment, races, backgrounds, and more.');
+async function renderReference(main, plugin, tabs) {
+  pageHead(main, plugin, '5e Reference', 'Searchable rules reference — spells, feats, equipment, races, backgrounds, and more.', [], tabs);
   const dataPath = `${PLUGIN_DIR}/data`;
   const dataExists = await adapterExists(plugin.app, dataPath);
   if (!dataExists) {
@@ -2796,24 +2868,23 @@ function renderCampaignCommand(main, plugin) {
     { id: 'dmscreen',    label: '🖥️ DM Screen' },
     { id: 'run-session', label: '▶ Run Session' },
   ];
-  workspaceTabs(main, tabs, plugin);
   const sub = state.activeSubSection || 'campaigns';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'campaigns')     renderCampaigns(wrap, plugin);
-  else if (sub === 'bible')    renderCampaignBible(wrap, plugin);
-  else if (sub === 'sessions') renderSessions(wrap, plugin);
-  else if (sub === 'milestones') renderMilestonesSection(wrap, plugin);
-  else if (sub === 'dmscreen') renderDmScreen(wrap, plugin);
-  else if (sub === 'run-session') renderRunSession(wrap, plugin);
-  else renderCampaigns(wrap, plugin);
+  if (sub === 'campaigns')        renderCampaigns(wrap, plugin, tabs);
+  else if (sub === 'bible')       renderCampaignBible(wrap, plugin, tabs);
+  else if (sub === 'sessions')    renderSessions(wrap, plugin, tabs);
+  else if (sub === 'milestones')  renderMilestonesSection(wrap, plugin, tabs);
+  else if (sub === 'dmscreen')    renderDmScreen(wrap, plugin, tabs);
+  else if (sub === 'run-session') renderRunSession(wrap, plugin, tabs);
+  else renderCampaigns(wrap, plugin, tabs);
 }
 
-function renderMilestonesSection(main, plugin) {
+function renderMilestonesSection(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
   pageHead(main, plugin, 'Milestones', 'Track campaign milestones and XP/reward checkpoints.', [
     { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones').open() },
-  ]);
+  ], tabs);
   const items = safeArr(state.entities.milestones).filter(m => !camp || m.campaignId === camp.id);
   if (!items.length) { ce(main, 'p', 'te-empty', 'No milestones yet.'); return; }
   const tbl = ce(main, 'div', 'te-list');
@@ -2834,13 +2905,12 @@ function renderWorldAtlas(main, plugin) {
     { id: 'geography',  label: '🗺️ Geography & Maps' },
     { id: 'gazetteer',  label: '📍 Gazetteer' },
   ];
-  workspaceTabs(main, tabs, plugin);
   const sub = state.activeSubSection || 'lore';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'lore')           renderWorld(wrap, plugin);
-  else if (sub === 'geography') renderGeography(wrap, plugin);
-  else if (sub === 'gazetteer') renderGazetteer(wrap, plugin);
-  else renderWorld(wrap, plugin);
+  if (sub === 'lore')           renderWorld(wrap, plugin, tabs);
+  else if (sub === 'geography') renderGeography(wrap, plugin, tabs);
+  else if (sub === 'gazetteer') renderGazetteer(wrap, plugin, tabs);
+  else renderWorld(wrap, plugin, tabs);
 }
 
 function renderCastPowers(main, plugin) {
@@ -2852,23 +2922,22 @@ function renderCastPowers(main, plugin) {
     { id: 'matrix',          label: '🕸️ Relationship Matrix' },
     { id: 'hybrid-ancestry', label: '🧬 Hybrid Ancestry' },
   ];
-  workspaceTabs(main, tabs, plugin);
   const sub = state.activeSubSection || 'npcs';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'npcs')                renderNpcs(wrap, plugin);
-  else if (sub === 'factions')       renderFactions(wrap, plugin);
-  else if (sub === 'noble-families') renderNobleFamiliesSection(wrap, plugin);
-  else if (sub === 'matrix')         renderRelationshipMatrix(wrap, plugin);
-  else if (sub === 'hybrid-ancestry') renderHybridAncestry(wrap, plugin);
-  else renderNpcs(wrap, plugin);
+  if (sub === 'npcs')                 renderNpcs(wrap, plugin, tabs);
+  else if (sub === 'factions')        renderFactions(wrap, plugin, tabs);
+  else if (sub === 'noble-families')  renderNobleFamiliesSection(wrap, plugin, tabs);
+  else if (sub === 'matrix')          renderRelationshipMatrix(wrap, plugin, tabs);
+  else if (sub === 'hybrid-ancestry') renderHybridAncestry(wrap, plugin, tabs);
+  else renderNpcs(wrap, plugin, tabs);
 }
 
-function renderNobleFamiliesSection(main, plugin) {
+function renderNobleFamiliesSection(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
   pageHead(main, plugin, 'Noble Families', 'Aristocratic lineages, dynasties, and houses of power.', [
     { label: '+ Noble Family', onClick: () => new GenericModal(plugin.app, plugin, 'nobleFamilies').open() },
-  ]);
+  ], tabs);
   const items = safeArr(state.entities.nobleFamilies).filter(f => !camp || f.campaignId === camp.id);
   if (!items.length) { ce(main, 'p', 'te-empty', 'No noble families yet.'); return; }
   const tbl = ce(main, 'div', 'te-list');
@@ -2891,15 +2960,14 @@ function renderAdventurePlanner(main, plugin) {
     { id: 'war-machine', label: '🔧 War Machine' },
     { id: 'endgame',     label: '🌋 Endgame' },
   ];
-  workspaceTabs(main, tabs, plugin);
   const sub = state.activeSubSection || 'adventures';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'adventures')       renderAdventure(wrap, plugin);
-  else if (sub === 'encounters')  renderEncounters(wrap, plugin);
-  else if (sub === 'downtime')    renderDowntime(wrap, plugin);
-  else if (sub === 'war-machine') renderWarMachine(wrap, plugin);
-  else if (sub === 'endgame')     renderEndgame(wrap, plugin);
-  else renderAdventure(wrap, plugin);
+  if (sub === 'adventures')       renderAdventure(wrap, plugin, tabs);
+  else if (sub === 'encounters')  renderEncounters(wrap, plugin, tabs);
+  else if (sub === 'downtime')    renderDowntime(wrap, plugin, tabs);
+  else if (sub === 'war-machine') renderWarMachine(wrap, plugin, tabs);
+  else if (sub === 'endgame')     renderEndgame(wrap, plugin, tabs);
+  else renderAdventure(wrap, plugin, tabs);
 }
 
 function renderSecretsHandouts(main, plugin) {
@@ -2914,19 +2982,18 @@ function renderCompendiumLibrary(main, plugin) {
     { id: 'homebrew',   label: '🧪 Homebrew' },
     { id: 'my-content', label: '📊 My Content' },
   ];
-  workspaceTabs(main, tabs, plugin);
   const sub = state.activeSubSection || 'compendium';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'compendium')     renderLibrary(wrap, plugin);
-  else if (sub === 'reference') renderReference(wrap, plugin);
-  else if (sub === 'homebrew')  renderHomebrew(wrap, plugin);
-  else if (sub === 'my-content') renderMyContent(wrap, plugin);
-  else renderLibrary(wrap, plugin);
+  if (sub === 'compendium')      renderLibrary(wrap, plugin, tabs);
+  else if (sub === 'reference')  renderReference(wrap, plugin, tabs);
+  else if (sub === 'homebrew')   renderHomebrew(wrap, plugin, tabs);
+  else if (sub === 'my-content') renderMyContent(wrap, plugin, tabs);
+  else renderLibrary(wrap, plugin, tabs);
 }
 
-function renderMyContent(main, plugin) {
+function renderMyContent(main, plugin, tabs) {
   const state = plugin.state;
-  pageHead(main, plugin, 'My Content', 'Overview of everything you have created in this campaign.');
+  pageHead(main, plugin, 'My Content', 'Overview of everything you have created in this campaign.', [], tabs);
   const ENTITY_NAV = {
     campaigns:'campaign-command', worlds:'world-atlas', cosmologies:'world-atlas', realms:'world-atlas',
     regions:'world-atlas', settlements:'world-atlas', locations:'world-atlas', pois:'world-atlas',
@@ -3143,13 +3210,13 @@ function renderDashboard(main, plugin) {
 }
 
 // ── CAMPAIGNS ─────────────────────────────────────────────────────────────────
-function renderCampaigns(main, plugin) {
+function renderCampaigns(main, plugin, tabs) {
   pageHead(main, plugin, 'Campaigns', 'Create, manage, and switch between your campaigns.', [
     { label: '🧙 Campaign Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
     { label: '+ Quick Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
     { label: '▶ Run Session', run: true, onClick: async () => { plugin.state.activeSection = 'run-session'; await plugin.saveState(); } },
     { label: '📖 Campaign Bible', onClick: async () => { plugin.state.activeSection = 'bible'; await plugin.saveState(); } },
-  ]);
+  ], tabs);
   const campaigns = safeArr(plugin.state.entities.campaigns).filter(c => matchesSearch(c, plugin.state.search));
   if (!campaigns.length) { emptyState(main, 'No campaigns yet.', 'Click "New Campaign" to create your first campaign.'); return; }
   const g = ce(main, 'div', 'te-grid');
@@ -3202,12 +3269,12 @@ function renderCampaigns(main, plugin) {
 }
 
 // ── DM SCREEN ─────────────────────────────────────────────────────────────────
-function renderDmScreen(main, plugin) {
+function renderDmScreen(main, plugin, tabs) {
   pageHead(main, plugin, 'DM Screen', 'Quick references, conditions, rules, and session tools at a glance.', [
     { label: '▶ Run / Resume', run: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '+ New Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
   sectionHead(main, 'Quick Reference');
   const g = ce(main, 'div', 'te-grid');
 
@@ -3337,7 +3404,7 @@ function renderDmScreen(main, plugin) {
 }
 
 // ── WORLD & LORE ──────────────────────────────────────────────────────────────
-function renderWorld(main, plugin) {
+function renderWorld(main, plugin, tabs) {
   pageHead(main, plugin, 'World & Lore', 'Worlds, cosmologies, realms, deities, factions, cultures, languages, and more.', [
     { label: '+ World', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'worlds', null, worldFields).open() },
     { label: '+ Cosmology', onClick: () => new GenericModal(plugin.app, plugin, 'cosmologies', null, cosmologyFields).open() },
@@ -3349,7 +3416,7 @@ function renderWorld(main, plugin) {
     { label: '+ Nation', onClick: () => new GenericModal(plugin.app, plugin, 'nations', null, nationFields).open() },
     { label: '+ Religion', onClick: () => new GenericModal(plugin.app, plugin, 'religions', null, religionFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   sectionHead(main, 'Worlds');
   itemCards(main, plugin, 'worlds', { meta: ['worldScale', 'tone', 'premise'] });
@@ -3435,7 +3502,7 @@ const langFields = [
 ];
 
 // ── GEOGRAPHY & MAPS ──────────────────────────────────────────────────────────
-function renderGeography(main, plugin) {
+function renderGeography(main, plugin, tabs) {
   pageHead(main, plugin, 'Geography & Maps', 'Regions, settlements, locations, points of interest, routes, and the Tile Map Builder.', [
     { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
@@ -3444,7 +3511,7 @@ function renderGeography(main, plugin) {
     { label: '+ Room', onClick: () => new GenericModal(plugin.app, plugin, 'rooms', null, roomFields).open() },
     { label: '+ POI', onClick: () => new GenericModal(plugin.app, plugin, 'pois', null, poiFields).open() },
     { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
-  ]);
+  ], tabs);
 
   // Tile Map Builder (inline)
   sectionHead(main, 'Tile Map Builder');
@@ -4123,12 +4190,12 @@ function renderTileMapBuilder(parent, plugin) {
 
 
 // ── NPCs & CREATURES ──────────────────────────────────────────────────────────
-function renderNpcs(main, plugin) {
+function renderNpcs(main, plugin, tabs) {
   pageHead(main, plugin, 'NPCs & Creatures', 'Full NPC builder, creature stat blocks, BBEG builder, and relationship tracker.', [
     { label: '+ NPC', primary: true, onClick: () => new NPCModal(plugin.app, plugin).open() },
     { label: '+ Creature', onClick: () => new CreatureModal(plugin.app, plugin).open() },
     { label: '+ BBEG', onClick: () => new BBEGModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   sectionHead(main, 'NPCs');
   itemCards(main, plugin, 'npcs', { meta: ['race', 'role', 'status', 'faction', 'location'] });
@@ -4192,10 +4259,10 @@ function renderRelationshipTracker(parent, plugin) {
 }
 
 // ── FACTIONS ──────────────────────────────────────────────────────────────────
-function renderFactions(main, plugin) {
+function renderFactions(main, plugin, tabs) {
   pageHead(main, plugin, 'Factions', 'Build factions, track relationships, and manage the political landscape.', [
     { label: '+ Faction', primary: true, onClick: () => new FactionModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
   sectionHead(main, 'Factions');
   itemCards(main, plugin, 'factions', { meta: ['type', 'ideology', 'territory', 'reputation'] });
 
@@ -4220,11 +4287,11 @@ function renderFactions(main, plugin) {
 }
 
 // ── ADVENTURES & QUESTS ───────────────────────────────────────────────────────
-function renderAdventure(main, plugin) {
+function renderAdventure(main, plugin, tabs) {
   pageHead(main, plugin, 'Adventures & Quests', 'Adventure arcs, quests, objectives, hooks, and campaign progression.', [
     { label: '+ Adventure', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'adventures', null, adventureFields).open() },
     { label: '+ Quest', onClick: () => new QuestModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
   sectionHead(main, 'Adventures');
   itemCards(main, plugin, 'adventures', { meta: ['arcType', 'status'] });
 
@@ -4271,12 +4338,12 @@ const adventureFields = [
 ];
 
 // ── ENCOUNTERS & COMBAT ───────────────────────────────────────────────────────
-function renderEncounters(main, plugin) {
+function renderEncounters(main, plugin, tabs) {
   pageHead(main, plugin, 'Encounters & Combat', 'Encounter builder, initiative tracker, and combat tools.', [
     { label: '+ Encounter', primary: true, onClick: () => new EncounterModal(plugin.app, plugin).open() },
     { label: '+ Loot', onClick: () => new GenericModal(plugin.app, plugin, 'loot', null, lootFields).open() },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   // Party XP Budget
   const partyChars = safeArr(plugin.state.entities.characters);
@@ -4416,12 +4483,12 @@ const ruleFields = [
 ];
 
 // ── DOWNTIME & BASES ──────────────────────────────────────────────────────────
-function renderDowntime(main, plugin) {
+function renderDowntime(main, plugin, tabs) {
   pageHead(main, plugin, 'Downtime & Bases', 'Downtime activities, crafting projects, and bastions / strongholds.', [
     { label: '+ Activity', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'downtime', null, downtimeFields).open() },
     { label: '+ Project', onClick: () => new ProjectModal(plugin.app, plugin).open() },
     { label: '+ Bastion', onClick: () => new GenericModal(plugin.app, plugin, 'bastions', null, bastionFields).open() },
-  ]);
+  ], tabs);
   sectionHead(main, 'Downtime Activities');
   itemCards(main, plugin, 'downtime', { meta: ['activityType', 'timeRequired', 'cost'] });
   sectionHead(main, 'Projects & Crafting');
@@ -4458,14 +4525,14 @@ const bastionFields = [
 ];
 
 // ── SESSIONS & TIMELINE ───────────────────────────────────────────────────────
-function renderSessions(main, plugin) {
+function renderSessions(main, plugin, tabs) {
   pageHead(main, plugin, 'Sessions & Timeline', 'Session logs, milestones, and the campaign calendar.', [
     { label: '+ Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '▶ Run / Resume', run: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones', null, milestoneFields).open() },
     { label: '+ Timeline Event', onClick: () => new GenericModal(plugin.app, plugin, 'timelines', null, timelineFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   // Calendar summary
   const cal = plugin.state.calendar;
@@ -4540,12 +4607,12 @@ const handoutFields = [
 ];
 
 // ── COMPENDIUM & LIBRARY ──────────────────────────────────────────────────────
-function renderLibrary(main, plugin) {
+function renderLibrary(main, plugin, tabs) {
   pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries. Import JSON or export backups.', [
     { label: '+ Entry', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'compendium', null, compendiumFields).open() },
     { label: '📥 Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() },
     { label: '💾 Export Backup', onClick: () => exportBackup(plugin) },
-  ]);
+  ], tabs);
 
   // Filter by type
   const types = [...new Set(safeArr(plugin.state.entities.compendium).map(c => c.type).filter(Boolean))];
@@ -4596,10 +4663,10 @@ const compendiumFields = [
 ];
 
 // ── HOMEBREW ──────────────────────────────────────────────────────────────────
-function renderHomebrew(main, plugin) {
+function renderHomebrew(main, plugin, tabs) {
   pageHead(main, plugin, 'Homebrew', 'Create and manage homebrew content for your campaign.', [
     { label: '+ Homebrew Entry', primary: true, onClick: () => new HomebrewModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
   sectionHead(main, 'Homebrew Entries');
   itemCards(main, plugin, 'homebrew', {
     meta: ['type', 'status', 'visibility'],
@@ -4714,13 +4781,13 @@ function renderGenerators(main, plugin) {
 }
 
 // ── CAMPAIGN BIBLE (Phase 7) ──────────────────────────────────────────────────
-function renderCampaignBible(main, plugin) {
+function renderCampaignBible(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
   pageHead(main, plugin, 'Campaign Bible', 'Campaign premise, secrets, act structure, and publication blueprint.', [
     { label: '✏️ Edit Bible', primary: true, onClick: () => new CampaignBibleModal(plugin.app, plugin, camp).open() },
     { label: '📤 Export', onClick: () => exportCampaignBible(plugin) },
-  ]);
+  ], tabs);
   if (!camp) { emptyState(main, 'No active campaign.', 'Create and activate a campaign first.'); return; }
 
   const bib = camp.bible || {};
@@ -4823,12 +4890,12 @@ async function exportCampaignBible(plugin) {
 }
 
 // ── GAZETTEER (Phase 9) ────────────────────────────────────────────────────────
-function renderGazetteer(main, plugin) {
+function renderGazetteer(main, plugin, tabs) {
   pageHead(main, plugin, 'Gazetteer', 'Regions, settlements, dungeons, and locations at a glance.', [
     { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Dungeon', primary: true, onClick: () => new DungeonModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   const camp = activeCampaign(plugin.state);
   const campFilter = item => !item.campaignId || !camp || item.campaignId === camp.id;
@@ -4885,14 +4952,25 @@ function renderGazetteer(main, plugin) {
 }
 
 // ── RUN SESSION (Phase 13) ────────────────────────────────────────────────────
-function renderRunSession(main, plugin) {
+function renderRunSession(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
   pageHead(main, plugin, '▶ Run Session', 'Live session management — initiative, reveals, handouts, and notes.', [
     { label: state.sessionRunMode ? '⏹ End Session' : '▶ Start Session', primary: !state.sessionRunMode, run: state.sessionRunMode,
       onClick: async () => {
         if (!state.sessionRunMode) {
-          const newSess = { id: uid('sess'), name: `Session ${safeArr(state.entities.sessions).length + 1} — ${new Date().toLocaleDateString()}`, status: 'Active', date: new Date().toISOString().slice(0, 10), campaignId: state.activeCampaignId };
+          const newSess = {
+            id: uid('sess'),
+            name: `Session ${safeArr(state.entities.sessions).length + 1} — ${new Date().toLocaleDateString()}`,
+            status: 'Active', date: new Date().toISOString().slice(0, 10),
+            campaignId: state.activeCampaignId,
+            eventLog: [],
+            sessionContext: {
+              currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+              activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
+              activeTimerIds: [], currentMapId: ''
+            }
+          };
           upsert(state, 'sessions', newSess);
           state.sessionRunMode = true;
           state.activeSessionId = newSess.id;
@@ -4905,12 +4983,37 @@ function renderRunSession(main, plugin) {
         await plugin.saveState();
       }
     },
-  ]);
+  ], tabs);
 
-  if (state.sessionRunMode) {
-    const badge = ce(main, 'div', 'te-session-live-badge', '🔴 Session in Progress');
-    const sess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
-    if (sess) ce(main, 'p', 'te-page-subtitle', sess.name);
+  const activeSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
+
+  if (state.sessionRunMode && activeSess) {
+    ce(main, 'div', 'te-session-live-badge', '🔴 Session in Progress');
+    ce(main, 'p', 'te-page-subtitle', activeSess.name);
+
+    // ── Session Context Panel ─────────────────────────────────────────────────
+    if (!activeSess.sessionContext) activeSess.sessionContext = {
+      currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+      activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
+      activeTimerIds: [], currentMapId: ''
+    };
+    const ctx = activeSess.sessionContext;
+    const ctxCard = ce(main, 'div', 'te-card'); ctxCard.style.cssText = 'padding:12px;margin-bottom:8px';
+    const ctxH = ce(ctxCard, 'div', 'te-card-head'); ce(ctxH, 'span', 'te-card-icon', '🎯'); ce(ctxH, 'h3', 'te-card-title', 'Session Context');
+    const ctxGrid = ce(ctxCard, 'div', 'te-stat-grid');
+
+    const makeCtxSelect = (label, key, entityKey, nameField = 'name') => {
+      const sc = ce(ctxGrid, 'div', 'te-stat-card');
+      ce(sc, 'div', 'te-stat-label', label);
+      const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+      ce(sel, 'option', '', '— none —').value = '';
+      const items = safeArr(state.entities[entityKey]).filter(x => !state.activeCampaignId || x.campaignId === state.activeCampaignId);
+      items.forEach(x => { const o = ce(sel, 'option', '', x[nameField] || x.name || x.id); o.value = x.id; });
+      sel.value = ctx[key] || '';
+      sel.addEventListener('change', async () => { ctx[key] = sel.value; upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); });
+    };
+    makeCtxSelect('Current Location', 'currentLocationId', 'locations');
+    makeCtxSelect('Current Map', 'currentMapId', 'tileMaps');
   }
 
   sectionHead(main, 'Initiative Tracker');
@@ -4928,7 +5031,9 @@ function renderRunSession(main, plugin) {
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, '✅ Reveal Now', 'te-btn is-sm is-primary', async () => {
         s.visibility = 'revealed'; s.status = 'Revealed'; s.revealedAt = new Date().toISOString();
-        upsert(state, 'secrets', s); await plugin.saveState(); new Notice(`"${s.name}" revealed!`);
+        upsert(state, 'secrets', s);
+        logSessionEvent(plugin, 'Secret Revealed', s.name);
+        await saveStateQuiet(plugin); new Notice(`"${s.name}" revealed!`);
       });
     });
     pendingHandouts.forEach(h => {
@@ -4939,22 +5044,20 @@ function renderRunSession(main, plugin) {
       if (h.type) { const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Type'); ce(r, 'span', '', h.type); }
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, '📤 Share with Players', 'te-btn is-sm is-primary', async () => {
-        h.visibility = 'player-visible'; upsert(state, 'handouts', h); await plugin.saveState(); new Notice(`"${h.name}" shared with players.`);
+        h.visibility = 'player-visible'; upsert(state, 'handouts', h);
+        logSessionEvent(plugin, 'Handout Shared', h.name);
+        await saveStateQuiet(plugin); new Notice(`"${h.name}" shared with players.`);
       });
     });
   } else { emptyState(main, 'No secrets or handouts queued for reveal.', 'Mark secrets as "Ready to Reveal" or create handouts in Secrets & Reveals.'); }
 
   sectionHead(main, 'Session Notes');
-  const notesId = state.activeSessionId;
-  if (notesId) {
-    const sess = safeArr(state.entities.sessions).find(s => s.id === notesId);
-    if (sess) {
-      const ta = ce(main, 'textarea', '');
-      ta.placeholder = 'Session notes…'; ta.value = sess.notes || '';
-      ta.style.cssText = 'width:100%;min-height:120px;padding:10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-md);font-family:inherit;resize:vertical';
-      let saveT = null;
-      ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(async () => { sess.notes = ta.value; upsert(state, 'sessions', sess); await plugin.saveState(); }, 800); });
-    }
+  if (activeSess) {
+    const ta = ce(main, 'textarea', '');
+    ta.placeholder = 'Session notes…'; ta.value = activeSess.notes || '';
+    ta.style.cssText = 'width:100%;min-height:120px;padding:10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-md);font-family:inherit;resize:vertical';
+    let saveT = null;
+    ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(async () => { activeSess.notes = ta.value; upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); }, 800); });
   } else {
     ce(main, 'p', 'te-empty-state', 'Start a session to enable notes.');
   }
@@ -5007,6 +5110,7 @@ function renderRunSession(main, plugin) {
     lastGenResult = generate(lastGenType, state);
     genResultEl.textContent = lastGenResult;
     saveAsBtn.style.display = ['NPC Name','Faction Name','Quest Hook'].includes(lastGenType) ? '' : 'none';
+    logToSessBtn.style.display = lastGenType === 'Loot' ? '' : 'none';
   });
   const saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
     if (!lastGenResult) return;
@@ -5015,6 +5119,13 @@ function renderRunSession(main, plugin) {
     else if (lastGenType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [lastGenResult] }).open();
   });
   saveAsBtn.style.display = 'none';
+  const logToSessBtn = btn(genActRow, 'Log to Session', 'te-btn', async () => {
+    if (!lastGenResult) return;
+    logSessionEvent(plugin, 'Loot Awarded', lastGenResult);
+    await saveStateQuiet(plugin);
+    new Notice('Loot logged to session.');
+  });
+  logToSessBtn.style.display = 'none';
 
   // ── Active NPC Quick Look ─────────────────────────────────────────────────
   sectionHead(main, '👥 Active NPCs');
@@ -5069,46 +5180,16 @@ function renderRunSession(main, plugin) {
     ce(questWrap, 'p', 'te-empty-state', 'No active quests. Mark a quest as Active in the Quest Tracker.');
   }
 
-  // ── Conditions Reference ──────────────────────────────────────────────────
-  sectionHead(main, '⚡ Conditions Reference');
-  const condWrap = ce(main, 'div', 'te-card'); condWrap.style.padding = '12px';
-  const condLoading = ce(condWrap, 'p', 'te-muted-text', 'Loading conditions…');
-  plugin.refData.get('conditions').then(allConds => {
-    condLoading.remove();
-    if (!allConds.length) { ce(condWrap, 'p', 'te-empty-state', 'Conditions data not loaded. Ensure data/conditions.json is present.'); return; }
-    const condList = ce(condWrap, 'div', '');
-    let condExpanded = null;
-    const renderConds = () => {
-      clear(condList);
-      allConds.forEach(cond => {
-        const row = ce(condList, 'div', '');
-        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border)';
-        const headRow = ce(row, 'div', '');
-        headRow.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0';
-        const nameEl = ce(headRow, 'strong', ''); nameEl.textContent = cond.name;
-        const isOpen = condExpanded === cond.name;
-        const arrow = ce(headRow, 'span', 'te-muted-text'); arrow.textContent = isOpen ? '▲' : '▼'; arrow.style.fontSize = '.75rem';
-        if (isOpen) {
-          const body = ce(row, 'div', ''); body.style.cssText = 'padding:4px 8px;font-size:.85rem;color:var(--te-text)';
-          renderEntries(body, cond.entries);
-        }
-        headRow.addEventListener('click', () => { condExpanded = isOpen ? null : cond.name; renderConds(); });
-      });
-    };
-    renderConds();
-  });
-
   // ── Session Event Log ─────────────────────────────────────────────────────
   sectionHead(main, '📋 Session Event Log');
-  const sess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
-  if (sess) {
-    if (!Array.isArray(sess.eventLog)) sess.eventLog = [];
+  if (activeSess) {
+    if (!Array.isArray(activeSess.eventLog)) activeSess.eventLog = [];
     const logWrap = ce(main, 'div', 'te-card'); logWrap.style.padding = '12px';
     const EVENT_TYPES = ['Note','NPC Met','Location Visited','Quest Advanced','Secret Revealed','Loot Awarded','Combat Started','Combat Ended','Player Decision','Consequence','Timer Advanced','Next Hook'];
     let evtType = 'Note';
     const typeRow = ce(logWrap, 'div', 'te-card-actions'); typeRow.style.flexWrap = 'wrap';
     EVENT_TYPES.forEach(t => {
-      const b = btn(typeRow, t, 'te-btn is-sm' + (t === evtType ? ' is-primary' : ''), () => {
+      btn(typeRow, t, 'te-btn is-sm' + (t === evtType ? ' is-primary' : ''), () => {
         evtType = t;
         Array.from(typeRow.querySelectorAll('button')).forEach((bb,i) => bb.className = 'te-btn is-sm' + (EVENT_TYPES[i] === t ? ' is-primary' : ''));
       });
@@ -5117,18 +5198,18 @@ function renderRunSession(main, plugin) {
     const evtInp = ce(addRow, 'input'); evtInp.type = 'text'; evtInp.placeholder = 'Event note…'; evtInp.style.flex = '1';
     btn(addRow, 'Add', 'te-btn is-primary', async () => {
       const text = evtInp.value.trim(); if (!text) return;
-      sess.eventLog.push({ type: evtType, text, time: new Date().toISOString() });
+      logSessionEvent(plugin, evtType, text);
       evtInp.value = '';
-      upsert(state, 'sessions', sess); await plugin.saveState();
+      await saveStateQuiet(plugin);
       renderLog();
     });
     evtInp.addEventListener('keydown', e => { if (e.key === 'Enter') addRow.querySelector('button').click(); });
     const logList = ce(logWrap, 'div', ''); logList.style.marginTop = '8px';
     const renderLog = () => {
       clear(logList);
-      const events = [...sess.eventLog].reverse();
+      const events = [...activeSess.eventLog].reverse();
       if (!events.length) { ce(logList, 'p', 'te-empty-state', 'No events yet. Add notes above.'); return; }
-      events.forEach((evt, i) => {
+      events.forEach(evt => {
         const row = ce(logList, 'div', 'te-card-meta-row');
         row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border);font-size:.85rem';
         const lbl = ce(row, 'span', 'te-card-meta-label'); lbl.textContent = evt.type;
@@ -5140,28 +5221,6 @@ function renderRunSession(main, plugin) {
   } else {
     ce(main, 'p', 'te-empty-state', 'Start a session to enable the event log.');
   }
-
-  // ── Loot Quick Add ────────────────────────────────────────────────────────
-  sectionHead(main, '💰 Loot Quick Add');
-  const lootSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
-  const lootCard = ce(main, 'div', 'te-card'); lootCard.style.padding = '12px';
-  const lootRow = ce(lootCard, 'div', 'te-chip-add-row');
-  const lootInp = ce(lootRow, 'input'); lootInp.type = 'text'; lootInp.placeholder = 'e.g. 50 gp, Potion of Healing…'; lootInp.style.flex = '1';
-  btn(lootRow, 'Log Loot', 'te-btn is-primary', async () => {
-    const text = lootInp.value.trim(); if (!text) return;
-    if (lootSess) {
-      if (!Array.isArray(lootSess.eventLog)) lootSess.eventLog = [];
-      lootSess.eventLog.push({ type: 'Loot Awarded', text, time: new Date().toISOString() });
-      upsert(state, 'sessions', lootSess);
-    }
-    await plugin.saveState();
-    lootInp.value = '';
-    new Notice(`Loot logged: ${text}`);
-  });
-  btn(lootCard, '⚙ Generate Loot', 'te-btn', () => {
-    const draft = generateCompleteLoot(state);
-    new EntityDraftModal(plugin.app, plugin, 'Complete Loot', draft, 'loot', null).open();
-  });
 
   // ── Timers (Session) ──────────────────────────────────────────────────────
   sectionHead(main, '⏱ Escalation Timers');
@@ -5182,8 +5241,8 @@ function renderRunSession(main, plugin) {
       btn(a, '+Tick', 'te-btn is-sm is-run', async () => {
         t.currentTick = Math.min(maxTicks, curTicks + 1);
         upsert(state, 'timers', t);
-        if (lootSess) { if (!Array.isArray(lootSess.eventLog)) lootSess.eventLog = []; lootSess.eventLog.push({ type: 'Timer Advanced', text: `${t.name} → ${t.currentTick}/${maxTicks}`, time: new Date().toISOString() }); upsert(state, 'sessions', lootSess); }
-        await plugin.saveState();
+        logSessionEvent(plugin, 'Timer Advanced', `${t.name} → ${t.currentTick}/${maxTicks}`);
+        await saveStateQuiet(plugin);
       });
       btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
     });
@@ -5196,13 +5255,13 @@ function renderRunSession(main, plugin) {
   sectionHead(main, '🗺 Map Access');
   const mapCard = ce(main, 'div', 'te-card'); mapCard.style.cssText = 'padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center';
   ce(mapCard, 'span', 'te-muted-text', 'Jump to Tile Map to view or edit your session map.');
-  btn(mapCard, '🗺 Open Tile Map', 'te-btn is-primary', async () => { state.activeSection = 'tile-map'; await plugin.saveState(); });
+  btn(mapCard, '🗺 Open Tile Map', 'te-btn is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
   const campMaps = safeArr(state.entities.tileMaps || []).filter(m => !state.activeCampaignId || m.campaignId === state.activeCampaignId);
   if (campMaps.length) {
     const mapSel = ce(mapCard, 'select'); mapSel.style.cssText = 'padding:5px 8px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
     ce(mapSel, 'option', '', '— jump to saved map —').value = '';
     campMaps.forEach(m => { const o = ce(mapSel, 'option', '', m.name || 'Untitled'); o.value = m.id; });
-    mapSel.addEventListener('change', async () => { if (mapSel.value) { state.activeSection = 'tile-map'; state.pendingMapId = mapSel.value; await plugin.saveState(); } });
+    mapSel.addEventListener('change', async () => { if (mapSel.value) { state.activeSection = 'tile-map'; state.pendingMapId = mapSel.value; await saveStatePreserveScroll(plugin); } });
   }
 
   // ── Location Quick Lookup ─────────────────────────────────────────────────
@@ -5284,11 +5343,11 @@ function renderRunSession(main, plugin) {
 }
 
 // ── WAR MACHINE (Phase 11) ────────────────────────────────────────────────────
-function renderWarMachine(main, plugin) {
+function renderWarMachine(main, plugin, tabs) {
   pageHead(main, plugin, 'War Machine', 'Enemy templates, escalation timers, and hostile force management.', [
     { label: '+ Enemy Template', primary: true, onClick: () => new EnemyTemplateModal(plugin.app, plugin).open() },
     { label: '+ Timer', onClick: () => new TimerModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   sectionHead(main, 'Escalation Timers');
   const timers = safeArr(plugin.state.entities.timers).filter(t => matchesSearch(t, plugin.state.search));
@@ -5334,8 +5393,8 @@ function renderWarMachine(main, plugin) {
 }
 
 // ── FACTION MATRIX (Phase 12) ─────────────────────────────────────────────────
-function renderFactionMatrix(main, plugin) { renderRelationshipMatrix(main, plugin); }
-function renderRelationshipMatrix(main, plugin) {
+function renderFactionMatrix(main, plugin, tabs) { renderRelationshipMatrix(main, plugin, tabs); }
+function renderRelationshipMatrix(main, plugin, tabs) {
   const state = plugin.state;
   const allRels = safeArr(state.relationships);
 
@@ -5343,7 +5402,7 @@ function renderRelationshipMatrix(main, plugin) {
     { label: '+ Relationship', primary: true, onClick: () => new RelationshipModal(plugin.app, plugin).open() },
     { label: '+ Noble Family', onClick: () => new NobleFamilyModal(plugin.app, plugin).open() },
     { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
-  ]);
+  ], tabs);
 
   // Helper to resolve entity name from type + id
   const resolveName = (type, id) => {
@@ -5452,13 +5511,13 @@ function renderRelationshipMatrix(main, plugin) {
 }
 
 // ── ENDGAME (Phase 19) ────────────────────────────────────────────────────────
-function renderEndgame(main, plugin) {
+function renderEndgame(main, plugin, tabs) {
   const state = plugin.state;
   pageHead(main, plugin, 'Endgame & Realm Tracker', 'War fronts, realm incursions, broken cosmology reveals, and ending states.', [
     { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts', null, warFrontFields).open() },
     { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions', null, incursionFields).open() },
     { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates', null, endgameStateFields).open() },
-  ]);
+  ], tabs);
 
   sectionHead(main, 'War Fronts');
   itemCards(main, plugin, 'warFronts', { meta: ['type', 'status', 'faction', 'location'], hint: 'Add war fronts to track active conflicts across your realm.' });
@@ -6245,7 +6304,7 @@ function renderPCLore(main, plugin) {
 }
 
 // ── HYBRID ANCESTRY (Phase 257) ───────────────────────────────────────────────
-function renderHybridAncestry(main, plugin) {
+function renderHybridAncestry(main, plugin, tabs) {
   const state = plugin.state;
   const isPC = state.mode === 'PLAYER';
   const all = safeArr(state.entities.hybridAncestries);
@@ -6253,7 +6312,7 @@ function renderHybridAncestry(main, plugin) {
   if (!isPC) {
     pageHead(main, plugin, '🧬 Hybrid Ancestry Builder', 'Design and balance custom mixed-heritage ancestries for PCs and NPCs.', [
       { label: '+ New Hybrid', primary: true, onClick: () => new HybridAncestryModal(plugin.app, plugin).open() },
-    ]);
+    ], tabs);
     const sg = ce(main, 'div', 'te-stat-grid');
     const approved = all.filter(h => h.approvalStatus === 'DM Approved');
     const pending = all.filter(h => !h.approvalStatus || h.approvalStatus === 'Pending Review');
@@ -6261,7 +6320,7 @@ function renderHybridAncestry(main, plugin) {
       const sc = ce(sg, 'div', 'te-stat-card'); ce(sc, 'div', 'te-stat-big', v); ce(sc, 'div', 'te-stat-label', l);
     });
   } else {
-    pageHead(main, plugin, '🧬 Hybrid Ancestry', 'Player-visible hybrid ancestries shared by your DM.');
+    pageHead(main, plugin, '🧬 Hybrid Ancestry', 'Player-visible hybrid ancestries shared by your DM.', [], tabs);
   }
   sectionHead(main, isPC ? 'Available Ancestries' : 'All Hybrid Ancestries');
   if (!visible.length) {
@@ -6988,17 +7047,10 @@ class EndSessionReviewModal extends Modal {
     const actRow = ce(contentEl, 'div', 'te-modal-actions');
     btn(actRow, '📝 Export as Note', 'te-btn is-primary', async () => {
       if (!this.session) return;
-      const lines = [`# End Session Review: ${review.sessionName}`, `Date: ${review.date || new Date().toLocaleDateString()}`, ''];
-      review.sections.forEach(sec => {
-        lines.push(`## ${sec.label}`);
-        sec.items.forEach(item => lines.push(`- ${item}`));
-        lines.push('');
-      });
-      if (review.recap) { lines.push('## Player-Safe Recap', '', review.recap, ''); }
       const folder = campaignFolder(this.plugin);
       const sessionDir = `${folder}/Sessions/Session Logs`;
       await ensureFolder(this.plugin.app, sessionDir);
-      await writeNote(this.plugin.app, normalizePath(`${sessionDir}/${slugify(review.sessionName)}-review.md`), lines.join('\n'));
+      await writeNote(this.plugin.app, normalizePath(`${sessionDir}/${slugify(review.sessionName)}-review.md`), review.markdown || '');
       new Notice('Session review exported as note.');
     });
     btn(actRow, 'Close', 'te-btn', () => this.close());
@@ -7011,6 +7063,22 @@ function logGeneratorHistory(plugin, entry) {
   const camp = activeCampaign(plugin.state);
   plugin.state.generatorHistory.unshift({ id: uid('gen'), savedAt: Date.now(), status: 'generated', campaignId: camp ? camp.id : '', ...entry });
   if (plugin.state.generatorHistory.length > 200) plugin.state.generatorHistory.length = 200;
+}
+
+// Central session event logger — appends to the active session's eventLog without causing click-jump.
+function logSessionEvent(plugin, type, text, data) {
+  const sess = plugin.state.activeSessionId
+    ? safeArr(plugin.state.entities.sessions).find(s => s.id === plugin.state.activeSessionId)
+    : null;
+  if (!sess) return;
+  if (!Array.isArray(sess.eventLog)) sess.eventLog = [];
+  const tracker = plugin.state.initiativeTracker;
+  const round = (tracker && tracker.active) ? tracker.round : undefined;
+  const entry = { id: uid('evt'), type, text, time: new Date().toISOString() };
+  if (round !== undefined) entry.round = round;
+  if (data && Object.keys(data).length) entry.data = data;
+  sess.eventLog.push(entry);
+  upsert(plugin.state, 'sessions', sess);
 }
 
 // EntityDraftModal — preview/edit a generated entity before saving
