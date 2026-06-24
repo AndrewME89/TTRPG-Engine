@@ -835,6 +835,17 @@ async function runDiagnostics(plugin) {
     issues.push({ sev: 'warn', msg: `Tile asset scan failed: ${tileErr.message}` });
   }
 
+  // Reference data health check (file existence only — no large files loaded)
+  const refChecked = new Set();
+  for (const [type, filename] of Object.entries(REF_DATA_FILES)) {
+    if (refChecked.has(filename)) continue;
+    refChecked.add(filename);
+    const exists = await adapterExists(plugin.app, `${PLUGIN_DIR}/data/${filename}`);
+    if (!exists) {
+      issues.push({ sev: 'warn', msg: `Reference data missing: data/${filename}` });
+    }
+  }
+
   return { issues, info, counts };
 }
 
@@ -3132,6 +3143,22 @@ function renderDiagnosticsPanel(main, plugin) {
       result.info.forEach(i => ce(resultsDiv, 'p', 'te-info', i));
     }
   });
+  sectionHead(main, 'Reference Data Health');
+  ce(main, 'p', 'te-muted', 'Check reference data file counts. Large files (bestiary, adventure, book) are loaded on demand.');
+  let refResultsDiv = null;
+  btn(main, '📊 Check Reference Data', 'te-btn', async () => {
+    if (refResultsDiv) refResultsDiv.remove();
+    refResultsDiv = ce(main, 'div', 'te-diagnostics-results');
+    ce(refResultsDiv, 'p', 'te-muted-text', 'Loading reference data counts…');
+    const keyTypes = ['spells','feats','equipment','backgrounds','races','skills','languages','conditions','deities','bestiary','classes','subclasses'];
+    const results = await Promise.all(keyTypes.map(async t => {
+      try { const arr = await plugin.refData.get(t); return `${t}: ${arr.length}`; }
+      catch { return `${t}: error`; }
+    }));
+    clear(refResultsDiv);
+    results.forEach(r => ce(refResultsDiv, 'p', 'te-info', r));
+  });
+
   sectionHead(main, 'Vault Note Migration');
   ce(main, 'p', 'te-muted', 'Scan for notes saved at legacy (flat) paths. Existing notes are never moved automatically.');
   let migrDiv = null;
@@ -8036,7 +8063,7 @@ class CharacterModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('char'), name: '', race: '', class: '', background: '', level: 1, alignment: 'True Neutral',
+      id: uid('char'), name: '', race: '', class: '', subclass: '', background: '', level: 1, alignment: 'True Neutral',
       campaignId: '',
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       hp: 0, maxHp: 0, tempHp: 0, ac: 10, speed: '30 ft',
@@ -8077,6 +8104,26 @@ class CharacterModal extends Modal {
       t.inputEl.setAttribute('list', dl.id);
       t.setValue(this.values.class || '');
       t.onChange(v => this.values.class = v);
+      this.plugin.refData.get('classes').then(classes => {
+        const existing = new Set(CLASSES);
+        [...new Set(classes.map(c => c.name).filter(Boolean))].filter(n => !existing.has(n)).forEach(n => {
+          const o = dl.createEl('option'); o.value = n;
+        });
+      }).catch(()=>{});
+    });
+    // Subclass datalist
+    new Setting(s1).setName('Subclass').addText(t => {
+      const subDl = s1.createEl('datalist'); subDl.id = 'char-subclass-dl';
+      t.inputEl.setAttribute('list', subDl.id);
+      t.setValue(this.values.subclass || '');
+      t.onChange(v => this.values.subclass = v);
+      this.plugin.refData.get('subclasses').then(subs => {
+        const cls = this.values.class || '';
+        const filtered = cls ? subs.filter(s => !s.className || s.className.toLowerCase() === cls.toLowerCase()) : subs;
+        [...new Set(filtered.map(s => s.name || s.shortName).filter(Boolean))].forEach(n => {
+          const o = subDl.createEl('option'); o.value = n;
+        });
+      }).catch(()=>{});
     });
     new Setting(s1).setName('Background').addText(t => {
       const dl = s1.createEl('datalist'); dl.id = 'char-bg-dl';
