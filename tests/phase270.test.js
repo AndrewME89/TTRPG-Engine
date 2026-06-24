@@ -435,8 +435,8 @@ test('safeFileName function is defined in source', () => {
 test('ensureFolder is recursive (splits on /)', () => {
   ok(src.includes("const parts = norm.split('/')"), 'ensureFolder does not have recursive split logic');
 });
-test('noteRootFolder in default settings', () => {
-  ok(src.includes("noteRootFolder: 'TTRPG Engine'"), 'noteRootFolder missing from default settings');
+test('campaignRootFolder in default settings', () => {
+  ok(src.includes("campaignRootFolder: 'Campaigns'"), 'campaignRootFolder missing from default settings');
 });
 test('noteFolderMode in default settings', () => {
   ok(src.includes("noteFolderMode: 'workspace'"), 'noteFolderMode missing from default settings');
@@ -447,8 +447,8 @@ test('ENTITY_NOTE_FOLDERS defined in source', () => {
 test('writeEntityNote uses resolveEntityNotePath', () => {
   ok(src.includes('resolveEntityNotePath(key, item, plugin.state, plugin)'), 'writeEntityNote does not use resolver');
 });
-test('campaignFolder includes noteRoot', () => {
-  ok(src.includes('noteRoot(plugin)'), 'campaignFolder does not use noteRoot');
+test('campaignFolder uses campaignRootFolder', () => {
+  ok(src.includes('campaignRootFolder(plugin)'), 'campaignFolder does not use campaignRootFolder');
 });
 test('globalFolder function exists', () => {
   ok(/function globalFolder/.test(src), 'globalFolder missing');

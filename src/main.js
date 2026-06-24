@@ -519,7 +519,7 @@ function createDefaultState() {
     activeCampaignId: '',
     search: '',
     calendar: { name: '', year: 1, month: '', day: 1, moons: '', seasons: '', holidays: '' },
-    settings: { compact: false, noteRootFolder: 'TTRPG Engine', noteFolderMode: 'workspace', nestLocationsUnderParents: true, nestQuestsUnderAdventures: false },
+    settings: { compact: false, campaignRootFolder: 'Campaigns', noteRootFolder: '', noteFolderMode: 'workspace', nestLocationsUnderParents: true, nestQuestsUnderAdventures: false },
     initiativeTracker: { combatants: [], currentIndex: 0, round: 1, active: false },
     tileMap: { tiles: [], nextId: 1, mapName: 'Untitled Map', gridSize: 60, width: 1800, height: 1200, assetRoot: TILE_ASSET_ROOT, selectedMapId: '', mapId: '', distanceScale: '5 ft', linkedRegionId: '', linkedSettlementId: '', linkedLocationId: '', linkedDungeonId: '', linkedPoiId: '', linkedEncounterId: '', linkedSessionId: '' },
     playerTab: 'overview',
@@ -671,18 +671,21 @@ function toTitleCase(s) {
   return String(s || '').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim()
     .replace(/\b\w/g, c => c.toUpperCase()).slice(0, 100) || 'Untitled';
 }
-function noteRoot(plugin) {
-  return safeFileName(plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+function campaignRootFolder(plugin) {
+  const s = plugin.state.settings;
+  // campaignRootFolder is the new primary setting; fall back to noteRootFolder for migration compatibility
+  const root = s.campaignRootFolder || s.noteRootFolder || 'Campaigns';
+  return safeFileName(root, 'Campaigns');
 }
 function campaignFolder(plugin) {
   const c = activeCampaign(plugin.state);
   const cName = c ? (safeFileName(c.name, 'Unassigned')) : 'Unassigned';
   const mode = plugin.state.settings.noteFolderMode || 'workspace';
   if (mode === 'legacy') return cName;
-  return `${noteRoot(plugin)}/Campaigns/${cName}`;
+  return `${campaignRootFolder(plugin)}/${cName}`;
 }
 function globalFolder(plugin) {
-  return `${noteRoot(plugin)}/Global`;
+  return `${campaignRootFolder(plugin)}/_Global`;
 }
 function modifier(score) { return Math.floor((Number(score || 10) - 10) / 2); }
 function modStr(score) { const m = modifier(score); return (m >= 0 ? '+' : '') + m; }
@@ -954,7 +957,7 @@ const SETTLEMENT_TYPE_FOLDERS = {
  */
 function resolveEntityNotePath(entityType, entity, state, plugin) {
   const mode = state.settings.noteFolderMode || 'workspace';
-  const root = safeFileName(state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+  const root = safeFileName(state.settings.campaignRootFolder || state.settings.noteRootFolder || 'Campaigns', 'Campaigns');
   const name = safeFileName(entity.name || entity.title || entity.id, 'Untitled');
 
   // Legacy mode: old flat paths
@@ -965,16 +968,16 @@ function resolveEntityNotePath(entityType, entity, state, plugin) {
     return normalizePath(`${campFolder}/${sub}/${name}.md`);
   }
 
-  // Flat mode: root/EntityFolder/name.md (no campaign subfolder)
+  // Flat mode: root/{WorkspaceFolder}/name.md (no campaign subfolder)
   if (mode === 'flat') {
     const sub = ENTITY_NOTE_FOLDERS[entityType] || (ENTITY_FOLDER_LABELS[entityType] || entityType);
     return normalizePath(`${root}/${sub}/${name}.md`);
   }
 
-  // Workspace mode (default): root/Campaigns/{Campaign}/{Workspace}/{Sub}/{name}.md
+  // Workspace mode (default): Campaigns/{Campaign}/{Workspace}/{Sub}/{name}.md
   const camp = activeCampaign(state);
   const campName = camp ? safeFileName(camp.name, 'Unassigned') : 'Unassigned';
-  const campBase = `${root}/Campaigns/${campName}`;
+  const campBase = `${root}/${campName}`;
   const workspaceFolder = ENTITY_NOTE_FOLDERS[entityType];
 
   if (!workspaceFolder) {
@@ -2573,7 +2576,7 @@ class TTRPGMainView extends ItemView {
 async function diagnoseLegacyNotes(plugin) {
   const app = plugin.app;
   const state = plugin.state;
-  const root = safeFileName(state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
+  const root = safeFileName(state.settings.campaignRootFolder || state.settings.noteRootFolder || 'Campaigns', 'Campaigns');
   const camp = activeCampaign(state);
   if (!camp) return { found: [], report: 'No active campaign — cannot scan legacy paths.' };
 
@@ -4139,6 +4142,14 @@ function renderNpcs(main, plugin) {
   renderRelationshipTracker(main, plugin);
 }
 
+function getEntityDisplayName(state, entityType, entityId, fallback) {
+  if (!entityId) return fallback || '?';
+  const arr = safeArr(state.entities[entityType]);
+  const entity = arr.find(e => e.id === entityId);
+  if (entity) return entity.name || entity.title || entityId;
+  return fallback || `[Missing ${entityType}: ${entityId}]`;
+}
+
 function renderRelationshipTracker(parent, plugin) {
   const wrap = ce(parent, 'div', 'te-card');
   wrap.style.marginBottom = '16px';
@@ -4147,7 +4158,9 @@ function renderRelationshipTracker(parent, plugin) {
   ce(hd, 'h3', 'te-card-title', 'NPC Relationships');
   btn(hd, '+ Add Relationship', 'te-btn is-sm is-primary', () => new RelationshipModal(plugin.app, plugin).open());
 
-  const rels = safeArr(plugin.state.relationships);
+  const camp = activeCampaign(plugin.state);
+  const allRels = safeArr(plugin.state.relationships);
+  const rels = camp ? allRels.filter(r => !r.campaignId || r.campaignId === camp.id) : allRels;
   if (!rels.length) { ce(wrap, 'p', 'te-card-body', 'No relationships tracked yet. Use the button above to add NPC-to-NPC or NPC-to-PC relationships.'); return; }
 
   const grid = ce(wrap, 'div', 'te-grid');
@@ -4157,7 +4170,13 @@ function renderRelationshipTracker(parent, plugin) {
     c.style.padding = '10px';
     const head = ce(c, 'div', 'te-card-head');
     ce(head, 'span', 'te-card-icon', '🤝');
-    ce(head, 'h3', 'te-card-title', `${rel.from} → ${rel.to}`);
+    const fromName = rel.fromId
+      ? getEntityDisplayName(plugin.state, rel.fromEntityType || 'npcs', rel.fromId, rel.from)
+      : (rel.from || '?');
+    const toName = rel.toId
+      ? getEntityDisplayName(plugin.state, rel.toEntityType || 'npcs', rel.toId, rel.to)
+      : (rel.to || '?');
+    ce(head, 'h3', 'te-card-title', `${fromName} → ${toName}`);
     const meta = ce(c, 'div', 'te-card-meta');
     const r1 = ce(meta, 'div', 'te-card-meta-row');
     ce(r1, 'span', 'te-card-meta-label', 'Attitude');
@@ -4240,11 +4259,11 @@ function renderAdventure(main, plugin) {
 
 const adventureFields = [
   { key: 'name', label: 'Adventure Name', type: 'text' },
+  { key: 'actId', label: 'Parent Act', type: 'entityRef', entityType: 'acts' },
   { key: 'arcType', label: 'Arc Type', type: 'select', options: ['Main Story','Side Story','Character Arc','Faction Arc','Dungeon Delve','Investigation','Political','Other'] },
   { key: 'status', label: 'Status', type: 'select', options: ['Draft','Active','Completed','Abandoned'] },
   { key: 'premise', label: 'Premise', type: 'textarea' },
   { key: 'acts', label: 'Acts / Chapters', type: 'textarea' },
-  { key: 'linkedQuests', label: 'Linked Quests (chip)', type: 'chip' },
   { key: 'linkedNPCs', label: 'Linked NPCs (chip)', type: 'chip' },
   { key: 'secrets', label: 'Secrets', type: 'textarea' },
   { key: 'treasure', label: 'Treasure / Rewards', type: 'textarea' },
@@ -4653,7 +4672,9 @@ function renderGenerators(main, plugin) {
   });
 
   sectionHead(main, 'Generator History');
-  const hist = safeArr(plugin.state.generatorHistory);
+  const activeCamp = activeCampaign(plugin.state);
+  const allHist = safeArr(plugin.state.generatorHistory);
+  const hist = activeCamp ? allHist.filter(h => !h.campaignId || h.campaignId === activeCamp.id) : allHist;
   if (!hist.length) { emptyState(main, 'No generated results yet.', 'Use the generators above to create content.'); return; }
   const hg = ce(main, 'div', 'te-grid');
   hist.slice(0, 30).forEach((h, i) => {
@@ -6654,6 +6675,7 @@ class QuestModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('quest'), name: '', questType: 'Side', status: 'Available',
+      adventureId: '',
       giver: '', giverNpcId: '', location: '', locationId: '', locationType: '', campaignId: '',
       relatedNPCs: [], relatedNpcIds: [], relatedFactions: [], relatedFactionIds: [],
       objectives: '', stages: '', hooks: [], complications: [],
@@ -6668,6 +6690,7 @@ class QuestModal extends Modal {
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Quest` });
     addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Quest Name *', this.values.name, v => this.values.name = v);
+    addEntityPicker(contentEl, 'Parent Adventure', this.values.adventureId, this.plugin, 'adventures', v => this.values.adventureId = v);
     addSelect(contentEl, 'Quest Type', this.values.questType, ['Main','Side','Personal','Faction','Investigation','Escort','Retrieval','Elimination','Exploration','Social','Other'], v => this.values.questType = v);
     addSelect(contentEl, 'Status', this.values.status, ['Available','Active','Completed','Failed','Abandoned'], v => this.values.status = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
@@ -6708,6 +6731,7 @@ class EncounterModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '', locationType: '',
+      adventureId: '', questId: '',
       participants: [], participantPcIds: [], participantNpcIds: [], enemyTemplateIds: [], creatureIds: [], enemyGroups: '', difficulty: 'Medium',
       terrain: '', tactics: '', objectives: '',
       victoryConditions: '', failureConditions: '', rewards: '',
@@ -6722,6 +6746,8 @@ class EncounterModal extends Modal {
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Encounter` });
     addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Encounter Name *', this.values.name, v => this.values.name = v);
+    addEntityPicker(contentEl, 'Parent Adventure', this.values.adventureId, this.plugin, 'adventures', v => this.values.adventureId = v);
+    addEntityPicker(contentEl, 'Parent Quest', this.values.questId, this.plugin, 'quests', v => this.values.questId = v);
     addSelect(contentEl, 'Encounter Type', this.values.type, ['Combat','Social','Exploration','Trap','Chase','Hazard','Skill Challenge','Puzzle','Boss Fight','Other'], v => this.values.type = v);
     addSelect(contentEl, 'Difficulty', this.values.difficulty, ['Trivial','Easy','Medium','Hard','Deadly','Mythic'], v => this.values.difficulty = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
@@ -6840,7 +6866,15 @@ class CalendarModal extends Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
-    this.values = Object.assign({ name: 'Campaign Calendar', year: 1, month: 'Month 1', day: 1, weekdays: [], months: [], seasons: [], moons: [], holidays: [], importantDates: '', notes: '' }, plugin.state.calendar || {});
+    const camp = activeCampaign(plugin.state);
+    // Load from entities.calendars if a campaign-scoped calendar exists, else fall back to singleton
+    const existing = camp
+      ? safeArr(plugin.state.entities.calendars).find(c => c.campaignId === camp.id)
+      : null;
+    const base = existing || plugin.state.calendar || {};
+    this.values = Object.assign({ name: 'Campaign Calendar', year: 1, month: 'Month 1', day: 1, weekdays: [], months: [], seasons: [], moons: [], holidays: [], importantDates: '', notes: '' }, base);
+    if (!this.values.id) this.values.id = uid('cal');
+    if (camp && !this.values.campaignId) this.values.campaignId = camp.id;
   }
   onOpen() {
     const { contentEl } = this;
@@ -6859,10 +6893,13 @@ class CalendarModal extends Modal {
     addField(contentEl, 'Important Dates', this.values.importantDates, v => this.values.importantDates = v, 'textarea');
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
+      // Save to both the singleton (legacy) and entities.calendars (canonical)
       this.plugin.state.calendar = this.values;
+      upsert(this.plugin.state, 'calendars', this.values);
       await this.plugin.saveState();
       new Notice('Calendar saved.');
       this.close();
+      this.plugin.refreshViews();
     });
   }
 }
@@ -6968,6 +7005,14 @@ class EndSessionReviewModal extends Modal {
   }
 }
 
+// Central generator history logger
+function logGeneratorHistory(plugin, entry) {
+  if (!plugin.state.generatorHistory) plugin.state.generatorHistory = [];
+  const camp = activeCampaign(plugin.state);
+  plugin.state.generatorHistory.unshift({ id: uid('gen'), savedAt: Date.now(), status: 'generated', campaignId: camp ? camp.id : '', ...entry });
+  if (plugin.state.generatorHistory.length > 200) plugin.state.generatorHistory.length = 200;
+}
+
 // EntityDraftModal — preview/edit a generated entity before saving
 class EntityDraftModal extends Modal {
   constructor(app, plugin, generatorLabel, draft, entityKey, ModalClass) {
@@ -6983,6 +7028,15 @@ class EntityDraftModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `Generated: ${this.generatorLabel}` });
+    // Log to history when the draft is first shown
+    logGeneratorHistory(this.plugin, {
+      type: this.generatorLabel,
+      targetEntityType: this.entityKey,
+      title: this.draft.name || 'Untitled',
+      summary: this.draft.summary || this.draft.premise || '',
+      draftData: { ...this.draft },
+      status: 'generated',
+    });
     const previewCard = ce(contentEl, 'div', 'te-modal-section');
     previewCard.style.cssText = 'background:var(--te-bg-alt);padding:12px;border-radius:var(--te-r-md);margin-bottom:12px';
     previewCard.createEl('h3', { text: this.draft.name || 'Untitled' });
@@ -6996,6 +7050,10 @@ class EntityDraftModal extends Modal {
     });
     const actRow = ce(contentEl, 'div', 'te-modal-actions');
     btn(actRow, 'Save as Entity', 'te-btn is-primary', async () => {
+      // Update history entry to 'saved'
+      const hist = this.plugin.state.generatorHistory;
+      const entry = hist.find(h => h.type === this.generatorLabel && h.status === 'generated');
+      if (entry) entry.status = 'saved';
       if (this.ModalClass) {
         this.close();
         new this.ModalClass(this.plugin.app, this.plugin, this.draft).open();
@@ -7005,6 +7063,7 @@ class EntityDraftModal extends Modal {
         await this.plugin.saveState();
         new Notice(`${this.generatorLabel} saved.`);
         this.close();
+        this.plugin.refreshViews();
       }
     });
     btn(actRow, 'Regenerate', 'te-btn', () => { this.close(); /* caller must re-open */ });
@@ -7033,8 +7092,7 @@ class GeneratorModal extends Modal {
     btn(contentEl, '📋 Copy', 'te-btn', () => { if (this.result) navigator.clipboard.writeText(this.result).then(() => new Notice('Copied!')); });
     btn(contentEl, '💾 Save Result', 'te-btn', async () => {
       if (!this.result) generate_();
-      this.plugin.state.generatorHistory.unshift({ id: uid('gen'), type: this.type, result: this.result, savedAt: Date.now() });
-      if (this.plugin.state.generatorHistory.length > 200) this.plugin.state.generatorHistory.length = 200;
+      logGeneratorHistory(this.plugin, { type: this.type, result: this.result });
       await this.plugin.saveState();
       new Notice('Result saved to generator history.');
     });
@@ -7207,8 +7265,8 @@ class SettingsModal extends Modal {
       b.setButtonText('Change Campaign').onClick(() => { this.close(); this.plugin.state.activeSection = 'campaigns'; this.plugin.saveState(); });
     });
     addToggle(contentEl, 'Compact Mode', this.values.compact, v => this.values.compact = v);
-    new Setting(contentEl).setName('Note Root Folder').setDesc('Top-level vault folder for all TTRPG Engine notes (default: TTRPG Engine).')
-      .addText(t => { t.setValue(this.values.noteRootFolder || 'TTRPG Engine'); t.onChange(v => this.values.noteRootFolder = v.trim() || 'TTRPG Engine'); });
+    new Setting(contentEl).setName('Campaign Root Folder').setDesc('Top-level vault folder for all campaign notes (default: Campaigns).')
+      .addText(t => { t.setValue(this.values.campaignRootFolder || 'Campaigns'); t.onChange(v => this.values.campaignRootFolder = v.trim() || 'Campaigns'); });
     new Setting(contentEl).setName('Note Folder Mode').setDesc('workspace = nested workspace folders (recommended), flat = simple folders under root, legacy = old flat structure')
       .addDropdown(d => {
         d.addOption('workspace', 'Workspace (recommended)');
@@ -7242,12 +7300,60 @@ class AddCombatantModal extends Modal {
     this.plugin = plugin;
     this.type = type || 'NPC';
     this.values = { name: '', initiative: 0, initLocked: false, hp: 10, maxHp: 10, tempHp: 0, ac: 10, dex: 10, conditions: [], type: this.type };
+    this.mode = 'manual'; // 'manual' | 'entity'
+    this.selectedEntityType = 'npcs';
+    this.selectedEntityId = '';
   }
   onOpen() {
     const { contentEl } = this;
+    this._render(contentEl);
+  }
+  _render(contentEl) {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `Add ${this.type} to Initiative` });
+
+    // Mode toggle
+    const modeRow = ce(contentEl, 'div', 'te-modal-actions');
+    modeRow.style.marginBottom = '12px';
+    btn(modeRow, 'Pick Existing Entity', this.mode === 'entity' ? 'te-btn is-primary is-sm' : 'te-btn is-sm', () => { this.mode = 'entity'; this._render(contentEl); });
+    btn(modeRow, 'Enter Manually', this.mode === 'manual' ? 'te-btn is-primary is-sm' : 'te-btn is-sm', () => { this.mode = 'manual'; this._render(contentEl); });
+
+    if (this.mode === 'entity') {
+      // Entity type selector
+      new Setting(contentEl).setName('Entity Type').addDropdown(d => {
+        d.addOption('npcs', 'NPCs'); d.addOption('characters', 'PCs');
+        d.setValue(this.selectedEntityType);
+        d.onChange(v => { this.selectedEntityType = v; this.selectedEntityId = ''; this._render(contentEl); });
+      });
+      const options = safeArr(this.plugin.state.entities[this.selectedEntityType]);
+      if (!options.length) {
+        ce(contentEl, 'p', 'te-muted', `No ${this.selectedEntityType} found. Add some first or use manual entry.`);
+      } else {
+        new Setting(contentEl).setName('Select Entity').addDropdown(d => {
+          d.addOption('', '— Select —');
+          options.forEach(e => d.addOption(e.id, e.name || e.id));
+          d.setValue(this.selectedEntityId || '');
+          d.onChange(v => {
+            this.selectedEntityId = v;
+            if (v) {
+              const entity = options.find(e => e.id === v);
+              if (entity) {
+                this.values.name = entity.name || '';
+                this.values.maxHp = entity.hp || entity.maxHp || 10;
+                this.values.hp = this.values.maxHp;
+                this.values.ac = entity.ac || 10;
+                this.values.dex = entity.dex || 10;
+                this.values.sourceEntityType = this.selectedEntityType;
+                this.values.sourceEntityId = v;
+                this._render(contentEl);
+              }
+            }
+          });
+        });
+      }
+    }
+
     addField(contentEl, 'Name *', this.values.name, v => this.values.name = v);
     addNumber(contentEl, 'Initiative (or 0 to auto-roll)', this.values.initiative, v => { this.values.initiative = v; this.values.initLocked = v !== 0; });
     addNumber(contentEl, 'Max HP', this.values.maxHp, v => { this.values.maxHp = v; this.values.hp = v; });
@@ -8387,9 +8493,7 @@ class CampaignWizardModal extends Modal {
     }
     // Create folder structure
     if (d.createFolders) {
-      const root = safeFileName(this.plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
-      const campName = safeFileName(d.name, 'Campaign');
-      const base = `${root}/Campaigns/${campName}`;
+      const base = campaignFolder(this.plugin);
       for (const ws of [
         'Campaign Command Centre/Campaign Overview',
         'Campaign Command Centre/Acts',
@@ -8408,9 +8512,7 @@ class CampaignWizardModal extends Modal {
     }
     // Create starter note
     if (d.startingNote) {
-      const root = safeFileName(this.plugin.state.settings.noteRootFolder || 'TTRPG Engine', 'TTRPG Engine');
-      const campName = safeFileName(d.name, 'Campaign');
-      const base = `${root}/Campaigns/${campName}`;
+      const base = campaignFolder(this.plugin);
       let md = `# ${d.name}\n\n> ${d.tagline || ''}\n\n## Premise\n\n${d.premise || ''}\n\n`;
       if (d.playerPrimer) md += `## Player Primer\n\n${d.playerPrimer}\n\n`;
       md += `## Rules Baseline\n\n- **Ruleset:** ${d.ruleset}\n- **Levels:** ${d.levelRange}\n- **Levelling:** ${d.levellingMethod}\n- **Rests:** ${d.restRules}\n`;
