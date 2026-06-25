@@ -1789,34 +1789,54 @@ function compileEndSessionReview(session, state) {
   if (!session) return { sections: [], recap: '', markdown: '' };
   const log = Array.isArray(session.eventLog) ? session.eventLog : [];
   const campId = session.campaignId || '';
-  const byType = t => log.filter(e => e.type === t).map(e => e.text);
-  const npcs = byType('NPC Met'), locations = byType('Location Visited');
-  const secrets = byType('Secret Revealed'), quests = byType('Quest Advanced');
-  const loot = [...byType('Loot Awarded'), ...byType('Loot Generated')], timersLog = byType('Timer Advanced');
-  const notes = byType('Note'), hooks = byType('Next Hook');
-  const decisions = byType('Player Decision'), consequences = byType('Consequence');
-  const combatStart = byType('Combat Started'), genResults = [...byType('Generator Result'), ...byType('Generator Used')];
+  const byType = (...types) => log.filter(e => types.includes(e.type)).map(e => e.text);
+
+  const npcs = byType('NPC Met', 'NPC Activated');
+  const npcsDeactivated = byType('NPC Deactivated', 'NPC Died');
+  const locations = byType('Location Visited', 'Location Changed');
+  const mapChanges = byType('Map Changed');
+  const secrets = byType('Secret Revealed');
+  const quests = byType('Quest Advanced', 'Quest Activated', 'Quest Completed', 'Quest Failed');
+  const lootGen = byType('Loot Generated');
+  const lootAwarded = byType('Loot Awarded');
+  const timersLog = byType('Timer Advanced', 'Timer Removed');
+  const notes = byType('Note');
+  const hooks = byType('Next Hook');
+  const decisions = byType('Player Decision');
+  const consequences = byType('Consequence');
+  const combatEvents = byType('Combat Started', 'Combat Ended', 'Initiative Advanced', 'Combatant Added', 'Combatant Removed', 'Combatant Defeated', 'Condition Applied', 'Condition Removed');
+  const genResults = [...byType('Generator Used'), ...byType('Generator Result')];
+  const diceRolls = byType('Dice Rolled');
+  const handouts = byType('Handout Shared', 'Handout Shown');
+  const factions = byType('Faction Activated', 'Faction Deactivated');
+
   const activeTimers = safeArr(state.entities.timers).filter(t => !campId || t.campaignId === campId);
   const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!campId || q.campaignId === campId));
+
   const sections = [
-    { label: 'NPCs Met', items: npcs },
+    { label: 'NPCs Encountered', items: npcs },
     { label: 'Locations Visited', items: locations },
     { label: 'Secrets Revealed', items: secrets },
     { label: 'Quests Advanced', items: quests },
-    { label: 'Loot Awarded', items: loot },
+    { label: 'Loot Generated', items: lootGen },
+    { label: 'Loot Awarded', items: lootAwarded },
     { label: 'Timer Advances', items: timersLog },
     { label: 'DM Notes', items: notes },
     { label: 'Player Decisions', items: decisions },
     { label: 'Consequences', items: consequences },
-    { label: 'Combat', items: combatStart },
+    { label: 'Combat Events', items: combatEvents },
     { label: 'Generator Results', items: genResults },
+    { label: 'Dice Rolls', items: diceRolls },
+    { label: 'Handouts Shared', items: handouts },
+    { label: 'Factions', items: factions },
     { label: 'Next Session Hooks', items: hooks },
     { label: 'Active Timers (End State)', items: activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`) },
     { label: 'Open Quests', items: activeQuests.map(q => q.name) },
   ].filter(s => s.items.length > 0);
 
-  // Minimal YAML frontmatter + rich markdown body
+  // Minimal YAML frontmatter
   const camp = activeCampaign(state);
+  const sessionNum = session.sessionNumber || (safeArr(state.entities.sessions).findIndex(s => s.id === session.id) + 1) || '';
   const lines = [];
   lines.push('---');
   lines.push('ttrpg-engine: true');
@@ -1826,61 +1846,81 @@ function compileEndSessionReview(session, state) {
   lines.push(`createdAt: ${new Date().toISOString()}`);
   lines.push('---');
   lines.push('');
-  lines.push(`# ${session.name || 'Session Review'}`);
-  if (session.date) lines.push(`**Date:** ${session.date}`);
-  if (camp) lines.push(`**Campaign:** ${camp.name}`);
+  lines.push(`# Session Review — ${session.name || 'Session'}`);
+  lines.push('');
+  if (camp) lines.push(`> **Campaign:** ${camp.name}`);
+  if (sessionNum) lines.push(`> **Session #:** ${sessionNum}`);
+  if (session.date || session.realDate) lines.push(`> **Date:** ${session.date || session.realDate}`);
+  if (session.gameDate) lines.push(`> **In-World Date:** ${session.gameDate}`);
   lines.push('');
 
-  const addSection = (heading, items) => {
-    if (!items.length) return;
-    lines.push(`## ${heading}`);
+  // Executive Recap
+  const recapParts = [];
+  if (npcs.length) recapParts.push(`The party encountered ${npcs.join(', ')}.`);
+  if (locations.length) recapParts.push(`They visited ${locations.join(', ')}.`);
+  if (quests.length) recapParts.push(`Quests: ${quests.join('; ')}.`);
+  if (secrets.length) recapParts.push(`Secrets revealed: ${secrets.join('; ')}.`);
+  if (lootGen.length || lootAwarded.length) recapParts.push(`Loot: ${[...lootGen,...lootAwarded].join(', ')}.`);
+  if (hooks.length) recapParts.push(`Next hooks: ${hooks.join('; ')}.`);
+  const recap = recapParts.join(' ');
+  if (recap) { lines.push('## Executive Recap'); lines.push(''); lines.push(recap); lines.push(''); }
+
+  const addSection = (heading, items, icon = '') => {
+    if (!items || !items.length) return;
+    lines.push(`## ${icon ? icon + ' ' : ''}${heading}`);
+    lines.push('');
     items.forEach(item => lines.push(`- ${item}`));
     lines.push('');
   };
 
-  addSection('Locations Visited', locations);
-  addSection('NPCs Encountered', npcs);
-  addSection('Quests Advanced', quests);
-  addSection('Secrets Revealed', secrets);
-  addSection('Loot Awarded', loot);
-  addSection('Combat', combatStart);
-  addSection('Generator Results', genResults);
+  addSection('Locations & Maps', [...locations, ...mapChanges], '📍');
+  addSection('NPCs', [...npcs, ...npcsDeactivated], '👤');
+  addSection('Factions', factions, '⚔️');
+  addSection('Quests', quests, '📋');
+  addSection('Encounters & Combat', combatEvents, '⚔️');
+  addSection('Secrets & Handouts', [...secrets, ...handouts], '🔒');
+  addSection('Loot & Rewards', [...lootGen, ...lootAwarded], '💰');
+  addSection('Generators Used', genResults, '⚡');
+  addSection('Dice Rolls', diceRolls, '🎲');
   addSection('Player Decisions', decisions);
   addSection('Consequences', consequences);
-  addSection('DM Notes', notes);
-  addSection('Timer Advances', timersLog);
-  addSection('Active Timers (End State)', activeTimers.map(t => `${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6}`));
-  addSection('Open Quests', activeQuests.map(q => q.name));
-  addSection('Next Session Hooks', hooks);
-  if (session.notes && session.notes.trim()) {
-    lines.push('## Scratchpad Notes');
-    lines.push(session.notes.trim());
+  addSection('DM Notes', notes, '📝');
+  addSection('Timer Events', timersLog, '⏱️');
+
+  if (activeTimers.length) {
+    lines.push('## Timers (End State)'); lines.push('');
+    activeTimers.forEach(t => lines.push(`- ${t.name}: ${t.currentTick || 0}/${t.maxTicks || 6} ticks`));
     lines.push('');
   }
+  if (activeQuests.length) {
+    lines.push('## Open Quests'); lines.push('');
+    activeQuests.forEach(q => lines.push(`- ${q.name}`));
+    lines.push('');
+  }
+  addSection('Next Session Hooks', hooks, '🎣');
 
-  // Chronological log
+  if (session.notes && session.notes.trim()) {
+    lines.push('## Scratchpad Notes'); lines.push('');
+    lines.push(session.notes.trim()); lines.push('');
+  }
+
+  // Chronological Event Log
   if (log.length) {
-    lines.push('## Chronological Event Log');
+    lines.push('## Chronological Event Log'); lines.push('');
     [...log].forEach(evt => {
       const time = evt.time ? new Date(evt.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
-      const round = evt.round ? ` (Round ${evt.round})` : '';
-      lines.push(`- **[${evt.type}]**${round}${time ? ` \`${time}\`` : ''} ${evt.text}`);
+      const roundStr = evt.round ? ` (Round ${evt.round})` : '';
+      const sessStr = sessionNum ? ` [Session #${sessionNum}]` : '';
+      lines.push(`- **[${evt.type}]**${roundStr}${sessStr}${time ? ` \`${time}\`` : ''} ${evt.text}`);
     });
     lines.push('');
   }
 
-  // Player-safe recap paragraph
-  const recapParts = [];
-  if (npcs.length) recapParts.push(`The party met ${npcs.join(', ')}.`);
-  if (locations.length) recapParts.push(`They visited ${locations.join(', ')}.`);
-  if (secrets.length) recapParts.push(`Secrets revealed: ${secrets.join('; ')}.`);
-  if (quests.length) recapParts.push(`Quests advanced: ${quests.join('; ')}.`);
-  if (loot.length) recapParts.push(`Loot gained: ${loot.join(', ')}.`);
-  if (hooks.length) recapParts.push(`Next session hooks: ${hooks.join('; ')}.`);
-  const recap = recapParts.join(' ');
-  if (recap) { lines.push('## Player Recap'); lines.push(recap); lines.push(''); }
+  lines.push('## Player Recap'); lines.push('');
+  if (recap) { lines.push(recap); } else { lines.push('*(No session events logged.)*'); }
+  lines.push('');
 
-  return { sections, recap, sessionName: session.name || 'Session', date: session.date || '', markdown: lines.join('\n') };
+  return { sections, recap, sessionName: session.name || 'Session', date: session.date || session.realDate || '', markdown: lines.join('\n') };
 }
 
 // ── Modal field helpers ───────────────────────────────────────────────────────
@@ -4511,7 +4551,7 @@ function renderInitiativeTracker(parent, plugin) {
 
   const head = ce(wrap, 'div', 'te-init-head');
   const titleWrap = ce(head, 'div', '');
-  ce(titleWrap, 'div', 'te-init-title', `⚔️ Initiative Tracker`);
+  ce(titleWrap, 'div', 'te-init-title', `⚔️ Combat Tracker`);
   ce(titleWrap, 'div', '', it.active ? `Round ${it.round}` : 'Combat not started');
   const headBtns = ce(head, 'div', 'te-card-actions');
   btn(headBtns, 'Add PC', 'te-btn is-sm', () => new AddCombatantModal(plugin.app, plugin, 'PC').open());
@@ -4520,42 +4560,134 @@ function renderInitiativeTracker(parent, plugin) {
   btn(headBtns, '🎲 Roll All', 'te-btn is-sm is-primary', async () => {
     it.combatants.forEach(c => { if (!c.initLocked) c.initiative = rollDie(20) + (modifier(c.dex) || 0); });
     it.combatants.sort((a, b) => b.initiative - a.initiative);
-    it.currentIndex = 0; it.active = true;
-    await plugin.saveState();
+    it.currentIndex = 0;
+    if (!it.active) { it.active = true; it.round = 1; logSessionEvent(plugin, 'Combat Started', `${it.combatants.length} combatants`); }
+    await saveStateQuiet(plugin);
+    rebuildList();
   });
   if (it.active) {
     btn(headBtns, 'Next Turn ▶', 'te-btn is-sm', async () => {
       it.currentIndex = (it.currentIndex + 1) % Math.max(1, it.combatants.length);
       if (it.currentIndex === 0) it.round++;
-      await plugin.saveState();
+      const cur = it.combatants[it.currentIndex];
+      if (cur) logSessionEvent(plugin, 'Initiative Advanced', `Turn: ${cur.name}, Round ${it.round}`);
+      await saveStateQuiet(plugin);
+      rebuildList();
+    });
+    btn(headBtns, 'End Combat', 'te-btn is-sm is-danger', async () => {
+      it.active = false; it.round = 1; it.currentIndex = 0;
+      logSessionEvent(plugin, 'Combat Ended', `${it.combatants.length} combatants`);
+      await saveStateQuiet(plugin);
+      rebuildList();
+    });
+  } else {
+    btn(headBtns, 'Start Combat', 'te-btn is-sm is-primary', async () => {
+      it.active = true; it.round = 1; it.currentIndex = 0;
+      logSessionEvent(plugin, 'Combat Started', `${it.combatants.length} combatants`);
+      await saveStateQuiet(plugin);
+      rebuildList();
     });
   }
   btn(headBtns, 'Reset', 'te-btn is-sm is-danger', async () => {
-    if (confirm('Reset initiative tracker?')) { it.combatants = []; it.currentIndex = 0; it.round = 1; it.active = false; await plugin.saveState(); }
+    if (confirm('Reset combat tracker?')) {
+      it.combatants = []; it.currentIndex = 0; it.round = 1; it.active = false;
+      await saveStateQuiet(plugin);
+      rebuildList();
+    }
   });
 
   const list = ce(wrap, 'div', 'te-combatant-list');
-  if (!it.combatants.length) { ce(list, 'p', 'te-card-body', 'No combatants. Add PCs, NPCs, or monsters above, then Roll All Initiative.'); return; }
-
-  it.combatants.forEach((comb, idx) => {
-    const row = ce(list, 'div', 'te-combatant-row' + (idx === it.currentIndex && it.active ? ' is-current' : ''));
-    ce(row, 'span', 'te-combatant-type', comb.type);
-    ce(row, 'span', 'te-combatant-name', comb.name);
-    ce(row, 'span', 'te-combatant-init', String(comb.initiative));
-    // HP display
-    const hpWrap = ce(row, 'span', 'te-combatant-hp');
-    hpWrap.textContent = `HP ${comb.hp}/${comb.maxHp}`;
-    if (comb.tempHp) hpWrap.textContent += ` +${comb.tempHp} tmp`;
-    // Conditions
-    if (safeArr(comb.conditions).length) { ce(row, 'span', 'te-combatant-type', comb.conditions.join(', ')); }
-    // Remove btn
-    const rb = btn(row, '✕', 'te-btn is-sm is-danger', async () => {
-      it.combatants.splice(idx, 1);
-      if (it.currentIndex >= it.combatants.length) it.currentIndex = 0;
-      await plugin.saveState();
+  const rebuildList = () => {
+    clear(list);
+    if (!it.combatants.length) {
+      ce(list, 'p', 'te-card-body', 'No combatants. Add PCs, NPCs, or monsters above, then Roll All Initiative.');
+      return;
+    }
+    it.combatants.forEach((comb, idx) => {
+      const row = ce(list, 'div', 'te-combatant-row' + (idx === it.currentIndex && it.active ? ' is-current' : ''));
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--te-border)';
+      ce(row, 'span', 'te-combatant-type', comb.type);
+      ce(row, 'span', 'te-combatant-name', comb.name);
+      ce(row, 'span', 'te-combatant-init', `Init: ${comb.initiative}`);
+      // HP editing
+      const hpWrap = ce(row, 'span', '');
+      hpWrap.style.cssText = 'display:flex;gap:2px;align-items:center;font-size:.82rem';
+      ce(hpWrap, 'span', 'te-card-meta-label', 'HP');
+      const hpInp = ce(hpWrap, 'input');
+      hpInp.type = 'number'; hpInp.value = String(comb.hp || 0);
+      hpInp.style.cssText = 'width:44px;padding:2px 4px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);text-align:center';
+      hpInp.addEventListener('change', async () => { comb.hp = parseInt(hpInp.value) || 0; await saveStateQuiet(plugin); });
+      if (comb.maxHp) { ce(hpWrap, 'span', '', `/${comb.maxHp}`); }
+      if (comb.tempHp) { ce(hpWrap, 'span', 'te-muted-text', `+${comb.tempHp}tmp`); }
+      // Dmg/Heal inputs
+      const adjWrap = ce(row, 'span', '');
+      adjWrap.style.cssText = 'display:flex;gap:2px;align-items:center';
+      const adjInp = ce(adjWrap, 'input');
+      adjInp.type = 'number'; adjInp.min = '0'; adjInp.placeholder = '0';
+      adjInp.style.cssText = 'width:38px;padding:2px 4px;font-size:.75rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);text-align:center';
+      btn(adjWrap, 'Dmg', 'te-btn is-sm is-danger', async () => {
+        const amt = Math.abs(parseInt(adjInp.value) || 0);
+        if (!amt) return;
+        comb.hp = Math.max(0, (comb.hp || 0) - amt);
+        hpInp.value = String(comb.hp);
+        adjInp.value = '';
+        if (comb.hp === 0) { if (!safeArr(comb.conditions).includes('Dead')) { comb.conditions = [...safeArr(comb.conditions), 'Dead']; logSessionEvent(plugin, 'Combatant Defeated', comb.name); } }
+        await saveStateQuiet(plugin);
+        rebuildList();
+      });
+      btn(adjWrap, 'Heal', 'te-btn is-sm', async () => {
+        const amt = Math.abs(parseInt(adjInp.value) || 0);
+        if (!amt) return;
+        comb.hp = comb.maxHp > 0 ? Math.min(comb.maxHp, (comb.hp || 0) + amt) : (comb.hp || 0) + amt;
+        hpInp.value = String(comb.hp);
+        adjInp.value = '';
+        await saveStateQuiet(plugin);
+        rebuildList();
+      });
+      // Conditions
+      const condWrap = ce(row, 'div', '');
+      condWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:2px;align-items:center;width:100%;margin-top:2px';
+      safeArr(comb.conditions).forEach(cond => {
+        const chip = ce(condWrap, 'span', 'te-chip', cond);
+        chip.style.fontSize = '.72rem';
+        const xb = ce(chip, 'button', 'te-chip-x', '×');
+        xb.addEventListener('click', async () => {
+          comb.conditions = safeArr(comb.conditions).filter(c => c !== cond);
+          logSessionEvent(plugin, 'Condition Removed', `${comb.name}: ${cond}`);
+          await saveStateQuiet(plugin);
+          rebuildList();
+        });
+      });
+      // Add condition select
+      const condSel = ce(condWrap, 'select');
+      condSel.style.cssText = 'font-size:.72rem;padding:1px 3px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+      ['+ Condition','Blinded','Charmed','Deafened','Exhaustion','Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified','Poisoned','Prone','Restrained','Stunned','Unconscious','Dead'].forEach(c => {
+        const o = ce(condSel, 'option', '', c); o.value = c;
+      });
+      condSel.addEventListener('change', async () => {
+        const cond = condSel.value;
+        if (!cond || cond === '+ Condition') return;
+        if (!safeArr(comb.conditions).includes(cond)) {
+          comb.conditions = [...safeArr(comb.conditions), cond];
+          if (cond === 'Dead') logSessionEvent(plugin, 'Combatant Defeated', comb.name);
+          else logSessionEvent(plugin, 'Condition Applied', `${comb.name}: ${cond}`);
+          await saveStateQuiet(plugin);
+        }
+        condSel.value = '+ Condition';
+        rebuildList();
+      });
+      // Remove combatant
+      const rb = btn(row, '✕', 'te-btn is-sm is-danger', async () => {
+        logSessionEvent(plugin, 'Combatant Removed', comb.name);
+        it.combatants.splice(idx, 1);
+        if (it.currentIndex >= it.combatants.length) it.currentIndex = 0;
+        await saveStateQuiet(plugin);
+        rebuildList();
+      });
+      rb.style.marginLeft = 'auto';
     });
-    rb.style.marginLeft = 'auto';
-  });
+  };
+  rebuildList();
 }
 
 // ── RULES & MECHANICS ─────────────────────────────────────────────────────────
@@ -5336,16 +5468,24 @@ function renderGazetteer(main, plugin, tabs) {
 function renderRunSession(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
-  pageHead(main, plugin, '▶ Run Session', 'Live session management — initiative, reveals, handouts, and notes.', [
-    { label: state.sessionRunMode ? '⏹ End Session' : '▶ Start Session', primary: !state.sessionRunMode, run: state.sessionRunMode,
+
+  // Determine active session
+  let activeSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
+
+  // Session start/end & End Session & Open Review action
+  const startEndLabel = !state.sessionRunMode ? '▶ Start Session' : '⏹ End Session & Review';
+  pageHead(main, plugin, '▶ Run Session', 'Live session management — combat, context, events, and notes.', [
+    { label: startEndLabel, primary: !state.sessionRunMode, run: state.sessionRunMode,
       onClick: async () => {
         if (!state.sessionRunMode) {
+          // Start session
           const newSess = {
             id: uid('sess'),
             name: `Session ${safeArr(state.entities.sessions).length + 1} — ${new Date().toLocaleDateString()}`,
             status: 'Active', date: new Date().toISOString().slice(0, 10),
             campaignId: state.activeCampaignId,
             eventLog: [],
+            notes: '',
             sessionContext: {
               currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
               activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
@@ -5355,213 +5495,448 @@ function renderRunSession(main, plugin, tabs) {
           upsert(state, 'sessions', newSess);
           state.sessionRunMode = true;
           state.activeSessionId = newSess.id;
+          activeSess = newSess;
+          logSessionEvent(plugin, 'Session Started', newSess.name);
+          await plugin.saveState();
         } else {
+          // End session & open review
           const sess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
-          if (sess) { sess.status = 'Completed'; upsert(state, 'sessions', sess); }
+          if (sess) {
+            logSessionEvent(plugin, 'Session Ended', sess.name);
+            sess.status = 'Completed';
+            upsert(state, 'sessions', sess);
+          }
           state.sessionRunMode = false;
           state.activeSessionId = '';
+          await plugin.saveState();
+          if (sess) new EndSessionReviewModal(plugin.app, plugin, sess).open();
         }
-        await plugin.saveState();
       }
     },
   ], tabs);
 
-  const activeSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
-
   if (state.sessionRunMode && activeSess) {
     ce(main, 'div', 'te-session-live-badge', '🔴 Session in Progress');
     ce(main, 'p', 'te-page-subtitle', activeSess.name);
+  }
 
-    // ── Session Context Panel ─────────────────────────────────────────────────
-    if (!activeSess.sessionContext) activeSess.sessionContext = {
+  // Ensure sessionContext exists
+  if (activeSess) { if (!activeSess.sessionContext) activeSess.sessionContext = {
       currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
       activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
       activeTimerIds: [], currentMapId: ''
     };
-    const ctx = activeSess.sessionContext;
-    const ctxCard = ce(main, 'div', 'te-card'); ctxCard.style.cssText = 'padding:12px;margin-bottom:8px';
-    const ctxH = ce(ctxCard, 'div', 'te-card-head'); ce(ctxH, 'span', 'te-card-icon', '🎯'); ce(ctxH, 'h3', 'te-card-title', 'Session Context');
-    const ctxGrid = ce(ctxCard, 'div', 'te-stat-grid');
+  }
+  const ctx = activeSess ? activeSess.sessionContext : null;
+  // Helper for ctx selects: logs when logType provided and value changes
+  const ctxSelectLog = (logType, sel, prev, items) => { if (logType && sel.value !== prev) { const found = items.find(x => x.id === sel.value); if (found) logSessionEvent(plugin, logType, found.name); } };
 
-    const makeCtxSelect = (label, key, entityKey, logType, nameField = 'name') => {
-      const sc = ce(ctxGrid, 'div', 'te-stat-card');
-      ce(sc, 'div', 'te-stat-label', label);
-      const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.82rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-      ce(sel, 'option', '', '— none —').value = '';
-      const items = safeArr(state.entities[entityKey]).filter(x => !state.activeCampaignId || x.campaignId === state.activeCampaignId);
-      items.forEach(x => { const o = ce(sel, 'option', '', x[nameField] || x.name || x.id); o.value = x.id; });
-      sel.value = ctx[key] || '';
-      sel.addEventListener('change', async () => {
-        const prev = ctx[key];
-        ctx[key] = sel.value;
-        if (logType && sel.value !== prev) {
-          const chosen = items.find(x => x.id === sel.value);
-          if (chosen) logSessionEvent(plugin, logType, chosen.name || sel.value);
+  // ── 2/3 | 1/3 column layout ──────────────────────────────────────────────────
+  const colWrap = ce(main, 'div', 'te-run-cols');
+  colWrap.style.cssText = 'display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap';
+  const leftCol = ce(colWrap, 'div', 'te-run-left');
+  leftCol.style.cssText = 'flex:2 1 400px;min-width:0';
+  const rightCol = ce(colWrap, 'div', 'te-run-right');
+  rightCol.style.cssText = 'flex:1 1 240px;min-width:220px';
+
+  // ════════════════════════════════════════════════════════
+  // LEFT COLUMN
+  // ════════════════════════════════════════════════════════
+
+  // ── 1. Session Context ───────────────────────────────────────────────────────
+  sectionHead(leftCol, '🎯 Session Context');
+  if (activeSess && ctx) {
+    const ctxCard = ce(leftCol, 'div', 'te-card'); ctxCard.style.cssText = 'padding:12px;margin-bottom:8px';
+
+    // Tabs: Location | Map | NPCs | Quests | Factions
+    const CTX_TABS = ['location', 'map', 'npcs', 'quests', 'factions'];
+    const CTX_LABELS = ['📍 Location', '🗺️ Map', '👥 NPCs', '📋 Quests', '⚔️ Factions'];
+    let activeCtxTab = 'location';
+    const ctxTabRow = ce(ctxCard, 'div', 'te-card-actions'); ctxTabRow.style.flexWrap = 'wrap';
+    const ctxContent = ce(ctxCard, 'div', ''); ctxContent.style.marginTop = '8px';
+    const scopeId = camp ? camp.id : state.activeCampaignId;
+
+    const renderCtxTab = () => {
+      clear(ctxContent);
+      if (activeCtxTab === 'location') {
+        const sc = ce(ctxContent, 'div', 'te-stat-card');
+        ce(sc, 'div', 'te-stat-label', 'Current Location');
+        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        ce(sel, 'option', '', '— none —').value = '';
+        const locs = safeArr(state.entities.locations).filter(x => !scopeId || x.campaignId === scopeId);
+        locs.forEach(x => { const o = ce(sel, 'option', '', x.name || x.id); o.value = x.id; });
+        sel.value = ctx.currentLocationId || '';
+        sel.addEventListener('change', async () => {
+          const prev = ctx.currentLocationId;
+          ctx.currentLocationId = sel.value;
+          if (sel.value !== prev) {
+            const chosen = locs.find(x => x.id === sel.value);
+            if (chosen) logSessionEvent(plugin, 'Location Changed', chosen.name);
+          }
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        });
+        // Also show settlements as location options
+        const settls = safeArr(state.entities.settlements).filter(x => !scopeId || x.campaignId === scopeId);
+        if (settls.length) {
+          const sc2 = ce(ctxContent, 'div', 'te-stat-card'); sc2.style.marginTop = '8px';
+          ce(sc2, 'div', 'te-stat-label', 'Settlement / Town');
+          const sel2 = ce(sc2, 'select'); sel2.style.cssText = sel.style.cssText;
+          ce(sel2, 'option', '', '— none —').value = '';
+          settls.forEach(x => { const o = ce(sel2, 'option', '', x.name || x.id); o.value = x.id; });
+          sel2.addEventListener('change', async () => {
+            const chosen = settls.find(x => x.id === sel2.value);
+            if (chosen) logSessionEvent(plugin, 'Location Changed', chosen.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          });
         }
-        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-      });
-    };
-    makeCtxSelect('Current Location', 'currentLocationId', 'locations', 'Location Changed');
-    makeCtxSelect('Current Map', 'currentMapId', 'tileMaps', null);
-
-    // Active NPCs chip control
-    const npcCtxWrap = ce(ctxCard, 'div', ''); npcCtxWrap.style.marginTop = '8px';
-    const npcCtxLabel = ce(npcCtxWrap, 'div', 'te-stat-label', 'Active NPCs'); npcCtxLabel.style.marginBottom = '4px';
-    const activeNpcChips = ce(npcCtxWrap, 'div', 'te-chip-row');
-    const rebuildNpcChips = () => {
-      clear(activeNpcChips);
-      safeArr(ctx.activeNpcIds).forEach((npcId, i) => {
-        const npc = safeArr(state.entities.npcs).find(n => n.id === npcId);
-        if (!npc) return;
-        const chip = ce(activeNpcChips, 'span', 'te-chip', npc.name);
-        const x = ce(chip, 'button', 'te-chip-x', '×');
-        x.title = 'Remove from scene';
-        x.addEventListener('click', async () => {
-          ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-          logSessionEvent(plugin, 'NPC Deactivated', npc.name);
+      } else if (activeCtxTab === 'map') {
+        const sc = ce(ctxContent, 'div', 'te-stat-card');
+        ce(sc, 'div', 'te-stat-label', 'Current Map');
+        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        ce(sel, 'option', '', '— none —').value = '';
+        const maps = safeArr(state.entities.tileMaps || []).filter(x => !scopeId || x.campaignId === scopeId);
+        maps.forEach(x => { const o = ce(sel, 'option', '', x.name || 'Untitled'); o.value = x.id; });
+        sel.value = ctx.currentMapId || '';
+        sel.addEventListener('change', async () => {
+          const prev = ctx.currentMapId;
+          ctx.currentMapId = sel.value;
+          if (sel.value !== prev) {
+            const chosen = maps.find(x => x.id === sel.value);
+            if (chosen) logSessionEvent(plugin, 'Map Changed', chosen.name || 'map');
+          }
           upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          rebuildNpcChips();
         });
-        // Mark dead button
-        const deadBtn = ce(chip, 'button', 'te-chip-x', '💀');
-        deadBtn.title = 'Mark dead'; deadBtn.style.marginLeft = '2px';
-        deadBtn.addEventListener('click', async () => {
-          npc.status = 'Dead'; upsert(state, 'npcs', npc);
-          ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-          logSessionEvent(plugin, 'NPC Died', npc.name);
-          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          rebuildNpcChips();
-        });
-      });
-    };
-    rebuildNpcChips();
-    const npcAddRow = ce(npcCtxWrap, 'div', 'te-chip-add-row'); npcAddRow.style.marginTop = '4px';
-    const npcSearch = ce(npcAddRow, 'input'); npcSearch.type = 'text'; npcSearch.placeholder = 'Add NPC…'; npcSearch.style.flex = '1'; npcSearch.style.fontSize = '.82rem';
-    const campNpcsCtx = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
-    btn(npcAddRow, '+ Add', 'te-btn te-btn-xs is-sm', async () => {
-      const q = npcSearch.value.toLowerCase().trim();
-      const match = campNpcsCtx.find(n => (n.name||'').toLowerCase() === q) ||
-                    campNpcsCtx.find(n => (n.name||'').toLowerCase().includes(q));
-      if (!match) { new Notice('No NPC found. Try a different name.'); return; }
-      if (!safeArr(ctx.activeNpcIds).includes(match.id)) {
-        ctx.activeNpcIds = [...safeArr(ctx.activeNpcIds), match.id];
-        logSessionEvent(plugin, 'NPC Activated', match.name);
-        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        const mapBtns = ce(ctxContent, 'div', 'te-card-actions'); mapBtns.style.marginTop = '8px';
+        btn(mapBtns, '🗺️ Open Tile Map', 'te-btn is-sm is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
+      } else if (activeCtxTab === 'npcs') {
+        const activeNpcChips = ce(ctxContent, 'div', 'te-chip-row');
+        const rebuildNpcChips = () => {
+          clear(activeNpcChips);
+          safeArr(ctx.activeNpcIds).forEach((npcId) => {
+            const npc = safeArr(state.entities.npcs).find(n => n.id === npcId);
+            if (!npc) return;
+            const chip = ce(activeNpcChips, 'span', 'te-chip', npc.name);
+            const deadBtn = ce(chip, 'button', 'te-chip-x', '💀');
+            deadBtn.title = 'Mark dead';
+            deadBtn.addEventListener('click', async () => {
+              npc.status = 'Dead'; upsert(state, 'npcs', npc);
+              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+              logSessionEvent(plugin, 'NPC Died', npc.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildNpcChips();
+            });
+            const x = ce(chip, 'button', 'te-chip-x', '×');
+            x.title = 'Remove from scene';
+            x.addEventListener('click', async () => {
+              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+              logSessionEvent(plugin, 'NPC Deactivated', npc.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildNpcChips();
+            });
+          });
+        };
         rebuildNpcChips();
+        const npcAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); npcAddRow.style.marginTop = '6px';
+        const npcSearch = ce(npcAddRow, 'input'); npcSearch.type = 'text'; npcSearch.placeholder = 'Add NPC…'; npcSearch.style.flex = '1';
+        const campNpcsCtx = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
+        btn(npcAddRow, '+ Add', 'te-btn is-sm', async () => {
+          const q = npcSearch.value.toLowerCase().trim();
+          const match = campNpcsCtx.find(n => (n.name||'').toLowerCase() === q) || campNpcsCtx.find(n => (n.name||'').toLowerCase().includes(q));
+          if (!match) { new Notice('No NPC found.'); return; }
+          if (!safeArr(ctx.activeNpcIds).includes(match.id)) {
+            ctx.activeNpcIds = [...safeArr(ctx.activeNpcIds), match.id];
+            logSessionEvent(plugin, 'NPC Activated', match.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+            rebuildNpcChips();
+          }
+          npcSearch.value = '';
+        });
+        npcSearch.addEventListener('keydown', e => { if (e.key === 'Enter') npcAddRow.querySelector('button[class*="te-btn"]').click(); });
+      } else if (activeCtxTab === 'quests') {
+        const activeQChips = ce(ctxContent, 'div', 'te-chip-row');
+        const rebuildQChips = () => {
+          clear(activeQChips);
+          safeArr(ctx.activeQuestIds).forEach(qId => {
+            const q = safeArr(state.entities.quests).find(x => x.id === qId);
+            if (!q) return;
+            const chip = ce(activeQChips, 'span', 'te-chip', q.name);
+            const completeBtn = ce(chip, 'button', 'te-chip-x', '✅');
+            completeBtn.title = 'Complete quest';
+            completeBtn.addEventListener('click', async () => {
+              q.status = 'Completed'; upsert(state, 'quests', q);
+              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+              logSessionEvent(plugin, 'Quest Completed', q.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildQChips();
+            });
+            const failBtn = ce(chip, 'button', 'te-chip-x', '❌');
+            failBtn.title = 'Fail quest';
+            failBtn.addEventListener('click', async () => {
+              q.status = 'Failed'; upsert(state, 'quests', q);
+              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+              logSessionEvent(plugin, 'Quest Failed', q.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildQChips();
+            });
+            const rmQ = ce(chip, 'button', 'te-chip-x', '×');
+            rmQ.title = 'Remove from scene';
+            rmQ.addEventListener('click', async () => {
+              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+              logSessionEvent(plugin, 'Quest Deactivated', q.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildQChips();
+            });
+          });
+        };
+        rebuildQChips();
+        const qAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); qAddRow.style.marginTop = '6px';
+        const qSearch = ce(qAddRow, 'input'); qSearch.type = 'text'; qSearch.placeholder = 'Activate quest…'; qSearch.style.flex = '1';
+        const campQuests = safeArr(state.entities.quests).filter(q => !state.activeCampaignId || q.campaignId === state.activeCampaignId);
+        btn(qAddRow, '+ Add', 'te-btn is-sm', async () => {
+          const qq = qSearch.value.toLowerCase().trim();
+          const match = campQuests.find(q => (q.name||'').toLowerCase() === qq) || campQuests.find(q => (q.name||'').toLowerCase().includes(qq));
+          if (!match) { new Notice('No quest found.'); return; }
+          if (!safeArr(ctx.activeQuestIds).includes(match.id)) {
+            ctx.activeQuestIds = [...safeArr(ctx.activeQuestIds), match.id];
+            if (match.status !== 'Active') { match.status = 'Active'; upsert(state, 'quests', match); }
+            logSessionEvent(plugin, 'Quest Activated', match.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+            rebuildQChips();
+          }
+          qSearch.value = '';
+        });
+        qSearch.addEventListener('keydown', e => { if (e.key === 'Enter') qAddRow.querySelector('button[class*="te-btn"]').click(); });
+      } else if (activeCtxTab === 'factions') {
+        const activeFacChips = ce(ctxContent, 'div', 'te-chip-row');
+        const rebuildFacChips = () => {
+          clear(activeFacChips);
+          safeArr(ctx.activeFactionIds).forEach(fId => {
+            const fac = safeArr(state.entities.factions).find(x => x.id === fId);
+            if (!fac) return;
+            const chip = ce(activeFacChips, 'span', 'te-chip', fac.name);
+            const x = ce(chip, 'button', 'te-chip-x', '×');
+            x.title = 'Deactivate faction';
+            x.addEventListener('click', async () => {
+              ctx.activeFactionIds = safeArr(ctx.activeFactionIds).filter(id => id !== fId);
+              logSessionEvent(plugin, 'Faction Deactivated', fac.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildFacChips();
+            });
+          });
+        };
+        rebuildFacChips();
+        const facAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); facAddRow.style.marginTop = '6px';
+        const facSearch = ce(facAddRow, 'input'); facSearch.type = 'text'; facSearch.placeholder = 'Add faction…'; facSearch.style.flex = '1';
+        const campFacs = safeArr(state.entities.factions).filter(f => !scopeId || f.campaignId === scopeId);
+        btn(facAddRow, '+ Add', 'te-btn is-sm', async () => {
+          const qq = facSearch.value.toLowerCase().trim();
+          const match = campFacs.find(f => (f.name||'').toLowerCase() === qq) || campFacs.find(f => (f.name||'').toLowerCase().includes(qq));
+          if (!match) { new Notice('No faction found.'); return; }
+          if (!safeArr(ctx.activeFactionIds).includes(match.id)) {
+            ctx.activeFactionIds = [...safeArr(ctx.activeFactionIds), match.id];
+            logSessionEvent(plugin, 'Faction Activated', match.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+            rebuildFacChips();
+          }
+          facSearch.value = '';
+        });
+        facSearch.addEventListener('keydown', e => { if (e.key === 'Enter') facAddRow.querySelector('button[class*="te-btn"]').click(); });
       }
-      npcSearch.value = '';
-    });
-    npcSearch.addEventListener('keydown', e => { if (e.key === 'Enter') npcAddRow.querySelector('button').click(); });
+    };
 
-    // Active Quests chip control
-    const qCtxWrap = ce(ctxCard, 'div', ''); qCtxWrap.style.marginTop = '8px';
-    const qCtxLabel = ce(qCtxWrap, 'div', 'te-stat-label', 'Active Quests'); qCtxLabel.style.marginBottom = '4px';
-    const activeQChips = ce(qCtxWrap, 'div', 'te-chip-row');
-    const rebuildQChips = () => {
-      clear(activeQChips);
-      safeArr(ctx.activeQuestIds).forEach(qId => {
-        const q = safeArr(state.entities.quests).find(x => x.id === qId);
-        if (!q) return;
-        const chip = ce(activeQChips, 'span', 'te-chip', q.name);
-        const completeBtn = ce(chip, 'button', 'te-chip-x', '✅');
-        completeBtn.title = 'Complete quest'; completeBtn.style.marginLeft = '2px';
-        completeBtn.addEventListener('click', async () => {
-          q.status = 'Completed'; upsert(state, 'quests', q);
-          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-          logSessionEvent(plugin, 'Quest Completed', q.name);
-          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          rebuildQChips();
+    CTX_TABS.forEach((id, i) => {
+      btn(ctxTabRow, CTX_LABELS[i], 'te-btn is-sm' + (id === activeCtxTab ? ' is-primary' : ''), () => {
+        activeCtxTab = id;
+        Array.from(ctxTabRow.querySelectorAll('button')).forEach((b, j) => {
+          b.className = 'te-btn is-sm' + (CTX_TABS[j] === activeCtxTab ? ' is-primary' : '');
         });
-        const failBtn = ce(chip, 'button', 'te-chip-x', '❌');
-        failBtn.title = 'Fail quest'; failBtn.style.marginLeft = '2px';
-        failBtn.addEventListener('click', async () => {
-          q.status = 'Failed'; upsert(state, 'quests', q);
-          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-          logSessionEvent(plugin, 'Quest Failed', q.name);
-          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          rebuildQChips();
-        });
-        const rmQ = ce(chip, 'button', 'te-chip-x', '×');
-        rmQ.title = 'Remove from scene';
-        rmQ.addEventListener('click', async () => {
-          ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-          logSessionEvent(plugin, 'Quest Deactivated', q.name);
-          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          rebuildQChips();
-        });
+        renderCtxTab();
+      });
+    });
+    renderCtxTab();
+  } else {
+    ce(leftCol, 'p', 'te-empty-state', 'Start a session to enable Session Context.');
+  }
+
+  // ── 2. Session Event Log ──────────────────────────────────────────────────────
+  sectionHead(leftCol, '📋 Session Event Log');
+  if (activeSess) {
+    if (!Array.isArray(activeSess.eventLog)) activeSess.eventLog = [];
+    const logWrap = ce(leftCol, 'div', 'te-card'); logWrap.style.padding = '12px';
+    const EVENT_TYPES = ['Note','NPC Met','Location Visited','Quest Advanced','Secret Revealed','Loot Awarded','Combat Started','Combat Ended','Player Decision','Consequence','Timer Advanced','Next Hook'];
+    let evtType = 'Note';
+    const typeRow = ce(logWrap, 'div', 'te-card-actions'); typeRow.style.flexWrap = 'wrap';
+    EVENT_TYPES.forEach(t => {
+      btn(typeRow, t, 'te-btn is-sm' + (t === evtType ? ' is-primary' : ''), () => {
+        evtType = t;
+        Array.from(typeRow.querySelectorAll('button')).forEach((bb, i) => bb.className = 'te-btn is-sm' + (EVENT_TYPES[i] === t ? ' is-primary' : ''));
+      });
+    });
+    const addRow = ce(logWrap, 'div', 'te-chip-add-row'); addRow.style.marginTop = '8px';
+    const evtInp = ce(addRow, 'input'); evtInp.type = 'text'; evtInp.placeholder = 'Event note…'; evtInp.style.flex = '1';
+    btn(addRow, 'Add', 'te-btn is-primary', async () => {
+      const text = evtInp.value.trim(); if (!text) return;
+      logSessionEvent(plugin, evtType, text);
+      evtInp.value = '';
+      await saveStateQuiet(plugin);
+      renderLog();
+    });
+    evtInp.addEventListener('keydown', e => { if (e.key === 'Enter') addRow.querySelector('button').click(); });
+    const logList = ce(logWrap, 'div', '');
+    logList.style.cssText = 'max-height:240px;overflow-y:auto;margin-top:8px';
+    const renderLog = () => {
+      clear(logList);
+      const events = [...activeSess.eventLog].reverse();
+      if (!events.length) { ce(logList, 'p', 'te-empty-state', 'No events yet.'); return; }
+      events.forEach(evt => {
+        const row = ce(logList, 'div', 'te-card-meta-row');
+        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border);font-size:.85rem;display:flex;gap:6px;align-items:baseline';
+        const lbl = ce(row, 'span', 'te-card-meta-label'); lbl.textContent = evt.type;
+        ce(row, 'span', '', evt.text);
+        const t = ce(row, 'span', 'te-muted-text'); t.style.marginLeft = 'auto'; t.style.fontSize = '.75rem';
+        t.textContent = evt.time ? new Date(evt.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
       });
     };
-    rebuildQChips();
-    const qAddRow = ce(qCtxWrap, 'div', 'te-chip-add-row'); qAddRow.style.marginTop = '4px';
-    const qSearch = ce(qAddRow, 'input'); qSearch.type = 'text'; qSearch.placeholder = 'Activate quest…'; qSearch.style.flex = '1'; qSearch.style.fontSize = '.82rem';
-    const campQuests = safeArr(state.entities.quests).filter(q => !state.activeCampaignId || q.campaignId === state.activeCampaignId);
-    btn(qAddRow, '+ Add', 'te-btn te-btn-xs is-sm', async () => {
-      const qq = qSearch.value.toLowerCase().trim();
-      const match = campQuests.find(q => (q.name||'').toLowerCase() === qq) ||
-                    campQuests.find(q => (q.name||'').toLowerCase().includes(qq));
-      if (!match) { new Notice('No quest found. Try a different name.'); return; }
-      if (!safeArr(ctx.activeQuestIds).includes(match.id)) {
-        ctx.activeQuestIds = [...safeArr(ctx.activeQuestIds), match.id];
-        if (match.status !== 'Active') { match.status = 'Active'; upsert(state, 'quests', match); }
-        logSessionEvent(plugin, 'Quest Activated', match.name);
-        upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-        rebuildQChips();
-      }
-      qSearch.value = '';
-    });
-    qSearch.addEventListener('keydown', e => { if (e.key === 'Enter') qAddRow.querySelector('button').click(); });
-  }
-
-  sectionHead(main, 'Initiative Tracker');
-  renderInitiativeTracker(main, plugin);
-
-  sectionHead(main, 'Reveal Queue — Secrets & Handouts');
-  const pending = safeArr(state.entities.secrets).filter(s => s.status === 'Ready to Reveal');
-  const pendingHandouts = safeArr(state.entities.handouts).filter(h => h.visibility === 'dm-only');
-  if (pending.length || pendingHandouts.length) {
-    const g = ce(main, 'div', 'te-grid');
-    pending.forEach(s => {
-      const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🔓'); ce(h, 'h3', 'te-card-title', s.name);
-      if (s.summary) ce(c, 'p', 'te-card-body', s.summary);
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, '✅ Reveal Now', 'te-btn is-sm is-primary', async () => {
-        s.visibility = 'revealed'; s.status = 'Revealed'; s.revealedAt = new Date().toISOString();
-        upsert(state, 'secrets', s);
-        logSessionEvent(plugin, 'Secret Revealed', s.name);
-        await saveStateQuiet(plugin); new Notice(`"${s.name}" revealed!`);
-      });
-    });
-    pendingHandouts.forEach(h => {
-      const c = ce(g, 'div', 'te-card');
-      const hd = ce(c, 'div', 'te-card-head'); ce(hd, 'span', 'te-card-icon', '📄'); ce(hd, 'h3', 'te-card-title', h.name);
-      if (h.content) ce(c, 'p', 'te-card-body', h.content.slice(0, 120));
-      const mt = ce(c, 'div', 'te-card-meta');
-      if (h.type) { const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Type'); ce(r, 'span', '', h.type); }
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, '📤 Share with Players', 'te-btn is-sm is-primary', async () => {
-        h.visibility = 'player-visible'; upsert(state, 'handouts', h);
-        logSessionEvent(plugin, 'Handout Shared', h.name);
-        await saveStateQuiet(plugin); new Notice(`"${h.name}" shared with players.`);
-      });
-    });
-  } else { emptyState(main, 'No secrets or handouts queued for reveal.', 'Mark secrets as "Ready to Reveal" or create handouts in Secrets & Reveals.'); }
-
-  sectionHead(main, 'Session Notes');
-  if (activeSess) {
-    const ta = ce(main, 'textarea', '');
-    ta.placeholder = 'Session notes…'; ta.value = activeSess.notes || '';
-    ta.style.cssText = 'width:100%;min-height:120px;padding:10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-md);font-family:inherit;resize:vertical';
-    let saveT = null;
-    ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(async () => { activeSess.notes = ta.value; upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); }, 800); });
+    renderLog();
   } else {
-    ce(main, 'p', 'te-empty-state', 'Start a session to enable notes.');
+    ce(leftCol, 'p', 'te-empty-state', 'Start a session to enable the event log.');
   }
 
-  // ── Inline Dice Roller ────────────────────────────────────────────────────
-  sectionHead(main, '🎲 Quick Dice Roller');
-  const diceWrap = ce(main, 'div', 'te-card'); diceWrap.style.cssText = 'padding:12px';
-  const diceResultEl = ce(diceWrap, 'div', 'te-result-box', 'Enter a formula and roll.');
+  // ── 3. Session Notes ──────────────────────────────────────────────────────────
+  sectionHead(leftCol, '📝 Session Notes');
+  if (activeSess) {
+    const ta = ce(leftCol, 'textarea', '');
+    ta.placeholder = 'Session notes / scratchpad…'; ta.value = activeSess.notes || '';
+    ta.style.cssText = 'width:100%;min-height:120px;padding:10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-md);font-family:inherit;resize:vertical;box-sizing:border-box';
+    let saveT = null;
+    ta.addEventListener('input', () => {
+      clearTimeout(saveT);
+      saveT = setTimeout(async () => { activeSess.notes = ta.value; upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); }, 800);
+    });
+  } else {
+    ce(leftCol, 'p', 'te-empty-state', 'Start a session to enable notes.');
+  }
+
+  // ── 4. Reference Lookup ───────────────────────────────────────────────────────
+  sectionHead(leftCol, '📖 Reference Lookup');
+  const refLookupCard = ce(leftCol, 'div', 'te-card'); refLookupCard.style.padding = '12px';
+  const REF_TABS = ['Combat','Actions','Conditions','Social','Rest'];
+  let activeRefTab = 'Combat';
+  const refTabRow = ce(refLookupCard, 'div', 'te-card-actions'); refTabRow.style.flexWrap = 'wrap'; refTabRow.style.marginBottom = '8px';
+  const refContent = ce(refLookupCard, 'div', '');
+  const REF_DATA = {
+    Combat: [
+      ['Attack', 'Roll d20 + attack modifier vs AC. Hit deals weapon/spell damage.'],
+      ['Cover', 'Half: +2 AC & DEX saves. ¾: +5 AC & DEX saves. Total: can\'t be targeted directly.'],
+      ['Concentration', 'Broken by: new concentration spell, damage (DC max(10,½dmg) CON save), incapacitation, death.'],
+      ['Death Saves', '3 successes = stable. 3 failures = dead. Nat 20 = regain 1 HP. Nat 1 = 2 failures.'],
+      ['Flanking (opt)', 'Two attackers on opposite sides: advantage on melee attacks.'],
+    ],
+    Actions: [
+      ['Action', 'Attack · Cast Spell · Dash · Disengage · Dodge · Help · Hide · Ready · Search · Use Object · Grapple · Shove'],
+      ['Bonus Action', 'Class features · Off-hand attack (TWF) · Cunning Action (Rogue) · Healing Word · some spells'],
+      ['Reaction', 'Opportunity Attack · Shield spell · Readied Action · Counterspell · Hellish Rebuke'],
+      ['Free Action', 'Drop held item · speak briefly · interact with one object (part of move/action normally)'],
+      ['Movement', 'Up to Speed per turn. Split freely. Crawl = half speed. Difficult terrain costs double movement.'],
+    ],
+    Conditions: [
+      ['Blinded', 'Auto-fail sight checks. Attack rolls against: adv. Own attacks: disadv.'],
+      ['Charmed', 'Can\'t attack charmer. Charmer has adv on social checks against you.'],
+      ['Exhaustion', '1:disadv checks 2:half speed 3:disadv attacks/saves 4:half max HP 5:speed=0 6:death'],
+      ['Frightened', 'Disadv on checks/attacks while source in sight. Can\'t willingly move closer.'],
+      ['Grappled', 'Speed = 0. Escapes with Athletics/Acrobatics vs grappler\'s Athletics.'],
+      ['Incapacitated', 'Can\'t take actions or reactions.'],
+      ['Paralyzed', 'Incapacitated + can\'t move/speak. Fails STR/DEX saves. Attacks vs: adv. Hits within 5ft: crit.'],
+      ['Petrified', 'Transform to stone. Incapacitated + can\'t move/speak. Adv on attacks vs. Resistant to all damage.'],
+      ['Poisoned', 'Disadv on attack rolls and ability checks.'],
+      ['Prone', 'Disadv on attacks. Attacks vs: adv within 5ft, disadv from range. Stand up = half movement.'],
+      ['Restrained', 'Speed = 0. Disadv on attacks & DEX saves. Adv on attacks vs.'],
+      ['Stunned', 'Incapacitated. Fails STR/DEX saves. Adv on attacks vs.'],
+      ['Unconscious', 'Incapacitated, drops held items, falls prone. Auto-fail STR/DEX saves. Attacks vs: adv + crit within 5ft.'],
+    ],
+    Social: [
+      ['Deception', 'Bluffing, lying, disguise, misdirection.'],
+      ['Intimidation', 'Threatening, browbeating, leverage.'],
+      ['Persuasion', 'Requests, appeals, goodwill, bribes.'],
+      ['Performance', 'Entertainment, storytelling, fitting in.'],
+      ['Attitudes', 'Hostile → Indifferent → Friendly. Start from context. Adj = DC 15, Major = DC 20.'],
+      ['Insight', 'Actively detect lies: passive Insight vs active Deception. Ask DM if something seems off.'],
+    ],
+    Rest: [
+      ['Short Rest', '≥1 hour. Spend Hit Dice: roll die + CON mod, regain HP. Some class features refresh.'],
+      ['Long Rest', '≥8 hours (≤2h light activity). Regain all HP. Regain half max Hit Dice (min 1). All spell slots.'],
+      ['Exhaustion', 'Severe activity without food/water/rest may cause exhaustion.'],
+    ],
+  };
+  const renderRefTab = () => {
+    clear(refContent);
+    const items = REF_DATA[activeRefTab] || [];
+    items.forEach(([title, text]) => {
+      const row = ce(refContent, 'div', '');
+      row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border);font-size:.85rem';
+      const lbl = ce(row, 'strong', ''); lbl.textContent = title + ': '; lbl.style.color = 'var(--te-accent)';
+      row.appendChild(document.createTextNode(text));
+    });
+  };
+  REF_TABS.forEach(t => {
+    btn(refTabRow, t, 'te-btn is-sm' + (t === activeRefTab ? ' is-primary' : ''), () => {
+      activeRefTab = t;
+      Array.from(refTabRow.querySelectorAll('button')).forEach((b, i) => b.className = 'te-btn is-sm' + (REF_TABS[i] === t ? ' is-primary' : ''));
+      renderRefTab();
+    });
+  });
+  renderRefTab();
+
+  // ── 5. Active Location Map ────────────────────────────────────────────────────
+  sectionHead(leftCol, '🗺️ Active Location Map');
+  const mapCard = ce(leftCol, 'div', 'te-card'); mapCard.style.cssText = 'padding:12px';
+  const selectedMapId = ctx ? ctx.currentMapId : '';
+  const selectedMap = selectedMapId ? safeArr(state.entities.tileMaps || []).find(m => m.id === selectedMapId) : null;
+  if (selectedMap) {
+    const mh = ce(mapCard, 'div', 'te-card-head'); ce(mh, 'span', 'te-card-icon', '🗺️'); ce(mh, 'h3', 'te-card-title', selectedMap.name || 'Map');
+    const mapBtns = ce(mapCard, 'div', 'te-card-actions'); mapBtns.style.marginTop = '8px';
+    btn(mapBtns, '🗺️ Open Full Map', 'te-btn is-primary is-sm', async () => { state.activeSection = 'tile-map'; state.pendingMapId = selectedMapId; await saveStatePreserveScroll(plugin); });
+    ce(mapCard, 'p', 'te-muted-text', 'Switch to the Map tab in Session Context to change the active map.');
+  } else {
+    ce(mapCard, 'p', 'te-empty-state', 'No active map selected. Use the Map tab in Session Context to select a map.');
+    const mapBtns2 = ce(mapCard, 'div', 'te-card-actions'); mapBtns2.style.marginTop = '8px';
+    btn(mapBtns2, '🗺️ Open Tile Map', 'te-btn is-sm is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
+  }
+
+  // ── 6. Full Entity Generators ─────────────────────────────────────────────────
+  sectionHead(leftCol, '⚡ Full Entity Generators');
+  const rsGenGrid = ce(leftCol, 'div', 'te-grid');
+  const RS_GENS = [
+    ['Complete NPC', '👤', generateCompleteNPC, 'npcs', NPCModal],
+    ['Complete Encounter', '⚔️', generateCompleteEncounter, 'encounters', EncounterModal],
+    ['Complete Tavern', '🍺', generateCompleteTavern, 'locations', null],
+    ['Complete Shop', '🛒', generateCompleteShop, 'locations', null],
+    ['Complete Quest', '📋', generateCompleteQuest, 'quests', QuestModal],
+    ['Complete Rumour', '💬', generateCompleteRumour, 'secrets', null],
+    ['Complete Secret', '🔒', generateCompleteSecret, 'secrets', null],
+    ['Complete Loot', '💰', generateCompleteLoot, 'loot', null],
+    ['Complete POI', '📍', generateCompletePOI, 'pois', null],
+    ['Complete Dungeon Room', '🚪', generateCompleteDungeonRoom, 'locations', null],
+  ];
+  RS_GENS.forEach(([label, icon, genFn, entityKey, ModalClass]) => {
+    const c = ce(rsGenGrid, 'div', 'te-card');
+    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', label);
+    const a = ce(c, 'div', 'te-card-actions');
+    btn(a, 'Generate & Preview', 'te-btn is-primary is-sm', () => {
+      const draft = genFn(state);
+      if (activeSess) logSessionEvent(plugin, 'Generator Used', `[${label}] ${draft.name || 'draft'}`);
+      new EntityDraftModal(plugin.app, plugin, label, draft, entityKey, ModalClass).open();
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // RIGHT COLUMN
+  // ════════════════════════════════════════════════════════
+
+  // ── 1. Dice Roller ───────────────────────────────────────────────────────────
+  sectionHead(rightCol, '🎲 Dice Roller');
+  const diceWrap = ce(rightCol, 'div', 'te-card'); diceWrap.style.cssText = 'padding:12px';
+  const diceResultEl = ce(diceWrap, 'div', 'te-result-box', 'Roll a die below.');
   diceResultEl.style.cssText = 'min-height:36px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:1.1rem;font-weight:600';
   const quickDice = ce(diceWrap, 'div', 'te-card-actions'); quickDice.style.flexWrap = 'wrap';
   ['d4','d6','d8','d10','d12','d20','d100'].forEach(d => {
@@ -5588,38 +5963,37 @@ function renderRunSession(main, plugin, tabs) {
   });
   formulaInp.addEventListener('keydown', e => { if (e.key === 'Enter') formulaRow.querySelector('button').click(); });
 
-  // ── Quick Generators ──────────────────────────────────────────────────────
-  sectionHead(main, '⚡ Quick Generators');
-  const genWrap = ce(main, 'div', 'te-card'); genWrap.style.cssText = 'padding:12px';
+  // ── 2. Quick Generators ───────────────────────────────────────────────────────
+  sectionHead(rightCol, '⚡ Quick Generators');
+  const genWrap = ce(rightCol, 'div', 'te-card'); genWrap.style.cssText = 'padding:12px';
   const genResultEl = ce(genWrap, 'div', 'te-result-box', 'Pick a type and generate.');
   genResultEl.style.cssText = 'min-height:40px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:.95rem;line-height:1.4';
   let lastGenType = 'NPC Name', lastGenResult = '';
   const genTypeRow = ce(genWrap, 'div', 'te-card-actions'); genTypeRow.style.flexWrap = 'wrap';
   const GEN_QUICK = ['NPC Name','NPC Trait','Quest Hook','Rumour','Faction Name','Dungeon Room','Wild Magic Surge','Weather','Travel Event','Loot','Tavern Name','Plot Twist','Town Event','Trap'];
-  let activeGenBtn = null;
   GEN_QUICK.forEach(t => {
     const b = btn(genTypeRow, t, 'te-btn is-sm' + (t === lastGenType ? ' is-primary' : ''), () => {
       lastGenType = t;
       Array.from(genTypeRow.querySelectorAll('button')).forEach(x => x.className = 'te-btn is-sm');
       b.className = 'te-btn is-sm is-primary';
     });
-    if (t === lastGenType) activeGenBtn = b;
   });
   const genActRow = ce(genWrap, 'div', 'te-card-actions'); genActRow.style.marginTop = '8px';
+  let saveAsBtn, logToSessBtn;
   btn(genActRow, 'Generate', 'te-btn is-primary', () => {
     lastGenResult = generate(lastGenType, state);
     genResultEl.textContent = lastGenResult;
     saveAsBtn.style.display = ['NPC Name','Faction Name','Quest Hook'].includes(lastGenType) ? '' : 'none';
     logToSessBtn.style.display = activeSess ? '' : 'none';
   });
-  const saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
+  saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
     if (!lastGenResult) return;
     if (lastGenType === 'NPC Name') new NPCModal(plugin.app, plugin, { name: lastGenResult }).open();
     else if (lastGenType === 'Faction Name') new FactionModal(plugin.app, plugin, { name: lastGenResult }).open();
     else if (lastGenType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [lastGenResult] }).open();
   });
   saveAsBtn.style.display = 'none';
-  const logToSessBtn = btn(genActRow, 'Log to Session', 'te-btn', async () => {
+  logToSessBtn = btn(genActRow, 'Log to Session', 'te-btn', async () => {
     if (!lastGenResult || !activeSess) return;
     const evtType = lastGenType === 'Loot' ? 'Loot Generated' : 'Generator Used';
     logSessionEvent(plugin, evtType, `[${lastGenType}] ${lastGenResult}`);
@@ -5628,218 +6002,87 @@ function renderRunSession(main, plugin, tabs) {
   });
   logToSessBtn.style.display = 'none';
 
-  // ── Active NPC Quick Look ─────────────────────────────────────────────────
-  sectionHead(main, '👥 Active NPCs');
-  const npcLookWrap = ce(main, 'div', 'te-card'); npcLookWrap.style.padding = '12px';
-  const campNpcs = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
-  if (campNpcs.length) {
-    const npcSearch = { q: '' };
-    const npcSIn = ce(npcLookWrap, 'input'); npcSIn.type = 'text'; npcSIn.placeholder = 'Search NPCs…';
-    npcSIn.style.cssText = 'width:100%;padding:6px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem;margin-bottom:8px';
-    const npcListEl = ce(npcLookWrap, 'div', '');
-    const rebuildNpcs = () => {
-      clear(npcListEl);
-      const q = npcSearch.q.toLowerCase();
-      const shown = campNpcs.filter(n => !q || (n.name||'').toLowerCase().includes(q) || (n.role||'').toLowerCase().includes(q)).slice(0, 20);
-      if (!shown.length) { ce(npcListEl, 'p', 'te-empty-state', q ? 'No NPCs match.' : 'No NPCs in this campaign.'); return; }
-      shown.forEach(npc => {
-        const row = ce(npcListEl, 'div', 'te-card-meta-row');
-        row.style.cssText = 'padding:6px 4px;border-bottom:1px solid var(--te-border);display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap';
-        const nm = ce(row, 'strong', ''); nm.textContent = npc.name; nm.style.minWidth = '120px';
-        if (npc.role) { const r = ce(row, 'span', 'te-card-meta-label'); r.textContent = npc.role; }
-        if (npc.attitude) { const a = ce(row, 'span', 'te-muted-text'); a.textContent = npc.attitude; a.style.fontSize = '.82rem'; }
-        if (npc.motivation) { const m = ce(row, 'span', 'te-muted-text'); m.textContent = `"${npc.motivation}"`; m.style.fontSize = '.82rem'; m.style.fontStyle = 'italic'; m.style.flex = '1'; }
-      });
-    };
-    npcSIn.addEventListener('input', () => { npcSearch.q = npcSIn.value; rebuildNpcs(); });
-    rebuildNpcs();
-  } else {
-    ce(npcLookWrap, 'p', 'te-empty-state', 'No NPCs in the active campaign.');
-  }
+  // ── 3. Combat Tracker ─────────────────────────────────────────────────────────
+  sectionHead(rightCol, '⚔️ Combat Tracker');
+  renderInitiativeTracker(rightCol, plugin);
 
-  // ── Active Quests ─────────────────────────────────────────────────────────
-  sectionHead(main, '📋 Active Quests');
-  const questWrap = ce(main, 'div', '');
-  const activeQuests = safeArr(state.entities.quests).filter(q => q.status === 'Active' && (!state.activeCampaignId || q.campaignId === state.activeCampaignId));
-  if (activeQuests.length) {
-    const qg = ce(questWrap, 'div', 'te-grid');
-    activeQuests.slice(0, 12).forEach(q => {
-      const c = ce(qg, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head');
-      ce(h, 'span', 'te-card-icon', ENTITY_ICONS.quests || '📋');
-      ce(h, 'h3', 'te-card-title', q.name);
-      if (q.questType) { const m = ce(h, 'span', 'te-card-meta-label', q.questType); m.style.marginLeft = '6px'; }
-      if (q.summary) ce(c, 'p', 'te-card-body', q.summary.slice(0, 100));
-      const objs = safeArr(q.objectives);
-      if (objs.length) {
-        const ol = ce(c, 'ul', ''); ol.style.cssText = 'margin:4px 0 0 16px;padding:0;font-size:.82rem;color:var(--te-muted)';
-        objs.slice(0, 3).forEach(obj => { const li = ce(ol, 'li', ''); li.textContent = typeof obj === 'string' ? obj : (obj.text || ''); });
-        if (objs.length > 3) ce(ol, 'li', 'te-muted-text', `+ ${objs.length - 3} more`);
+  // ── 4. Timers ─────────────────────────────────────────────────────────────────
+  sectionHead(rightCol, '⏱️ Escalation Timers');
+  const timerWrap = ce(rightCol, 'div', '');
+  const rebuildTimers = () => {
+    clear(timerWrap);
+    const timers2 = safeArr(state.entities.timers).filter(t => !state.activeCampaignId || t.campaignId === state.activeCampaignId);
+    if (!timers2.length) {
+      ce(timerWrap, 'p', 'te-empty-state', 'No timers for this campaign.');
+    } else {
+      timers2.forEach(t => {
+        const c = ce(timerWrap, 'div', 'te-card'); c.style.marginBottom = '8px';
+        const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⏱️'); ce(h, 'h3', 'te-card-title', t.name);
+        const maxTicks = Math.max(1, parseInt(t.maxTicks) || 6);
+        const curTicks = Math.min(maxTicks, parseInt(t.currentTick) || 0);
+        const pct = Math.round((curTicks / maxTicks) * 100);
+        const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = pct + '%';
+        ce(c, 'p', 'te-progress-label', `${curTicks} / ${maxTicks} ticks (${pct}%)`);
+        if (t.consequence) { const m = ce(c, 'div', 'te-card-meta'); const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Consequence'); ce(r, 'span', '', String(t.consequence).slice(0, 80)); }
+        const a = ce(c, 'div', 'te-card-actions');
+        btn(a, '+Tick', 'te-btn is-sm is-run', async () => {
+          t.currentTick = Math.min(maxTicks, curTicks + 1);
+          upsert(state, 'timers', t);
+          logSessionEvent(plugin, 'Timer Advanced', `${t.name} → ${t.currentTick}/${maxTicks}`);
+          await saveStateQuiet(plugin);
+          rebuildTimers();
+        });
+        btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
+        btn(a, 'Delete', 'te-btn is-sm is-danger', async () => {
+          removeItem(state, 'timers', t.id);
+          logSessionEvent(plugin, 'Timer Removed', t.name);
+          await saveStateQuiet(plugin);
+          rebuildTimers();
+        });
+      });
+    }
+    btn(timerWrap, '+ New Timer', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin).open());
+  };
+  rebuildTimers();
+
+  // ── 5. Secrets Panel ─────────────────────────────────────────────────────────
+  sectionHead(rightCol, '🔒 Secrets');
+  const secWrap = ce(rightCol, 'div', 'te-card'); secWrap.style.padding = '12px';
+  const campSecrets = safeArr(state.entities.secrets).filter(s => !state.activeCampaignId || s.campaignId === state.activeCampaignId);
+  const pendingHandouts = safeArr(state.entities.handouts).filter(h => (!state.activeCampaignId || h.campaignId === state.activeCampaignId) && h.visibility === 'dm-only');
+  if (!campSecrets.length && !pendingHandouts.length) {
+    ce(secWrap, 'p', 'te-empty-state', 'No secrets for this campaign.');
+  } else {
+    campSecrets.forEach(s => {
+      const row = ce(secWrap, 'div', '');
+      row.style.cssText = 'padding:5px 0;border-bottom:1px solid var(--te-border);display:flex;gap:6px;align-items:center;font-size:.85rem';
+      const statusIcon = s.revealStatus === 'Fully Revealed' ? '✅' : s.revealStatus === 'Partially Revealed' ? '🔓' : '🔒';
+      ce(row, 'span', '', statusIcon);
+      const nm = ce(row, 'span', ''); nm.textContent = s.name; nm.style.flex = '1';
+      if (s.revealStatus !== 'Fully Revealed') {
+        btn(row, 'Reveal', 'te-btn is-sm is-primary', async () => {
+          s.revealStatus = 'Fully Revealed'; s.visibility = 'revealed'; s.revealedAt = new Date().toISOString();
+          upsert(state, 'secrets', s);
+          logSessionEvent(plugin, 'Secret Revealed', s.name);
+          await saveStateQuiet(plugin);
+          new Notice(`"${s.name}" revealed!`);
+        });
       }
     });
-  } else {
-    ce(questWrap, 'p', 'te-empty-state', 'No active quests. Mark a quest as Active in the Quest Tracker.');
-  }
-
-  // ── Session Event Log ─────────────────────────────────────────────────────
-  sectionHead(main, '📋 Session Event Log');
-  if (activeSess) {
-    if (!Array.isArray(activeSess.eventLog)) activeSess.eventLog = [];
-    const logWrap = ce(main, 'div', 'te-card'); logWrap.style.padding = '12px';
-    const EVENT_TYPES = ['Note','NPC Met','Location Visited','Quest Advanced','Secret Revealed','Loot Awarded','Combat Started','Combat Ended','Player Decision','Consequence','Timer Advanced','Next Hook'];
-    let evtType = 'Note';
-    const typeRow = ce(logWrap, 'div', 'te-card-actions'); typeRow.style.flexWrap = 'wrap';
-    EVENT_TYPES.forEach(t => {
-      btn(typeRow, t, 'te-btn is-sm' + (t === evtType ? ' is-primary' : ''), () => {
-        evtType = t;
-        Array.from(typeRow.querySelectorAll('button')).forEach((bb,i) => bb.className = 'te-btn is-sm' + (EVENT_TYPES[i] === t ? ' is-primary' : ''));
+    if (pendingHandouts.length) {
+      ce(secWrap, 'div', 'te-stat-label', 'Handouts').style.marginTop = '8px';
+      pendingHandouts.forEach(h => {
+        const row = ce(secWrap, 'div', '');
+        row.style.cssText = 'padding:5px 0;border-bottom:1px solid var(--te-border);display:flex;gap:6px;align-items:center;font-size:.85rem';
+        ce(row, 'span', '', '📄');
+        const nm = ce(row, 'span', ''); nm.textContent = h.name; nm.style.flex = '1';
+        btn(row, 'Share', 'te-btn is-sm is-primary', async () => {
+          h.visibility = 'player-visible'; upsert(state, 'handouts', h);
+          logSessionEvent(plugin, 'Handout Shared', h.name);
+          await saveStateQuiet(plugin); new Notice(`"${h.name}" shared.`);
+        });
       });
-    });
-    const addRow = ce(logWrap, 'div', 'te-chip-add-row'); addRow.style.marginTop = '8px';
-    const evtInp = ce(addRow, 'input'); evtInp.type = 'text'; evtInp.placeholder = 'Event note…'; evtInp.style.flex = '1';
-    btn(addRow, 'Add', 'te-btn is-primary', async () => {
-      const text = evtInp.value.trim(); if (!text) return;
-      logSessionEvent(plugin, evtType, text);
-      evtInp.value = '';
-      await saveStateQuiet(plugin);
-      renderLog();
-    });
-    evtInp.addEventListener('keydown', e => { if (e.key === 'Enter') addRow.querySelector('button').click(); });
-    const logList = ce(logWrap, 'div', ''); logList.style.marginTop = '8px';
-    const renderLog = () => {
-      clear(logList);
-      const events = [...activeSess.eventLog].reverse();
-      if (!events.length) { ce(logList, 'p', 'te-empty-state', 'No events yet. Add notes above.'); return; }
-      events.forEach(evt => {
-        const row = ce(logList, 'div', 'te-card-meta-row');
-        row.style.cssText = 'padding:4px 0;border-bottom:1px solid var(--te-border);font-size:.85rem';
-        const lbl = ce(row, 'span', 'te-card-meta-label'); lbl.textContent = evt.type;
-        ce(row, 'span', '', evt.text);
-        const t = ce(row, 'span', 'te-muted-text'); t.style.marginLeft = 'auto'; t.textContent = evt.time ? new Date(evt.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
-      });
-    };
-    renderLog();
-  } else {
-    ce(main, 'p', 'te-empty-state', 'Start a session to enable the event log.');
-  }
-
-  // ── Timers (Session) ──────────────────────────────────────────────────────
-  sectionHead(main, '⏱ Escalation Timers');
-  const campTimers = safeArr(state.entities.timers).filter(t => !state.activeCampaignId || t.campaignId === state.activeCampaignId);
-  const timerWrap = ce(main, 'div', '');
-  if (campTimers.length) {
-    const tg = ce(timerWrap, 'div', 'te-grid');
-    campTimers.forEach(t => {
-      const c = ce(tg, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⏱️'); ce(h, 'h3', 'te-card-title', t.name);
-      const maxTicks = Math.max(1, parseInt(t.maxTicks) || 6);
-      const curTicks = Math.min(maxTicks, parseInt(t.currentTick) || 0);
-      const pct = Math.round((curTicks / maxTicks) * 100);
-      const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = pct + '%';
-      ce(c, 'p', 'te-progress-label', `${curTicks} / ${maxTicks} ticks (${pct}%)`);
-      if (t.consequence) { const m = ce(c, 'div', 'te-card-meta'); const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Consequence'); ce(r, 'span', '', String(t.consequence).slice(0, 80)); }
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, '+Tick', 'te-btn is-sm is-run', async () => {
-        t.currentTick = Math.min(maxTicks, curTicks + 1);
-        upsert(state, 'timers', t);
-        logSessionEvent(plugin, 'Timer Advanced', `${t.name} → ${t.currentTick}/${maxTicks}`);
-        await saveStateQuiet(plugin);
-      });
-      btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
-    });
-  } else {
-    ce(timerWrap, 'p', 'te-empty-state', 'No timers for this campaign. Add timers in War Machine.');
-  }
-  btn(timerWrap, '+ New Timer', 'te-btn', () => new TimerModal(plugin.app, plugin).open());
-
-  // ── Map Access ────────────────────────────────────────────────────────────
-  sectionHead(main, '🗺 Map Access');
-  const mapCard = ce(main, 'div', 'te-card'); mapCard.style.cssText = 'padding:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center';
-  ce(mapCard, 'span', 'te-muted-text', 'Jump to Tile Map to view or edit your session map.');
-  btn(mapCard, '🗺 Open Tile Map', 'te-btn is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
-  const campMaps = safeArr(state.entities.tileMaps || []).filter(m => !state.activeCampaignId || m.campaignId === state.activeCampaignId);
-  if (campMaps.length) {
-    const mapSel = ce(mapCard, 'select'); mapSel.style.cssText = 'padding:5px 8px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-    ce(mapSel, 'option', '', '— jump to saved map —').value = '';
-    campMaps.forEach(m => { const o = ce(mapSel, 'option', '', m.name || 'Untitled'); o.value = m.id; });
-    mapSel.addEventListener('change', async () => { if (mapSel.value) { state.activeSection = 'tile-map'; state.pendingMapId = mapSel.value; await saveStatePreserveScroll(plugin); } });
-  }
-
-  // ── Location Quick Lookup ─────────────────────────────────────────────────
-  sectionHead(main, '📍 Location / Faction / Secret Lookup');
-  const lookupCard = ce(main, 'div', 'te-card'); lookupCard.style.padding = '12px';
-  const lookupTabs = ['Locations','Factions','Secrets'];
-  let lookupTab = 'Locations';
-  const tabRow = ce(lookupCard, 'div', 'te-card-actions'); tabRow.style.marginBottom = '8px';
-  const lookupContent = ce(lookupCard, 'div', '');
-  const renderLookup = () => {
-    clear(lookupContent);
-    const sInp = ce(lookupContent, 'input'); sInp.type = 'text'; sInp.placeholder = `Search ${lookupTab}…`;
-    sInp.style.cssText = 'width:100%;padding:6px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem;margin-bottom:8px';
-    const listEl = ce(lookupContent, 'div', '');
-    const campId2 = state.activeCampaignId;
-    let items = [];
-    if (lookupTab === 'Locations') items = safeArr(state.entities.locations).filter(x => !campId2 || x.campaignId === campId2);
-    else if (lookupTab === 'Factions') items = safeArr(state.entities.factions).filter(x => !campId2 || x.campaignId === campId2);
-    else if (lookupTab === 'Secrets') items = safeArr(state.entities.secrets).filter(x => !campId2 || x.campaignId === campId2);
-    const rebuildList = () => {
-      clear(listEl);
-      const q2 = (sInp.value || '').toLowerCase();
-      const shown = items.filter(x => !q2 || (x.name||'').toLowerCase().includes(q2) || (x.summary||'').toLowerCase().includes(q2)).slice(0, 20);
-      if (!shown.length) { ce(listEl, 'p', 'te-empty-state', 'No results.'); return; }
-      shown.forEach(x => {
-        const row = ce(listEl, 'div', 'te-card-meta-row');
-        row.style.cssText = 'padding:5px 4px;border-bottom:1px solid var(--te-border);font-size:.85rem;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap';
-        const nm = ce(row, 'strong', ''); nm.textContent = x.name;
-        if (x.summary) { const s2 = ce(row, 'span', 'te-muted-text'); s2.textContent = x.summary.slice(0, 100); s2.style.flex = '1'; }
-        if (lookupTab === 'Secrets' && x.status) { const st = ce(row, 'span', 'te-card-meta-label'); st.textContent = x.status; }
-      });
-    };
-    sInp.addEventListener('input', rebuildList); rebuildList();
-  };
-  lookupTabs.forEach(t2 => {
-    btn(tabRow, t2, 'te-btn is-sm' + (t2 === lookupTab ? ' is-primary' : ''), () => {
-      lookupTab = t2;
-      Array.from(tabRow.querySelectorAll('button')).forEach((b2, i) => b2.className = 'te-btn is-sm' + (lookupTabs[i] === t2 ? ' is-primary' : ''));
-      renderLookup();
-    });
-  });
-  renderLookup();
-
-  // ── Complete Generators (Run Session) ─────────────────────────────────────
-  sectionHead(main, '⚡ Complete Entity Generators');
-  const rsGenGrid = ce(main, 'div', 'te-grid');
-  const RS_GENS = [
-    ['Complete NPC', '👤', generateCompleteNPC, 'npcs', NPCModal],
-    ['Complete Encounter', '⚔️', generateCompleteEncounter, 'encounters', EncounterModal],
-    ['Complete Tavern', '🍺', generateCompleteTavern, 'locations', null],
-    ['Complete Shop', '🛒', generateCompleteShop, 'locations', null],
-    ['Complete Quest', '📋', generateCompleteQuest, 'quests', QuestModal],
-    ['Complete Rumour', '💬', generateCompleteRumour, 'secrets', null],
-    ['Complete Secret', '🔒', generateCompleteSecret, 'secrets', null],
-    ['Complete Loot', '💰', generateCompleteLoot, 'loot', null],
-    ['Complete POI', '📍', generateCompletePOI, 'pois', null],
-    ['Complete Dungeon Room', '🚪', generateCompleteDungeonRoom, 'locations', null],
-  ];
-  RS_GENS.forEach(([label, icon, genFn, entityKey, ModalClass]) => {
-    const c = ce(rsGenGrid, 'div', 'te-card');
-    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', label);
-    const a = ce(c, 'div', 'te-card-actions');
-    btn(a, 'Generate & Preview', 'te-btn is-primary is-sm', () => {
-      const draft = genFn(state);
-      new EntityDraftModal(plugin.app, plugin, label, draft, entityKey, ModalClass).open();
-    });
-  });
-
-  // ── End Session Review ────────────────────────────────────────────────────
-  sectionHead(main, '📊 End Session Review');
-  const reviewCard = ce(main, 'div', 'te-card'); reviewCard.style.padding = '12px';
-  if (state.activeSessionId) {
-    const reviewSess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
-    ce(reviewCard, 'p', 'te-muted-text', 'Compile a full review of this session — event log, reveals, loot, quests, NPCs, locations, timers, and a player-safe recap.');
-    btn(reviewCard, '📊 Open End Session Review', 'te-btn is-primary', () => new EndSessionReviewModal(plugin.app, plugin, reviewSess).open());
-  } else {
-    ce(reviewCard, 'p', 'te-empty-state', 'Start a session to generate an End Session Review.');
+    }
   }
 }
 
