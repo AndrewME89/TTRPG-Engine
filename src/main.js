@@ -416,19 +416,31 @@ const OPTION_BANKS = {
   dungeonTypes: ['Ancient Ruins','Crypt/Tomb','Cave System','Fortress','Mine','Sewer/Undercity','Temple','Tower','Planar Node','Custom'],
   roomTypes:    ['Entrance','Corridor','Chamber','Vault','Trap Room','Boss Chamber','Puzzle Room','Barracks','Shrine','Storage','Secret Room','Escape Route','Custom'],
   hazardTypes:  ['Cave-In Risk','Toxic Gas','Flooding','Wild Magic Zone','Anti-Magic Zone','Cursed Ground','Unstable Terrain','Extreme Weather','Ley Line Interference'],
-  occupations:  ['Merchant','Farmer','Guard','Priest','Wizard','Rogue','Scholar','Noble','Soldier','Artisan','Sailor','Hunter','Innkeeper','Blacksmith','Healer','Criminal','Spy','Mercenary','Custom'],
-  npcRoles:     ['Ally','Enemy','Neutral','Quest Giver','Merchant','Informant','Guide','Rival','Mentor','Student','Family','Love Interest','Custom'],
+  occupations:  ['Farmer','Merchant','Blacksmith','Guard','Soldier','Priest','Healer','Scholar','Noble','Spy','Criminal','Smuggler','Sailor','Hunter','Ranger','Wizard','Bard','Innkeeper','Artisan','Miner','Fisher','Alchemist','Scribe','Servant','Mercenary','Captain','Magistrate'],
+  npcRoles:     ['Ally','Rival','Enemy','Mentor','Patron','Quest Giver','Merchant','Informant','Guide','Noble','Guard','Priest','Scholar','Criminal','Spy','Soldier','Captain','Leader','Healer','Artisan','Innkeeper','Villain','Lieutenant','Love Interest','Family','Contact'],
   personalityTraits: ['Brave','Cautious','Greedy','Generous','Proud','Humble','Cunning','Naive','Suspicious','Trusting','Ambitious','Content','Vengeful','Forgiving','Mysterious','Custom'],
-  ideals:       ['Greater Good','Nation','Tradition','Power','Freedom','Knowledge','Charity','Redemption','Loyalty','Justice','Nature','Custom'],
-  bonds:        ['A person to protect','A debt to repay','A secret to keep','A sacred oath','A lost homeland','A family legacy','A revenge to pursue','A cause to champion','Custom'],
-  flaws:        ['Greedy','Cowardly','Arrogant','Impulsive','Obsessive','Paranoid','Deceptive','Addicted','Vain','Cruel','Naive','Custom'],
+  ideals:       ['Justice','Freedom','Power','Knowledge','Faith','Tradition','Ambition','Family','Loyalty','Honour','Wealth','Survival','Redemption','Revenge','Balance','Mercy','Order','Chaos','Beauty','Truth'],
+  bonds:        ['A person to protect','A family legacy','A sacred oath','A homeland','A lost loved one','A debt unpaid','A secret kept','A mentor','A rival','A faction','A relic','A prophecy','A place of power','A broken promise','A found family','A forbidden love'],
+  flaws:        ['Greedy','Cowardly','Arrogant','Impulsive','Vengeful','Paranoid','Gullible','Cruel','Overconfident','Reckless','Secretive','Addicted','Jealous','Dishonest','Fanatical','Prideful','Naive','Ruthless','Easily bribed'],
+  pronouns:     ['he/him','she/her','they/them','he/they','she/they','any pronouns','uses name only'],
   motivations:  ['Wealth','Power','Survival','Revenge','Love','Knowledge','Recognition','Safety','Redemption','Duty','Freedom','Custom'],
   attitudes:    ['Friendly','Indifferent','Suspicious','Hostile','Terrified','Fanatic','Desperate','Bored','Custom'],
   socialClasses:['Destitute','Poor','Working Class','Middle Class','Wealthy','Nobility','Royalty','Custom'],
   factionTypes: ['Military Force','Merchant Guild','Criminal Organization','Religious Order','Political Party','Adventuring Company','Secret Society','Rebel Cell','Government Body','Custom'],
-  factionGoals: ['Territorial Control','Economic Dominance','Political Power','Religious Influence','Military Conquest','Public Safety','Revolution','Restoration of old order','Knowledge Acquisition','Artifact Recovery','Monster Eradication','Planar Access','Trade Monopoly','Revenge','Survival','Liberation','Secrecy','Social Reform','Custom'],
-  factionMethods: ['Diplomacy','Espionage','Blackmail','Assassination','Bribery','Propaganda','Open Warfare','Guerrilla Tactics','Legal Pressure','Trade Sanctions','Religious Conversion','Magical Coercion','Protection Rackets','Charity/Public Goodwill','Academic Research','Smuggling','Sabotage','Custom'],
-  factionResources: ['Gold','Troops','Spies','Political Influence','Religious Authority','Trade Routes','Safehouses','Magic Items','Spellcasters','Monsters','Mercenaries','Noble Patrons','Public Support','Ancient Knowledge','Blackmail Material','Fortresses','Ships','Artifacts','Informants','Custom'],
+  factionGoals: ['Territorial Control','Economic Dominance','Political Power','Religious Supremacy','Knowledge Acquisition','Protection of Members','Revenge','Survival','Restoration of Old Order','Sow Chaos','Infiltrate Institutions','Overthrow Ruler','Forge Alliance Network','Monopolise Trade','Defend Sacred Sites','Control Information','Seize Artifact','Elevate a Chosen One'],
+  factionMethods: ['Diplomacy','Espionage','Military Force','Economic Pressure','Propaganda','Assassination','Corruption','Alliance Building','Blackmail','Sabotage','Recruitment','Infiltration','Patronage','Religious Manipulation','Legal Manoeuvring','Smuggling','Open Warfare'],
+  factionResources: ['Gold','Troops','Information','Magic','Trade Goods','Political Favours','Land','Artifacts','Labour','Contraband','Ships','Noble Contacts','Spies','Sacred Relics','Legal Authority','Ancient Knowledge','Mercenaries','Owed Debts'],
+  creatureSenses:   ['Darkvision','Blindsight','Tremorsense','Truesight','Passive Perception','Keen Smell','Keen Hearing','Keen Sight','Magical Sight','Lifesense','Echolocation'],
+  creatureTraits:   ['Amphibious','Pack Tactics','Keen Smell','Keen Hearing','Magic Resistance','Legendary Resistance','Regeneration','Spider Climb','Flyby','Pounce','Charge','Rampage','False Appearance','Sunlight Sensitivity','Turn Resistance','Undead Fortitude','Shapechanger','Innate Spellcasting','Frightful Presence'],
+  creatureActions:  ['Bite','Claw','Multiattack','Slam','Gore','Tail','Stinger','Breath Weapon','Spellcasting','Frightful Presence','Swallow','Web','Grapple','Poison Strike','Ranged Attack','Area Burst','Recharge Attack'],
+  creatureReactions:['Parry','Shield','Counterspell','Retaliate','Uncanny Dodge','Deflect Attack','Reactive Strike','Legendary Parry','Tail Swipe','Wing Buffet'],
+  legendaryActions: ['Detect','Move','Attack','Cast a Cantrip','Tail Attack','Wing Attack','Frightful Glare','Command Ally','Recharge Power','Teleport','Legendary Resistance'],
+  lairActions:      ['Difficult Terrain','Summon Minions','Magical Darkness','Grasping Vines','Tremor','Toxic Gas','Flooding','Shadow Burst','Fire Eruption','Ice Shards','Psychic Whispers','Doors Seal','Terrain Shifts','Illusory Duplicates'],
+  bbegTitles:       ['The Betrayer','The Undying','The Black Hand','The Red Queen','The Ashen King','The Whispering One','The Wyrm-Touched','The Thorn Saint','The Iron Tyrant','The Pale Duke','The Storm Crown','The Last Prophet','The God-Eater','The Hollow Lord'],
+  leadershipStructure: ['Single Leader','Council','Inner Circle','Military Hierarchy','Cell Structure','Noble House','Elder Circle','Triumvirate','Guild Council','Religious Synod','Clan Chiefs','Secret Master','Public Figurehead / Hidden Leader','Distributed Network'],
+  powerDynamic:     ['Dominant','Subordinate','Equal','Patron','Client','Rival power','Hidden influence','Publicly loyal','Secretly opposed','Mutually dependent','One-sided dependence','Coerced','Blackmailed','Protected','Manipulated','Feared','Respected'],
+  trustLevel:       ['Absolute trust','High trust','Cautious trust','Neutral','Suspicious','Low trust','Open distrust','Betrayed','Secretly loyal','Secretly hostile','Unknown'],
+  fearLeverage:     ['Blackmail','Debt','Family hostage','Political scandal','Religious guilt','Magical curse','Legal threat','Financial dependence','Reputation risk','Personal fear','Shared secret','Mutual destruction','Oathbound','Ancient pact','None'],
   relationshipStates: ['Allied','Friendly','Neutral','Tense','Hostile','At War','Ceasefire','Secret Alliance','Custom'],
   reputationLevels: ['Exalted','Revered','Honoured','Friendly','Neutral','Unfriendly','Hostile','Hated'],
   orgStructures:['Hierarchy','Cell Structure','Flat Network','Council','Single Leader','Distributed Cells','Custom'],
@@ -3068,8 +3080,39 @@ function renderWorldAtlas(main, plugin) {
   else renderWorld(wrap, plugin, tabs);
 }
 
+function migrateNobleFamiliesToFactions(plugin) {
+  const nf = safeArr(plugin.state.entities.nobleFamilies);
+  let count = 0;
+  nf.forEach(noble => {
+    if (noble.migratedToFaction) return;
+    const newFaction = {
+      id: uid('faction'),
+      name: noble.name || 'Unnamed House',
+      type: 'Noble House',
+      notes: noble.motto || '',
+      description: noble.motto || '',
+      territory: noble.holdings || '',
+      members: noble.members || '',
+      allies: noble.alliances || '',
+      enemies: noble.rivals || '',
+      secrets: noble.secrets || '',
+      status: noble.status || '',
+      campaignId: noble.campaignId || '',
+      visibility: noble.visibility || 'dm-only',
+      migratedFromNobleId: noble.id,
+    };
+    upsert(plugin.state, 'factions', newFaction);
+    noble.migratedToFaction = true;
+    noble.migratedFactionId = newFaction.id;
+    count++;
+  });
+  if (count > 0) plugin.saveState();
+  return count;
+}
+
 function renderCastPowers(main, plugin) {
   const state = plugin.state;
+  migrateNobleFamiliesToFactions(plugin);
   const tabs = [
     { id: 'npcs',            label: '👤 NPCs & Creatures' },
     { id: 'factions',        label: '⚔️ Factions' },
@@ -6520,7 +6563,8 @@ const journalFields = [
 // Field arrays for entity types that previously used bare GenericModal calls
 const reputationFields = [
   { key: 'name', label: 'Name', type: 'text' },
-  { key: 'factionId', label: 'Faction ID', type: 'text' },
+  { key: 'factionId', label: 'Faction', type: 'entityRef', entityType: 'factions' },
+  { key: 'faction', label: 'Faction (legacy text)', type: 'text' },
   { key: 'level', label: 'Reputation Level', type: 'select', options: ['Exalted','Revered','Honoured','Friendly','Neutral','Unfriendly','Hostile','Hated'] },
   { key: 'notes', label: 'Notes', type: 'textarea' },
 ];
@@ -6683,6 +6727,12 @@ const ENTITY_FIELD_SCHEMAS = {
     { key: 'recessiveAncestry', label: 'Recessive Ancestry', type: 'text' },
     { key: 'size', label: 'Size', type: 'select', options: ['Tiny','Small','Medium','Large','Huge','Gargantuan'] },
     { key: 'creatureType', label: 'Creature Type', type: 'text' },
+    { key: 'dominantCultureId', label: 'Dominant Culture', type: 'entityRef', entityType: 'cultures' },
+    { key: 'dominantCulture', label: 'Dominant Culture (text)', type: 'text' },
+    { key: 'recessiveCultureId', label: 'Recessive Culture', type: 'entityRef', entityType: 'cultures' },
+    { key: 'recessiveCulture', label: 'Recessive Culture (text)', type: 'text' },
+    { key: 'raisedInId', label: 'Raised In', type: 'entityRef', entityType: 'cultures' },
+    { key: 'raisedIn', label: 'Raised In (text)', type: 'text' },
     { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
     { key: 'summary', label: 'Summary', type: 'textarea' },
   ],
@@ -6700,13 +6750,16 @@ const ENTITY_FIELD_SCHEMAS = {
     { key: 'summary', label: 'Description', type: 'textarea' },
     { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible'] },
   ],
+  // Noble Families — legacy entity type kept for backward compat; new entries migrate to Factions with type='Noble House'
   nobleFamilies: [
     { key: 'name', label: 'House / Family Name', type: 'text' },
-    { key: 'motto', label: 'House Motto', type: 'text' },
+    { key: 'motto', label: 'Motto', type: 'text' },
     { key: 'headOfHouse', label: 'Head of House', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['Ruling','Noble','Gentry','Declining','Exiled','Extinct','Unknown'] },
-    { key: 'holdings', label: 'Holdings & Titles', type: 'textarea' },
-    { key: 'claims', label: 'Claims & Disputes', type: 'textarea' },
+    { key: 'holdings', label: 'Holdings', type: 'text' },
+    { key: 'claims', label: 'Claims', type: 'textarea' },
+    { key: 'debts', label: 'Debts', type: 'textarea' },
+    { key: 'members', label: 'Members', type: 'textarea' },
     { key: 'secrets', label: 'Secrets & Scandals', type: 'textarea' },
     { key: 'summary', label: 'Summary', type: 'textarea' },
     { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible','secret'] },
@@ -7269,10 +7322,9 @@ class NPCModal extends Modal {
 
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
-    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(s1, 'Name *', this.values.name, v => this.values.name = v);
-    addField(s1, 'Pronouns', this.values.pronouns, v => this.values.pronouns = v);
-    const raceIn = new Setting(s1).setName('Race / Ancestry').addText(t => {
+    chipField(s1, 'Pronouns', safeArr(this.values.pronouns), v => this.values.pronouns = v, { bank: 'pronouns' });
+    const raceIn = new Setting(s1).setName('Race / Ancestry (text)').addText(t => {
       const list = contentEl.createEl('datalist');
       list.id = `npc-race-${this.values.id}`;
       const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries).map(h => h.name).filter(Boolean);
@@ -7286,8 +7338,9 @@ class NPCModal extends Modal {
         refNames.filter(n => !existing.has(n)).forEach(n => { const opt = list.createEl('option'); opt.value = n; });
       }).catch(() => {});
     });
-    addField(s1, 'Role / Title', this.values.role, v => this.values.role = v);
-    addField(s1, 'Occupation', this.values.occupation, v => this.values.occupation = v);
+    addEntityPicker(s1, 'Ancestry (linked)', this.values.raceId || '', this.plugin, 'hybridAncestries', v => this.values.raceId = v);
+    chipField(s1, 'Role / Title', safeArr(this.values.role), v => this.values.role = v, { bank: 'npcRoles' });
+    chipField(s1, 'Occupation', safeArr(this.values.occupation), v => this.values.occupation = v, { bank: 'occupations' });
     addSelect(s1, 'Status', this.values.status, ['Alive','Dead','Missing','Captured','Unknown','Retired'], v => this.values.status = v);
     addEntityPicker(s1, 'Location', this.values.locationId, this.plugin, 'settlements', v => this.values.locationId = v);
     addEntityMultiPicker(s1, 'Faction(s)', this.values.factionIds, this.plugin, 'factions', v => this.values.factionIds = v);
@@ -7312,9 +7365,9 @@ class NPCModal extends Modal {
     s3.createEl('h3', { text: 'Personality' });
     addSelect(s3, 'Attitude', this.values.attitude, ['Friendly','Indifferent','Suspicious','Hostile','Fanatic','Unknown'], v => this.values.attitude = v);
     chipField(s3, 'Personality Traits', this.values.traits, v => this.values.traits = v, { suggestions: ['Brave','Cunning','Greedy','Loyal','Cautious','Cheerful','Grim','Wise','Impulsive','Secretive'] });
-    chipField(s3, 'Ideals', this.values.ideals, v => this.values.ideals = v);
-    chipField(s3, 'Bonds', this.values.bonds, v => this.values.bonds = v);
-    chipField(s3, 'Flaws', this.values.flaws, v => this.values.flaws = v);
+    chipField(s3, 'Ideals', safeArr(this.values.ideals), v => this.values.ideals = v, { bank: 'ideals' });
+    chipField(s3, 'Bonds', safeArr(this.values.bonds), v => this.values.bonds = v, { bank: 'bonds' });
+    chipField(s3, 'Flaws', safeArr(this.values.flaws), v => this.values.flaws = v, { bank: 'flaws' });
     addField(s3, 'Motivation', this.values.motivation, v => this.values.motivation = v, 'textarea');
     addField(s3, 'Appearance', this.values.appearance, v => this.values.appearance = v, 'textarea');
     addField(s3, 'Voice / Mannerisms', this.values.voice, v => this.values.voice = v);
@@ -7322,7 +7375,8 @@ class NPCModal extends Modal {
     const s4 = ce(contentEl, 'div', 'te-modal-section');
     s4.createEl('h3', { text: 'DM Notes' });
     addField(s4, 'Secrets (DM only)', this.values.secrets, v => this.values.secrets = v, 'textarea');
-    chipField(s4, 'Relationships', this.values.relationships, v => this.values.relationships = v);
+    addEntityMultiPicker(s4, 'Relationships (linked)', safeArr(this.values.relationshipIds), this.plugin, 'relationships', v => this.values.relationshipIds = v);
+    chipField(s4, 'Relationships (notes)', safeArr(this.values.relationships), v => this.values.relationships = v);
     addField(s4, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     addSelect(s4, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
 
@@ -7357,7 +7411,6 @@ class CreatureModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Creature` });
-    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Size', this.values.size, SIZES, v => this.values.size = v);
     addSelect(contentEl, 'Creature Type', this.values.creatureType, CREATURE_TYPES, v => this.values.creatureType = v);
@@ -7378,16 +7431,16 @@ class CreatureModal extends Modal {
         t.onChange(v => this.values[ab] = parseInt(v) || 10);
       });
     });
-    addField(statSec, 'Senses', this.values.senses, v => this.values.senses = v);
-    addField(statSec, 'Languages', this.values.languages, v => this.values.languages = v);
+    chipField(statSec, 'Senses', safeArr(this.values.senses), v => this.values.senses = v, { bank: 'creatureSenses' });
+    chipField(statSec, 'Languages', safeArr(this.values.languages), v => this.values.languages = v);
 
     const abilitySec = ce(contentEl, 'div', 'te-modal-section');
     abilitySec.createEl('h3', { text: 'Abilities & Actions' });
-    addField(abilitySec, 'Traits', this.values.traits, v => this.values.traits = v, 'textarea');
-    addField(abilitySec, 'Actions', this.values.actions, v => this.values.actions = v, 'textarea');
-    addField(abilitySec, 'Reactions', this.values.reactions, v => this.values.reactions = v, 'textarea');
-    addField(abilitySec, 'Legendary Actions', this.values.legendaryActions, v => this.values.legendaryActions = v, 'textarea');
-    addField(abilitySec, 'Lair Actions', this.values.lairActions, v => this.values.lairActions = v, 'textarea');
+    chipField(abilitySec, 'Traits', safeArr(this.values.traits), v => this.values.traits = v, { bank: 'creatureTraits' });
+    chipField(abilitySec, 'Actions', safeArr(this.values.actions), v => this.values.actions = v, { bank: 'creatureActions' });
+    chipField(abilitySec, 'Reactions', safeArr(this.values.reactions), v => this.values.reactions = v, { bank: 'creatureReactions' });
+    chipField(abilitySec, 'Legendary Actions', safeArr(this.values.legendaryActions), v => this.values.legendaryActions = v, { bank: 'legendaryActions' });
+    chipField(abilitySec, 'Lair Actions', safeArr(this.values.lairActions), v => this.values.lairActions = v, { bank: 'lairActions' });
 
     const loreSec = ce(contentEl, 'div', 'te-modal-section');
     loreSec.createEl('h3', { text: 'Lore & Encounter' });
@@ -7425,9 +7478,8 @@ class BBEGModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} BBEG / Major Villain` });
-    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Villain Name *', this.values.name, v => this.values.name = v);
-    addField(contentEl, 'Title / Epithet', this.values.title, v => this.values.title = v);
+    chipField(contentEl, 'Title / Epithet', safeArr(this.values.title), v => this.values.title = v, { bank: 'bbegTitles' });
     addSelect(contentEl, 'Status', this.values.status, ['Active','Defeated','Imprisoned','Unknown','Fled'], v => this.values.status = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
 
@@ -7435,11 +7487,12 @@ class BBEGModal extends Modal {
     s1.createEl('h3', { text: 'Goals & Methods' });
     chipField(s1, 'Goals', this.values.goals, v => this.values.goals = v, { suggestions: ['World domination','Revenge','Immortality','Power','Wealth','Destroy a god','Reshape reality','Other'] });
     chipField(s1, 'Methods', this.values.methods, v => this.values.methods = v, { suggestions: ['Manipulation','Armies','Magic','Assassination','Corruption','Subterfuge','Brute force'] });
-    addField(s1, 'Resources', this.values.resources, v => this.values.resources = v, 'textarea');
+    chipField(s1, 'Resources', safeArr(this.values.resources), v => this.values.resources = v, { bank: 'factionResources' });
     addField(s1, 'Motivation / Backstory', this.values.motivation || '', v => this.values.motivation = v, 'textarea');
-    chipField(s1, 'Lieutenants', this.values.lieutenants, v => this.values.lieutenants = v);
-    addEntityMultiPicker(s1, 'Lieutenant NPCs', this.values.linkedNpcIds, this.plugin, 'npcs', v => this.values.linkedNpcIds = v);
-    addField(s1, 'Lair Location', this.values.lairLocation, v => this.values.lairLocation = v);
+    addEntityMultiPicker(s1, 'Lieutenants (linked NPCs)', safeArr(this.values.lieutenantIds), this.plugin, 'npcs', v => this.values.lieutenantIds = v);
+    chipField(s1, 'Lieutenants (legacy text)', safeArr(this.values.lieutenants), v => this.values.lieutenants = v);
+    addEntityPicker(s1, 'Lair Location (linked)', this.values.lairLocationId || '', this.plugin, 'locations', v => this.values.lairLocationId = v);
+    addField(s1, 'Lair Location (text)', this.values.lairLocation, v => this.values.lairLocation = v);
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Campaign Arc' });
@@ -7450,8 +7503,10 @@ class BBEGModal extends Modal {
     const s3 = ce(contentEl, 'div', 'te-modal-section');
     s3.createEl('h3', { text: 'DM Secrets' });
     addField(s3, 'Secrets', this.values.secrets, v => this.values.secrets = v, 'textarea');
-    chipField(s3, 'Linked Factions', this.values.linkedFactions, v => this.values.linkedFactions = v);
-    chipField(s3, 'Linked Quests', this.values.linkedQuests, v => this.values.linkedQuests = v);
+    addEntityMultiPicker(s3, 'Linked Factions', safeArr(this.values.linkedFactionIds), this.plugin, 'factions', v => this.values.linkedFactionIds = v);
+    chipField(s3, 'Linked Factions (legacy)', safeArr(this.values.linkedFactions), v => this.values.linkedFactions = v);
+    addEntityMultiPicker(s3, 'Linked Quests', safeArr(this.values.linkedQuestIds), this.plugin, 'quests', v => this.values.linkedQuestIds = v);
+    chipField(s3, 'Linked Quests (legacy)', safeArr(this.values.linkedQuests), v => this.values.linkedQuests = v);
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Villain name is required.'); return; }
@@ -7484,18 +7539,20 @@ class FactionModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Faction` });
-    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(contentEl, 'Faction Name *', this.values.name, v => this.values.name = v);
     addSelect(contentEl, 'Faction Type', this.values.type || 'Criminal', ['Criminal','Political','Religious','Military','Mercantile','Academic','Secret Society','Resistance','Cult','Guild','Noble House','Other'], v => this.values.type = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     addField(contentEl, 'Ideology', this.values.ideology, v => this.values.ideology = v, 'textarea');
-    addField(contentEl, 'Territory', this.values.territory, v => this.values.territory = v);
-    addEntityPicker(contentEl, 'Leader NPC', this.values.leaderNpcId, this.plugin, 'npcs', v => this.values.leaderNpcId = v);
+    addField(contentEl, 'Territory (text)', this.values.territory, v => this.values.territory = v);
+    addEntityMultiPicker(contentEl, 'Territory (linked)', safeArr(this.values.territoryIds), this.plugin, 'regions', v => this.values.territoryIds = v);
+    chipField(contentEl, 'Leadership Structure', safeArr(this.values.leadershipStructure), v => this.values.leadershipStructure = v, { bank: 'leadershipStructure' });
+    addEntityMultiPicker(contentEl, 'Leaders / Key Staff (NPCs)', safeArr(this.values.leaderNpcIds), this.plugin, 'npcs', v => this.values.leaderNpcIds = v);
+    addEntityPicker(contentEl, 'Primary Leader NPC', this.values.leaderNpcId, this.plugin, 'npcs', v => this.values.leaderNpcId = v);
     addField(contentEl, 'Leadership (text)', this.values.leadership, v => this.values.leadership = v);
     chipField(contentEl, 'Goals', safeArr(this.values.goals), v => this.values.goals = v, { bank: 'factionGoals' });
     chipField(contentEl, 'Methods', safeArr(this.values.methods), v => this.values.methods = v, { bank: 'factionMethods' });
     chipField(contentEl, 'Resources', safeArr(this.values.resources), v => this.values.resources = v, { bank: 'factionResources' });
-    chipField(contentEl, 'Ranks / Titles', safeArr(this.values.ranks), v => this.values.ranks = v, { bank: 'ranks' });
+    chipField(contentEl, 'Ranks / Titles', safeArr(this.values.ranks), v => this.values.ranks = v);
     addEntityMultiPicker(contentEl, 'Allied Factions', this.values.allyIds, this.plugin, 'factions', v => this.values.allyIds = v);
     addEntityMultiPicker(contentEl, 'Enemy Factions', this.values.enemyIds, this.plugin, 'factions', v => this.values.enemyIds = v);
     addField(contentEl, 'Public Face', this.values.publicFace, v => this.values.publicFace = v, 'textarea');
@@ -8353,18 +8410,21 @@ class RelationshipModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Relationship` });
-    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addTypedEntityPicker(contentEl, 'From',
       this.values.fromEntityType, this.values.fromId, this.plugin,
       v => this.values.fromEntityType = v, v => this.values.fromId = v);
     addTypedEntityPicker(contentEl, 'To',
       this.values.toEntityType, this.values.toId, this.plugin,
       v => this.values.toEntityType = v, v => this.values.toId = v);
+    addEntityPicker(contentEl, 'Entity A (linked NPC)', this.values.entityAId || '', this.plugin, 'npcs', v => this.values.entityAId = v);
+    addEntityPicker(contentEl, 'Entity B (linked NPC)', this.values.entityBId || '', this.plugin, 'npcs', v => this.values.entityBId = v);
     addSelect(contentEl, 'Relationship Type', this.values.relationshipType, RELATIONSHIP_TYPES, v => this.values.relationshipType = v);
     addSelect(contentEl, 'Attitude', this.values.attitude, ['Allied','Friendly','Neutral','Suspicious','Hostile','Enemy','Unknown'], v => this.values.attitude = v);
-    addField(contentEl, 'Influence / Power Dynamic', this.values.influence, v => this.values.influence = v);
-    addField(contentEl, 'Trust Level', this.values.trust, v => this.values.trust = v);
-    addField(contentEl, 'Fear / Leverage', this.values.fear, v => this.values.fear = v);
+    chipField(contentEl, 'Power Dynamic / Influence', safeArr(this.values.powerDynamic), v => this.values.powerDynamic = v, { bank: 'powerDynamic' });
+    addField(contentEl, 'Influence (legacy text)', this.values.influence, v => this.values.influence = v);
+    addSelect(contentEl, 'Trust Level', this.values.trustLevel || this.values.trust || 'Neutral', ['Absolute trust','High trust','Cautious trust','Neutral','Suspicious','Low trust','Open distrust','Betrayed','Secretly loyal','Secretly hostile','Unknown'], v => this.values.trustLevel = v);
+    chipField(contentEl, 'Fear / Leverage', safeArr(this.values.fearLeverage), v => this.values.fearLeverage = v, { bank: 'fearLeverage' });
+    addField(contentEl, 'Fear / Leverage (legacy)', this.values.fear, v => this.values.fear = v);
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     addField(contentEl, 'DM Notes (hidden)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
@@ -9088,11 +9148,12 @@ class HybridAncestryModal extends Modal {
       const tGrid = ce(s5, 'div', 'te-trait-grid');
       tierTraits.forEach(trait => {
         const isOn = safeArr(this.values.traits).includes(trait.id);
-        const card = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active' : ''));
+        const card = ce(tGrid, 'div', 'te-trait-chip' + (isOn ? ' is-active te-selected' : ''));
         card.setAttribute('role', 'checkbox');
         card.setAttribute('aria-checked', String(isOn));
         card.setAttribute('tabindex', '0');
         card.style.cursor = 'pointer';
+        if (isOn) { card.style.outline = '2px solid var(--interactive-accent)'; card.style.background = 'var(--background-modifier-active-hover)'; }
         const nameRow = ce(card, 'div', ''); nameRow.style.cssText = 'font-size:.84rem;font-weight:600';
         nameRow.textContent = trait.name;
         const tierBadge = ce(nameRow, 'span', 'te-muted-text'); tierBadge.textContent = ` (+${tier})`;
@@ -9102,6 +9163,9 @@ class HybridAncestryModal extends Modal {
           const next = !active;
           card.setAttribute('aria-checked', String(next));
           card.classList.toggle('is-active', next);
+          card.classList.toggle('te-selected', next);
+          card.style.outline = next ? '2px solid var(--interactive-accent)' : '';
+          card.style.background = next ? 'var(--background-modifier-active-hover)' : '';
           const cur = safeArr(this.values.traits);
           this.values.traits = next ? (cur.includes(trait.id) ? cur : [...cur, trait.id]) : cur.filter(id => id !== trait.id);
           refreshBalance();
@@ -9115,9 +9179,12 @@ class HybridAncestryModal extends Modal {
     const s6 = ce(contentEl, 'div', 'te-modal-section');
     s6.createEl('h3', { text: 'Culture & Appearance' });
     addField(s6, 'Appearance', this.values.appearance, v => this.values.appearance = v, 'textarea');
-    addField(s6, 'Dominant Culture', this.values.dominantCulture, v => this.values.dominantCulture = v);
-    addField(s6, 'Recessive Culture', this.values.recessiveCulture, v => this.values.recessiveCulture = v);
-    addField(s6, 'Raised In', this.values.raisedCulture, v => this.values.raisedCulture = v);
+    addEntityPicker(s6, 'Dominant Culture', this.values.dominantCultureId || '', this.plugin, 'cultures', v => this.values.dominantCultureId = v);
+    addField(s6, 'Dominant Culture (text)', this.values.dominantCulture, v => this.values.dominantCulture = v);
+    addEntityPicker(s6, 'Recessive Culture', this.values.recessiveCultureId || '', this.plugin, 'cultures', v => this.values.recessiveCultureId = v);
+    addField(s6, 'Recessive Culture (text)', this.values.recessiveCulture, v => this.values.recessiveCulture = v);
+    addEntityPicker(s6, 'Raised In', this.values.raisedInId || '', this.plugin, 'cultures', v => this.values.raisedInId = v);
+    addField(s6, 'Raised In (text)', this.values.raisedCulture, v => this.values.raisedCulture = v);
     addField(s6, 'Naming Conventions', this.values.namingConventions, v => this.values.namingConventions = v, 'textarea');
 
     // Section 7: Player Notes
