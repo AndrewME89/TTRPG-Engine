@@ -400,7 +400,7 @@ const OPTION_BANKS = {
   campaignLoops:['Explore & Survive','Build & Defend','Quest Chain','Faction War','Political Climb','Mystery Solve','Heist & Score','Custom'],
   worldScales:  ['Village','Region','Country','Continent','World','Planar','Cosmic'],
   climateTypes: ['Temperate','Tropical','Arctic','Arid/Desert','Mediterranean','Subarctic','Highland','Oceanic','Custom'],
-  governmentTypes: ['Monarchy','Republic','Theocracy','Oligarchy','Militocracy','Tribal Council','Magocracy','Meritocracy','Anarchy','Occupied Territory','Custom'],
+  governmentTypes: ['Monarchy','Republic','Theocracy','Oligarchy','Magocracy','Military Junta','Tribal Council','Merchant Council','Noble Council','Democracy','Dictatorship','Anarchy','Colonial Rule','Occupied Territory','Feudal Vassalage','City Council','Elder Council','Divine Mandate','Custom'],
   technologyLevels: ['Stone Age','Bronze Age','Iron Age','Medieval','Renaissance','Early Industrial','Magitech','Custom'],
   magicLevels:  ['Extremely Rare','Rare','Uncommon','Common','Pervasive','All-Encompassing'],
   divineLevels: ['Absent','Silent','Distant','Present','Manifest','Walking Among Mortals'],
@@ -426,9 +426,9 @@ const OPTION_BANKS = {
   attitudes:    ['Friendly','Indifferent','Suspicious','Hostile','Terrified','Fanatic','Desperate','Bored','Custom'],
   socialClasses:['Destitute','Poor','Working Class','Middle Class','Wealthy','Nobility','Royalty','Custom'],
   factionTypes: ['Military Force','Merchant Guild','Criminal Organization','Religious Order','Political Party','Adventuring Company','Secret Society','Rebel Cell','Government Body','Custom'],
-  factionGoals: ['Territorial Control','Economic Dominance','Political Power','Religious Supremacy','Knowledge/Power','Protection','Revenge','Survival','Restoration','Chaos','Custom'],
-  factionMethods: ['Diplomacy','Espionage','Military Force','Economic Pressure','Propaganda','Assassination','Corruption','Alliance Building','Custom'],
-  factionResources: ['Gold','Troops','Information','Magic','Trade Goods','Political Favours','Land','Artifacts','Labour','Custom'],
+  factionGoals: ['Territorial Control','Economic Dominance','Political Power','Religious Influence','Military Conquest','Public Safety','Revolution','Restoration of old order','Knowledge Acquisition','Artifact Recovery','Monster Eradication','Planar Access','Trade Monopoly','Revenge','Survival','Liberation','Secrecy','Social Reform','Custom'],
+  factionMethods: ['Diplomacy','Espionage','Blackmail','Assassination','Bribery','Propaganda','Open Warfare','Guerrilla Tactics','Legal Pressure','Trade Sanctions','Religious Conversion','Magical Coercion','Protection Rackets','Charity/Public Goodwill','Academic Research','Smuggling','Sabotage','Custom'],
+  factionResources: ['Gold','Troops','Spies','Political Influence','Religious Authority','Trade Routes','Safehouses','Magic Items','Spellcasters','Monsters','Mercenaries','Noble Patrons','Public Support','Ancient Knowledge','Blackmail Material','Fortresses','Ships','Artifacts','Informants','Custom'],
   relationshipStates: ['Allied','Friendly','Neutral','Tense','Hostile','At War','Ceasefire','Secret Alliance','Custom'],
   reputationLevels: ['Exalted','Revered','Honoured','Friendly','Neutral','Unfriendly','Hostile','Hated'],
   orgStructures:['Hierarchy','Cell Structure','Flat Network','Council','Single Leader','Distributed Cells','Custom'],
@@ -458,6 +458,18 @@ const OPTION_BANKS = {
   secretTypes:  ['Character Secret','Faction Secret','World Secret','NPC Secret','Location Secret','Item Secret','Prophecy','Custom'],
   handoutTypes: ['Document','Map','Item','Letter','Clue','Image','Custom'],
   sessionZeroTopics: ['Safety Tools','Tone & Themes','Character Concepts','Party Composition','Table Expectations','Scheduling & Frequency','Absence Policy','Between-Session Communication','Content Lines & Veils','Mature Content','Player vs Player','Character Death','Romance','Retirement Conditions','PvP Combat','Out-of-Character Communication','Custom'],
+  climateRules:    ['Standard seasonal cycle','Harsh winters','Long winters','Mild winters','Extreme summers','Monsoon season','Dry season','Wet season','Magical weather','Unstable climate','Permanent winter','Permanent summer','Volcanic climate','Arctic climate','Desert climate','Tropical climate','Temperate climate','Storm season','Flood season','Drought cycle','Supernatural storms','Custom'],
+  magicRules:      ['Low magic','High magic','Wild magic zones','Dead magic zones','Ley lines','Magic requires licensing','Divine magic regulated','Arcane magic outlawed','Magic is common','Magic is rare','Magic is feared','Magic is industrialised','Magic corrupts','Magic has a cost','Planar magic leaks','Resurrection is restricted','Teleportation is restricted','Divination is unreliable','Necromancy taboo','Blood magic forbidden','Custom'],
+  cosmologyTypes:  ['Great Wheel','World Tree','Material Plane + Echo Planes','Elemental Cosmology','Dualistic Light/Dark','Heaven/Hell Cosmology','Planar Sea','Infinite Realms','Closed World','Dream Cosmology','Mythic Underworld','Custom'],
+  planarTravelRules: ['Rare portals only','Stable portals','Unstable portals','Ritual travel','Spell-based travel','Divine permission required','Travel requires a key','Travel requires alignment','Travel causes corruption','Travel causes time dilation','Travel is one-way','Travel is dangerous','Travel attracts guardians','Travel is politically controlled','Custom'],
+  ranks:           ['Initiate','Agent','Adept','Officer','Captain','Commander','Master','High Priest','Archmage','Guildmaster','Spymaster','Warden','Knight','Baron','Duke','Elder','Matriarch','Patriarch','Chancellor','Grandmaster','Custom'],
+  cultureCustoms:  ['Ancestor worship','Trial by combat','Seasonal festivals','Coming-of-age pilgrimage','Gift-giving etiquette','Hospitality law','Clan oaths','Public storytelling','Mask wearing','Funeral feasts','Sacred animal traditions','Name-day ceremonies','Warrior tattoos','Marriage contracts','Communal childrearing','Ritual duels','Formal guest rights','Sacred silence','Market-day rituals','Custom'],
+  cultureTaboos:   ["Speaking the dead's name",'Refusing hospitality','Drawing weapons indoors','Eating sacred animals','Cutting hair','Wearing enemy colours','Touching holy relics','Public magic','Necromancy','Breaking guest rights','Insulting ancestors','Entering temples armed','Lying under oath','Killing surrendered foes','Refusing a duel','Crossing caste boundaries','Custom'],
+  socialStructure: ['Clan-based','Noble hierarchy','Merchant oligarchy','Tribal council','Elder council','Caste system','Guild-based','Matriarchal','Patriarchal','Theocratic','Military hierarchy','Communal','Meritocratic','Feudal','Nomadic bands','City-state citizenship','Anarchic communes','Custom'],
+  regionalResources: ['Farmland','Fresh water','Timber','Stone','Iron ore','Copper','Silver','Gold','Gems','Salt','Fish','Livestock','Horses','Rare herbs','Spices','Silk','Furs','Coal','Oil','Magical crystals','Ley line access','Ancient ruins','Sacred site','Port access','River access','Trade road','Skilled labour','Custom'],
+  worldHazards:    ['Bandits','Monsters','Undead','Fey crossings','Wild magic','Dead magic','Poisonous plants','Disease','Harsh weather','Avalanches','Flooding','Quicksand','Sinkholes','Cursed ground','Haunted ruins','Volcanic activity','Toxic gas','Predators','Political unrest','War zone','Planar instability','Treacherous roads','Custom'],
+  travelConditions: ['Clear roads','Muddy roads','Washed-out roads','Snowbound passes','Bandit activity','Monster sightings','Military patrols','Toll roads','Closed borders','Dangerous river crossing','Poor visibility','Magical fog','Extreme heat','Extreme cold','Storms','Supply shortage','Safe caravan route','Unsafe at night','Road under repair','Pilgrim traffic','Refugee traffic','Custom'],
+  religiousTaboos: ['Blasphemy','Eating sacred animals','Working on holy days','Entering shrines unclean','Wearing forbidden colours','Speaking divine names','Interfaith marriage','Arcane magic','Necromancy','Blood sacrifice','Refusing confession','Touching holy relics','Breaking pilgrimage vows','Custom'],
 };
 
 // ── Seed data ────────────────────────────────────────────────────────────────
@@ -897,6 +909,16 @@ function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) 
     if (sel.value) { selected.add(sel.value); renderChips(); onChange([...selected]); sel.value = ''; }
   });
   renderChips();
+}
+
+function resolveEntityDisplay(idOrText, state) {
+  if (!idOrText || typeof idOrText !== 'string') return null;
+  const colls = ['regions','settlements','locations','npcs','factions','deities','realms','districts','rooms','pois','quests','encounters','sessions','languages','cultures','nations'];
+  for (const c of colls) {
+    const ent = safeArr(state.entities[c]).find(e => e.id === idOrText);
+    if (ent) return ent.name || ent.title || idOrText;
+  }
+  return null;
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────
@@ -2105,7 +2127,10 @@ function itemCards(parent, plugin, key, opts) {
       if (!val || (Array.isArray(val) && !val.length)) return;
       const row = ce(meta, 'div', 'te-card-meta-row');
       ce(row, 'span', 'te-card-meta-label', f.replace(/([A-Z])/g, ' $1').toLowerCase());
-      ce(row, 'span', '', String(Array.isArray(val) ? val.join(', ') : val).slice(0, 80));
+      const displayVal = Array.isArray(val)
+        ? val.map(v => resolveEntityDisplay(String(v), plugin.state) || String(v)).join(', ')
+        : (resolveEntityDisplay(String(val), plugin.state) || String(val));
+      ce(row, 'span', '', displayVal.slice(0, 80));
     });
     // Actions
     const acts = ce(c, 'div', 'te-card-actions');
@@ -3604,25 +3629,28 @@ const worldFields = [
   { key: 'premise', label: 'Core Premise', type: 'textarea' },
   { key: 'tone', label: 'Campaign Tone', type: 'select', options: ['Heroic Fantasy','Dark Fantasy','Sword & Sorcery','Political Intrigue','Horror','Mystery','Exploration','Epic','Mythic','Other'] },
   { key: 'geography', label: 'Geography Overview', type: 'textarea' },
-  { key: 'climate', label: 'Climate', type: 'text' },
-  { key: 'resources', label: 'Key Resources', type: 'text' },
-  { key: 'magic', label: 'Magic Rules', type: 'textarea' },
+  { key: 'climate', label: 'Climate Rules', type: 'chip', opts: { bank: 'climateRules' } },
+  { key: 'resources', label: 'Key Resources', type: 'chip', opts: { bank: 'regionalResources' } },
+  { key: 'magic', label: 'Magic Rules', type: 'chip', opts: { bank: 'magicRules' } },
   { key: 'summary', label: 'Summary / Notes', type: 'textarea' },
 ];
 const cosmologyFields = [
   { key: 'name', label: 'Cosmology Name', type: 'text' },
-  { key: 'type', label: 'Type', type: 'text' },
+  { key: 'type', label: 'Type', type: 'select', options: ['Great Wheel','World Tree','Material Plane + Echo Planes','Elemental Cosmology','Dualistic Light/Dark','Heaven/Hell Cosmology','Planar Sea','Infinite Realms','Closed World','Dream Cosmology','Mythic Underworld','Custom'] },
   { key: 'creationMyth', label: 'Creation Myth', type: 'textarea' },
-  { key: 'planes', label: 'Planes / Realms (chip)', type: 'chip' },
-  { key: 'portals', label: 'Portals / Gateways', type: 'textarea' },
-  { key: 'travelRules', label: 'Planar Travel Rules', type: 'textarea' },
+  { key: 'planeIds', label: 'Planes / Realms', type: 'entityMultiRef', entityType: 'realms' },
+  { key: 'planes', label: 'Planes / Realms (legacy text)', type: 'chip' },
+  { key: 'portalIds', label: 'Portals / Gateways', type: 'entityMultiRef', entityType: 'pois' },
+  { key: 'travelRules', label: 'Planar Travel Rules', type: 'chip', opts: { bank: 'planarTravelRules' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const realmFields = [
   { key: 'name', label: 'Realm Name', type: 'text' },
   { key: 'type', label: 'Realm Type', type: 'select', options: ['Material','Shadow','Ethereal','Astral','Inner Plane','Outer Plane','Feywild','Shadowfell','Demi-plane','Other'] },
-  { key: 'parentPlane', label: 'Parent Plane', type: 'text' },
-  { key: 'connections', label: 'Connected Realms (chip)', type: 'chip' },
+  { key: 'parentPlaneId', label: 'Parent Plane', type: 'entityRef', entityType: 'realms' },
+  { key: 'parentPlane', label: 'Parent Plane (legacy text)', type: 'text' },
+  { key: 'connectionIds', label: 'Connected Realms', type: 'entityMultiRef', entityType: 'realms' },
+  { key: 'connections', label: 'Connected Realms (legacy text)', type: 'chip' },
   { key: 'features', label: 'Key Features', type: 'textarea' },
   { key: 'rules', label: 'Special Rules', type: 'textarea' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
@@ -3630,24 +3658,27 @@ const realmFields = [
 const deityFields = [
   { key: 'name', label: 'Deity Name', type: 'text' },
   { key: 'titles', label: 'Titles / Epithets', type: 'text' },
-  { key: 'domain', label: 'Divine Domain', type: 'text' },
-  { key: 'pantheon', label: 'Pantheon', type: 'text' },
+  { key: 'domain', label: 'Divine Domain', type: 'chip', opts: { suggestions: ['Life','Light','War','Trickery','Knowledge','Death','Nature','Tempest','Forge','Grave','Order','Peace','Twilight','Arcana','Custom'] } },
+  { key: 'pantheonId', label: 'Pantheon', type: 'entityRef', entityType: 'pantheons' },
+  { key: 'pantheon', label: 'Pantheon (legacy text)', type: 'text' },
   { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
   { key: 'symbols', label: 'Symbols', type: 'text' },
   { key: 'worshippers', label: 'Worshippers', type: 'text' },
-  { key: 'holySites', label: 'Holy Sites (chip)', type: 'chip' },
+  { key: 'holySiteIds', label: 'Holy Sites', type: 'entityMultiRef', entityType: 'locations' },
+  { key: 'holySites', label: 'Holy Sites (legacy text)', type: 'chip' },
   { key: 'clergy', label: 'Clergy Notes', type: 'textarea' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
 const cultureFields = [
   { key: 'name', label: 'Culture Name', type: 'text' },
-  { key: 'language', label: 'Primary Language', type: 'text' },
+  { key: 'languageId', label: 'Primary Language', type: 'entityRef', entityType: 'languages' },
+  { key: 'language', label: 'Primary Language (legacy text)', type: 'text' },
   { key: 'values', label: 'Core Values', type: 'text' },
-  { key: 'customs', label: 'Customs', type: 'chip' },
-  { key: 'taboos', label: 'Taboos', type: 'chip' },
+  { key: 'customs', label: 'Customs', type: 'chip', opts: { bank: 'cultureCustoms' } },
+  { key: 'taboos', label: 'Taboos', type: 'chip', opts: { bank: 'cultureTaboos' } },
   { key: 'clothing', label: 'Clothing / Appearance', type: 'textarea' },
   { key: 'food', label: 'Food & Drink', type: 'textarea' },
-  { key: 'socialStructure', label: 'Social Structure', type: 'textarea' },
+  { key: 'socialStructure', label: 'Social Structure', type: 'chip', opts: { bank: 'socialStructure' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const langFields = [
@@ -3749,34 +3780,42 @@ function renderGeography(main, plugin, tabs) {
 const regionFields = [
   { key: 'name', label: 'Region Name', type: 'text' },
   { key: 'terrain', label: 'Terrain', type: 'select', options: ['Plains','Forest','Mountains','Desert','Coast','Arctic','Swamp','Jungle','Hills','Volcanic','Underground','Other'] },
-  { key: 'climate', label: 'Climate', type: 'text' },
+  { key: 'climate', label: 'Climate', type: 'chip', opts: { bank: 'climateTypes' } },
   { key: 'population', label: 'Population', type: 'text' },
-  { key: 'resources', label: 'Resources (chip)', type: 'chip' },
-  { key: 'hazards', label: 'Hazards (chip)', type: 'chip' },
+  { key: 'resources', label: 'Resources', type: 'chip', opts: { bank: 'regionalResources' } },
+  { key: 'hazards', label: 'Hazards', type: 'chip', opts: { bank: 'worldHazards' } },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
 const settlementFields = [
   { key: 'name', label: 'Settlement Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Thorp','Hamlet','Village','Town','City','Metropolis','Fortress','Port','Outpost','Other'] },
   { key: 'population', label: 'Population', type: 'text' },
-  { key: 'region', label: 'Region', type: 'text' },
-  { key: 'government', label: 'Government', type: 'text' },
-  { key: 'notableNPCs', label: 'Notable NPCs (chip)', type: 'chip' },
-  { key: 'districts', label: 'Districts (chip)', type: 'chip' },
+  { key: 'regionId', label: 'Region', type: 'entityRef', entityType: 'regions' },
+  { key: 'region', label: 'Region (legacy text)', type: 'text' },
+  { key: 'government', label: 'Government', type: 'chip', opts: { bank: 'governmentTypes' } },
+  { key: 'notableNpcIds', label: 'Notable NPCs', type: 'entityMultiRef', entityType: 'npcs' },
+  { key: 'notableNPCs', label: 'Notable NPCs (legacy text)', type: 'chip' },
+  { key: 'districtIds', label: 'Districts', type: 'entityMultiRef', entityType: 'districts' },
+  { key: 'districts', label: 'Districts (legacy text)', type: 'chip' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
 const locationFields = [
   { key: 'name', label: 'Location Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Dungeon','Ruin','Cave','Wilderness','Building','Landmark','Lair','Shrine','Tower','Other'] },
-  { key: 'parent', label: 'Parent (region/settlement)', type: 'text' },
-  { key: 'hazards', label: 'Hazards', type: 'textarea' },
-  { key: 'loot', label: 'Loot (chip)', type: 'chip' },
+  { key: 'regionId', label: 'Parent Region', type: 'entityRef', entityType: 'regions' },
+  { key: 'settlementId', label: 'Parent Settlement', type: 'entityRef', entityType: 'settlements' },
+  { key: 'parent', label: 'Parent (legacy text)', type: 'text' },
+  { key: 'hazards', label: 'Hazards', type: 'chip', opts: { bank: 'worldHazards' } },
+  { key: 'lootIds', label: 'Loot', type: 'entityMultiRef', entityType: 'loot' },
+  { key: 'loot', label: 'Loot (legacy text)', type: 'chip' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
 const poiFields = [
   { key: 'name', label: 'POI Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Landmark','Shrine','Ruin','Camp','Cave','Crossing','Waypoint','Hidden','Other'] },
-  { key: 'location', label: 'Location / Region', type: 'text' },
+  { key: 'regionId', label: 'Region', type: 'entityRef', entityType: 'regions' },
+  { key: 'settlementId', label: 'Settlement', type: 'entityRef', entityType: 'settlements' },
+  { key: 'location', label: 'Location (legacy text)', type: 'text' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
 const routeFields = [
@@ -3784,8 +3823,9 @@ const routeFields = [
   { key: 'from', label: 'From', type: 'text' },
   { key: 'to', label: 'To', type: 'text' },
   { key: 'travelTime', label: 'Travel Time', type: 'text' },
-  { key: 'terrain', label: 'Terrain / Conditions', type: 'text' },
-  { key: 'hazards', label: 'Hazards', type: 'textarea' },
+  { key: 'terrain', label: 'Terrain', type: 'chip', opts: { bank: 'terrainTypes' } },
+  { key: 'conditions', label: 'Travel Conditions', type: 'chip', opts: { bank: 'travelConditions' } },
+  { key: 'hazards', label: 'Hazards', type: 'chip', opts: { bank: 'worldHazards' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
@@ -6514,50 +6554,60 @@ const endgameStateFields = [
 const nationFields = [
   { key: 'name', label: 'Nation Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Empire','Kingdom','Republic','City-State','Confederation','Theocracy','Tribal Land','Occupied Territory','Other'] },
-  { key: 'ruler', label: 'Ruler / Leader', type: 'text' },
-  { key: 'capital', label: 'Capital', type: 'text' },
-  { key: 'government', label: 'Government', type: 'text' },
+  { key: 'rulerNpcId', label: 'Ruler / Leader', type: 'entityRef', entityType: 'npcs' },
+  { key: 'ruler', label: 'Ruler (legacy text)', type: 'text' },
+  { key: 'capitalId', label: 'Capital', type: 'entityRef', entityType: 'settlements' },
+  { key: 'capital', label: 'Capital (legacy text)', type: 'text' },
+  { key: 'government', label: 'Government', type: 'chip', opts: { bank: 'governmentTypes' } },
   { key: 'population', label: 'Population', type: 'text' },
   { key: 'military', label: 'Military Strength', type: 'text' },
   { key: 'economy', label: 'Economy', type: 'text' },
-  { key: 'allies', label: 'Allies (chip)', type: 'chip' },
-  { key: 'enemies', label: 'Enemies (chip)', type: 'chip' },
+  { key: 'allyIds', label: 'Allies', type: 'entityMultiRef', entityType: 'factions' },
+  { key: 'allies', label: 'Allies (legacy text)', type: 'chip' },
+  { key: 'enemyIds', label: 'Enemies', type: 'entityMultiRef', entityType: 'factions' },
+  { key: 'enemies', label: 'Enemies (legacy text)', type: 'chip' },
   { key: 'history', label: 'History', type: 'textarea' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const religionFields = [
   { key: 'name', label: 'Religion Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Monotheistic','Polytheistic','Animistic','Druidic','Ancestor Worship','Cult','Secret Society','Philosophical','Other'] },
-  { key: 'deity', label: 'Primary Deity / Focus', type: 'text' },
+  { key: 'deityId', label: 'Primary Deity', type: 'entityRef', entityType: 'deities' },
+  { key: 'deity', label: 'Primary Deity (legacy text)', type: 'text' },
   { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
   { key: 'domain', label: 'Domain / Aspect', type: 'text' },
   { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
   { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
   { key: 'holyDays', label: 'Holy Days', type: 'text' },
   { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
-  { key: 'temples', label: 'Temples / Holy Sites (chip)', type: 'chip' },
-  { key: 'restrictions', label: 'Taboos & Restrictions', type: 'textarea' },
+  { key: 'templeIds', label: 'Temples / Holy Sites', type: 'entityMultiRef', entityType: 'locations' },
+  { key: 'temples', label: 'Temples (legacy text)', type: 'chip' },
+  { key: 'restrictions', label: 'Taboos & Restrictions', type: 'chip', opts: { bank: 'religiousTaboos' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const districtFields = [
   { key: 'name', label: 'District Name', type: 'text' },
-  { key: 'settlementId', label: 'Settlement', type: 'text' },
+  { key: 'settlementId', label: 'Settlement', type: 'entityRef', entityType: 'settlements' },
   { key: 'type', label: 'Type', type: 'select', options: ['Market','Residential','Noble Quarter','Docks','Temple District','Slums','Military','Industrial','Foreign Quarter','Ruined','Underground','Other'] },
   { key: 'population', label: 'Population', type: 'text' },
   { key: 'atmosphere', label: 'Atmosphere', type: 'text' },
-  { key: 'notableLocations', label: 'Notable Locations (chip)', type: 'chip' },
-  { key: 'factions', label: 'Active Factions (chip)', type: 'chip' },
+  { key: 'notableLocationIds', label: 'Notable Locations', type: 'entityMultiRef', entityType: 'locations' },
+  { key: 'notableLocations', label: 'Notable Locations (legacy text)', type: 'chip' },
+  { key: 'factionIds', label: 'Active Factions', type: 'entityMultiRef', entityType: 'factions' },
+  { key: 'factions', label: 'Active Factions (legacy text)', type: 'chip' },
   { key: 'description', label: 'Description', type: 'textarea' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const roomFields = [
   { key: 'name', label: 'Room Name', type: 'text' },
-  { key: 'locationId', label: 'Location / Dungeon', type: 'text' },
+  { key: 'locationId', label: 'Location / Dungeon', type: 'entityRef', entityType: 'locations' },
   { key: 'type', label: 'Room Type', type: 'select', options: ['Entrance','Corridor','Chamber','Guard Post','Secret Room','Boss Chamber','Treasure Room','Trap Room','Rest Area','Shrine','Prison','Workshop','Library','Other'] },
-  { key: 'features', label: 'Features (chip)', type: 'chip' },
-  { key: 'traps', label: 'Traps', type: 'textarea' },
-  { key: 'loot', label: 'Loot / Treasure', type: 'textarea' },
-  { key: 'connections', label: 'Connected Rooms (chip)', type: 'chip' },
+  { key: 'features', label: 'Features', type: 'chip' },
+  { key: 'traps', label: 'Traps', type: 'chip', opts: { bank: 'hazardTypes' } },
+  { key: 'connectedRoomIds', label: 'Connected Rooms', type: 'entityMultiRef', entityType: 'rooms' },
+  { key: 'connections', label: 'Connected Rooms (legacy text)', type: 'chip' },
+  { key: 'lootIds', label: 'Loot', type: 'entityMultiRef', entityType: 'loot' },
+  { key: 'loot', label: 'Loot (legacy text)', type: 'textarea' },
   { key: 'description', label: 'Description', type: 'textarea' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
@@ -7155,6 +7205,7 @@ class GenericModal extends Modal {
     else if (f.type === 'toggle') addToggle(el, f.label, !!this.values[f.key], v => this.values[f.key] = v);
     else if (f.type === 'chip') chipField(el, f.label, this.values[f.key] || [], v => this.values[f.key] = v, f.opts || {});
     else if (f.type === 'entityRef') addEntityPicker(el, f.label, this.values[f.key] || '', this.plugin, f.entityType || '', v => this.values[f.key] = v);
+    else if (f.type === 'entityMultiRef') addEntityMultiPicker(el, f.label, this.values[f.key] || [], this.plugin, f.entityType || '', v => this.values[f.key] = v);
   }
 }
 
@@ -7421,7 +7472,7 @@ class FactionModal extends Modal {
     this.values = Object.assign({
       id: uid('faction'), name: '', type: '', ideology: '', territory: '',
       leadership: '', leaderNpcId: '', campaignId: '',
-      goals: [], methods: [], resources: '', ranks: [],
+      goals: [], methods: [], resources: [], ranks: [],
       allies: [], allyIds: [], enemies: [], enemyIds: [],
       publicFace: '', secretAgenda: '',
       reputation: '', rewards: '', consequences: '', visibility: 'dm-only',
@@ -7441,10 +7492,10 @@ class FactionModal extends Modal {
     addField(contentEl, 'Territory', this.values.territory, v => this.values.territory = v);
     addEntityPicker(contentEl, 'Leader NPC', this.values.leaderNpcId, this.plugin, 'npcs', v => this.values.leaderNpcId = v);
     addField(contentEl, 'Leadership (text)', this.values.leadership, v => this.values.leadership = v);
-    chipField(contentEl, 'Goals', this.values.goals, v => this.values.goals = v);
-    chipField(contentEl, 'Methods', this.values.methods, v => this.values.methods = v);
-    addField(contentEl, 'Resources', this.values.resources, v => this.values.resources = v, 'textarea');
-    chipField(contentEl, 'Ranks / Titles', this.values.ranks, v => this.values.ranks = v);
+    chipField(contentEl, 'Goals', safeArr(this.values.goals), v => this.values.goals = v, { bank: 'factionGoals' });
+    chipField(contentEl, 'Methods', safeArr(this.values.methods), v => this.values.methods = v, { bank: 'factionMethods' });
+    chipField(contentEl, 'Resources', safeArr(this.values.resources), v => this.values.resources = v, { bank: 'factionResources' });
+    chipField(contentEl, 'Ranks / Titles', safeArr(this.values.ranks), v => this.values.ranks = v, { bank: 'ranks' });
     addEntityMultiPicker(contentEl, 'Allied Factions', this.values.allyIds, this.plugin, 'factions', v => this.values.allyIds = v);
     addEntityMultiPicker(contentEl, 'Enemy Factions', this.values.enemyIds, this.plugin, 'factions', v => this.values.enemyIds = v);
     addField(contentEl, 'Public Face', this.values.publicFace, v => this.values.publicFace = v, 'textarea');
@@ -9537,6 +9588,7 @@ class DungeonModal extends Modal {
     addField(s1, 'Summary', this.values.summary, v => this.values.summary = v, 'textarea');
     addField(s1, 'Threat Level / CR Range', this.values.threatLevel, v => this.values.threatLevel = v);
     addField(s1, 'Boss / Key Enemy', this.values.boss, v => this.values.boss = v);
+    addEntityPicker(s1, 'Boss NPC (entity link)', this.values.bossNpcId || '', this.plugin, 'npcs', v => this.values.bossNpcId = v);
     addEntityPicker(s1, 'Linked Region', this.values.regionId, this.plugin, 'regions', v => this.values.regionId = v);
     addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
