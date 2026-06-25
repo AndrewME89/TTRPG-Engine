@@ -558,6 +558,7 @@ function createDefaultState() {
       reveals: [],
       loot: [],
       hybridAncestries: [],
+      acts: [],
       nobleFamilies: [],
     },
     relationships: [],
@@ -2006,6 +2007,7 @@ const ENTITY_ICONS = {
   nations:'👑', religions:'🕍', districts:'🏙️', rooms:'🚪', timelines:'📅', reveals:'💡', loot:'💰',
   hybridAncestries:'🧬',
   nobleFamilies:'🏰',
+  acts:'🎭',
 };
 const ENTITY_LABELS = {
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
@@ -2022,6 +2024,7 @@ const ENTITY_LABELS = {
   nations:'Nation', religions:'Religion', districts:'District', rooms:'Room', timelines:'Timeline Event', reveals:'Reveal', loot:'Loot Entry',
   hybridAncestries:'Hybrid Ancestry',
   nobleFamilies:'Noble Family',
+  acts:'Act',
 };
 
 const ENTITY_FOLDER_LABELS = {
@@ -2906,8 +2909,8 @@ function renderSection(main, plugin, section) {
     bible:                (el, p) => { p.state.activeSubSection = 'bible'; renderCampaignCommand(el, p); },
     'run-session':        (el, p) => { p.state.activeSubSection = 'run-session'; renderCampaignCommand(el, p); },
     sessions:             (el, p) => { p.state.activeSubSection = 'sessions'; renderCampaignCommand(el, p); },
-    milestones:           (el, p) => { p.state.activeSubSection = 'milestones'; renderCampaignCommand(el, p); },
-    dmscreen:             (el, p) => { p.state.activeSubSection = 'dmscreen'; renderCampaignCommand(el, p); },
+    milestones:           (el, p) => { p.state.activeSubSection = 'bible'; renderCampaignCommand(el, p); },
+    dmscreen:             (el, p) => { p.state.activeSubSection = 'run-session'; renderCampaignCommand(el, p); },
     world:                (el, p) => { p.state.activeSubSection = 'lore'; renderWorldAtlas(el, p); },
     geography:            (el, p) => { p.state.activeSubSection = 'geography'; renderWorldAtlas(el, p); },
     gazetteer:            (el, p) => { p.state.activeSubSection = 'gazetteer'; renderWorldAtlas(el, p); },
@@ -2952,17 +2955,16 @@ function renderCampaignCommand(main, plugin) {
     { id: 'campaigns',   label: '📜 Campaigns' },
     { id: 'bible',       label: '📖 Campaign Bible' },
     { id: 'sessions',    label: '📅 Sessions' },
-    { id: 'milestones',  label: '🏆 Milestones' },
-    { id: 'dmscreen',    label: '🖥️ DM Screen' },
     { id: 'run-session', label: '▶ Run Session' },
   ];
-  const sub = state.activeSubSection || 'campaigns';
+  let sub = state.activeSubSection || 'campaigns';
+  // Redirect removed tabs to their canonical homes
+  if (sub === 'milestones') sub = 'bible';
+  if (sub === 'dmscreen')   sub = 'run-session';
   const wrap = ce(main, 'div', 'te-workspace-content');
   if (sub === 'campaigns')        renderCampaigns(wrap, plugin, tabs);
   else if (sub === 'bible')       renderCampaignBible(wrap, plugin, tabs);
   else if (sub === 'sessions')    renderSessions(wrap, plugin, tabs);
-  else if (sub === 'milestones')  renderMilestonesSection(wrap, plugin, tabs);
-  else if (sub === 'dmscreen')    renderDmScreen(wrap, plugin, tabs);
   else if (sub === 'run-session') renderRunSession(wrap, plugin, tabs);
   else renderCampaigns(wrap, plugin, tabs);
 }
@@ -3318,33 +3320,44 @@ function renderCampaigns(main, plugin, tabs) {
   pageHead(main, plugin, 'Campaigns', 'Create, manage, and switch between your campaigns.', [
     { label: '🧙 Campaign Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
     { label: '+ Quick Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
-    { label: '▶ Run Session', run: true, onClick: async () => { plugin.state.activeSection = 'run-session'; await plugin.saveState(); } },
-    { label: '📖 Campaign Bible', onClick: async () => { plugin.state.activeSection = 'bible'; await plugin.saveState(); } },
+    { label: '▶ Run Session', run: true, onClick: async () => { plugin.state.activeSubSection = 'run-session'; await plugin.saveState(); } },
+    { label: '📖 Campaign Bible', onClick: async () => { plugin.state.activeSubSection = 'bible'; await plugin.saveState(); } },
   ], tabs);
   const campaigns = safeArr(plugin.state.entities.campaigns).filter(c => matchesSearch(c, plugin.state.search));
   if (!campaigns.length) { emptyState(main, 'No campaigns yet.', 'Click "New Campaign" to create your first campaign.'); return; }
-  const g = ce(main, 'div', 'te-grid');
+  const stack = ce(main, 'div', '');
+  stack.style.cssText = 'display:flex;flex-direction:column;gap:12px';
   campaigns.forEach(camp => {
-    const c = ce(g, 'div', 'te-card');
+    const bib = camp.bible || {};
+    const c = ce(stack, 'div', 'te-card');
+    c.style.width = '100%';
+    // Header row
     const hd = ce(c, 'div', 'te-card-head');
     ce(hd, 'span', 'te-card-icon', '📜');
     const titleRow = ce(hd, 'div', '');
-    titleRow.style.flex = '1';
+    titleRow.style.cssText = 'flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
     ce(titleRow, 'h3', 'te-card-title', camp.name);
-    if (camp.id === plugin.state.activeCampaignId) { const badge = ce(titleRow, 'span', 'te-chip', '✓ Active'); badge.style.cssText = 'border-color:var(--te-accent);color:var(--te-accent);font-size:.72rem'; }
-    if (camp.summary) ce(c, 'p', 'te-card-body', camp.summary);
-    // Line-by-line metadata
+    if (camp.id === plugin.state.activeCampaignId) {
+      const badge = ce(titleRow, 'span', 'te-chip', '✓ Active');
+      badge.style.cssText = 'border-color:var(--te-accent);color:var(--te-accent);font-size:.72rem';
+    }
+    if (camp.status && camp.status !== 'Active') {
+      const sb = ce(titleRow, 'span', 'te-chip', camp.status);
+      sb.style.fontSize = '.72rem';
+    }
+    // Tagline / premise
+    const tagline = camp.tagline || bib.premise || camp.summary || '';
+    if (tagline) { const tb = ce(c, 'p', 'te-card-body', tagline.slice(0, 200)); tb.style.fontStyle = 'italic'; }
+    // Useful metadata
     const meta = ce(c, 'div', 'te-card-meta');
+    const worldName = camp.worldName || (safeArr(plugin.state.entities.worlds).find(w => w.campaignId === camp.id) || {}).name || '';
     const mf = [
-      ['Campaign ID', camp.id],
-      ['Status', camp.status],
-      ['Theme', camp.theme],
+      ['World', worldName],
       ['Level Range', camp.levelRange],
-      ['Folder', slugify(camp.name) + '/'],
-      ['Visibility', camp.visibility],
-      ['Created', camp.createdAt ? new Date(camp.createdAt).toLocaleDateString() : ''],
-      ['Updated', camp.updatedAt ? new Date(camp.updatedAt).toLocaleDateString() : ''],
-      ['Last Synced', camp.lastSynced ? new Date(camp.lastSynced).toLocaleDateString() : 'Never'],
+      ['Levelling', camp.levellingMethod],
+      ['Players', camp.playerCount ? String(camp.playerCount) : ''],
+      ['Ruleset', camp.ruleset || (bib.ruleset) || ''],
+      ['Tone', camp.tone ? (Array.isArray(camp.tone) ? camp.tone.join(', ') : camp.tone) : (bib.tone || '')],
     ];
     mf.forEach(([label, val]) => {
       if (!val) return;
@@ -4428,6 +4441,16 @@ function renderAdventure(main, plugin, tabs) {
   }
 }
 
+const actFields = [
+  { key: 'name', label: 'Act Name', type: 'text' },
+  { key: 'order', label: 'Act Number / Order', type: 'number' },
+  { key: 'status', label: 'Status', type: 'select', options: ['Draft','Active','Completed','Abandoned'] },
+  { key: 'levelStart', label: 'Level Start', type: 'number' },
+  { key: 'levelEnd', label: 'Level End', type: 'number' },
+  { key: 'summary', label: 'Summary / Purpose', type: 'textarea' },
+  { key: 'goal', label: 'Act Goal', type: 'textarea' },
+  { key: 'turningPoint', label: 'Turning Point', type: 'textarea' },
+];
 const adventureFields = [
   { key: 'name', label: 'Adventure Name', type: 'text' },
   { key: 'actId', label: 'Parent Act', type: 'entityRef', entityType: 'acts' },
@@ -4630,16 +4653,16 @@ const bastionFields = [
 
 // ── SESSIONS & TIMELINE ───────────────────────────────────────────────────────
 function renderSessions(main, plugin, tabs) {
-  pageHead(main, plugin, 'Sessions & Timeline', 'Session logs, milestones, and the campaign calendar.', [
+  const state = plugin.state;
+  pageHead(main, plugin, 'Sessions & Timeline', 'Session logs and the campaign timeline.', [
     { label: '+ Session Log', primary: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
     { label: '▶ Run / Resume', run: true, onClick: () => new SessionModal(plugin.app, plugin).open() },
-    { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones', null, milestoneFields).open() },
     { label: '+ Timeline Event', onClick: () => new GenericModal(plugin.app, plugin, 'timelines', null, timelineFields).open() },
     { label: '🗓️ Calendar', onClick: () => new CalendarModal(plugin.app, plugin).open() },
   ], tabs);
 
-  // Calendar summary
-  const cal = plugin.state.calendar;
+  // Calendar summary with +Day button
+  const cal = state.calendar;
   if (cal && cal.name) {
     const calCard = ce(main, 'div', 'te-card');
     calCard.style.marginBottom = '16px';
@@ -4653,6 +4676,16 @@ function renderSessions(main, plugin, tabs) {
       ce(r, 'span', 'te-card-meta-label', k);
       ce(r, 'span', '', String(v));
     });
+    const calActs = ce(calCard, 'div', 'te-card-actions');
+    btn(calActs, '+ Day', 'te-btn is-sm is-primary', async () => {
+      const day = parseInt(cal.day) || 1;
+      cal.day = String(day + 1);
+      const activeSess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
+      if (activeSess) logSessionEvent(plugin, 'In-Game Date Advanced', `Day advanced to ${cal.day} ${cal.month}, Year ${cal.year}`);
+      await saveStateQuiet(plugin);
+      new Notice(`Calendar: Day ${cal.day}`);
+    });
+    btn(calActs, '⚙️ Edit', 'te-btn is-sm', () => new CalendarModal(plugin.app, plugin).open());
   }
 
   sectionHead(main, 'Session Logs');
@@ -4660,8 +4693,6 @@ function renderSessions(main, plugin, tabs) {
     meta: ['sessionNumber', 'realDate', 'gameDate'],
     onEdit: (plugin, key, item) => new SessionModal(plugin.app, plugin, item).open(),
   });
-  sectionHead(main, 'Milestones');
-  itemCards(main, plugin, 'milestones', { meta: ['type', 'achieved'] });
   sectionHead(main, 'Timeline Events');
   itemCards(main, plugin, 'timelines', { meta: ['date', 'era', 'type'] });
 }
@@ -4669,8 +4700,11 @@ function renderSessions(main, plugin, tabs) {
 const milestoneFields = [
   { key: 'name', label: 'Milestone Name', type: 'text' },
   { key: 'type', label: 'Type', type: 'select', options: ['Level Up','Story Beat','Achievement','Quest Complete','Discovery','Relationship','Other'] },
+  { key: 'status', label: 'Status', type: 'select', options: ['Pending','In Progress','Achieved','Skipped'] },
+  { key: 'level', label: 'Level / Reward', type: 'text' },
   { key: 'achieved', label: 'Achieved Date', type: 'text' },
-  { key: 'linkedSession', label: 'Linked Session', type: 'text' },
+  { key: 'linkedSessionId', label: 'Linked Session', type: 'entityRef', entityType: 'sessions' },
+  { key: 'actId', label: 'Linked Act', type: 'entityRef', entityType: 'acts' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
@@ -4888,39 +4922,163 @@ function renderGenerators(main, plugin) {
 function renderCampaignBible(main, plugin, tabs) {
   const state = plugin.state;
   const camp = activeCampaign(state);
-  pageHead(main, plugin, 'Campaign Bible', 'Campaign premise, secrets, act structure, and publication blueprint.', [
+  pageHead(main, plugin, 'Campaign Bible', 'Campaign premise, acts, secrets, milestones, and linked campaign structure.', [
     { label: '✏️ Edit Bible', primary: true, onClick: () => new CampaignBibleModal(plugin.app, plugin, camp).open() },
+    { label: '+ Act', onClick: () => {
+      const newAct = { id: uid('act'), campaignId: camp ? camp.id : '', order: safeArr(state.entities.acts).filter(a => !camp || a.campaignId === camp.id).length + 1 };
+      new GenericModal(plugin.app, plugin, 'acts', newAct, actFields).open();
+    }},
+    { label: '+ Milestone', onClick: () => new GenericModal(plugin.app, plugin, 'milestones', { id: uid('milestone'), campaignId: camp ? camp.id : '' }, milestoneFields).open() },
     { label: '📤 Export', onClick: () => exportCampaignBible(plugin) },
   ], tabs);
   if (!camp) { emptyState(main, 'No active campaign.', 'Create and activate a campaign first.'); return; }
 
   const bib = camp.bible || {};
-  sectionHead(main, 'Campaign Premise');
+  const campId = camp.id;
+
+  // ── Overview ──
+  sectionHead(main, 'Campaign Overview');
   const premise = ce(main, 'div', 'te-card');
   const ph = ce(premise, 'div', 'te-card-head');
   ce(ph, 'span', 'te-card-icon', '📜');
   ce(ph, 'h3', 'te-card-title', camp.name);
+  if (camp.tagline) { const tl = ce(premise, 'p', 'te-card-body', camp.tagline); tl.style.fontStyle = 'italic'; }
   if (bib.premise) ce(premise, 'p', 'te-card-body', bib.premise);
   const pm = ce(premise, 'div', 'te-card-meta');
-  [['Tone', bib.tone], ['Genre', bib.genre], ['Scope', bib.scope], ['Ruleset', bib.ruleset]].forEach(([k, v]) => {
+  const worldName = camp.worldName || (safeArr(state.entities.worlds).find(w => w.campaignId === campId) || {}).name || '';
+  const overviewMeta = [
+    ['World', worldName],
+    ['Tone', bib.tone || (Array.isArray(camp.tone) ? camp.tone.join(', ') : camp.tone) || ''],
+    ['Genre', bib.genre || (Array.isArray(camp.genres) ? camp.genres.join(', ') : '') || ''],
+    ['Scope', bib.scope || ''],
+    ['Ruleset', bib.ruleset || camp.ruleset || ''],
+    ['Level Range', camp.levelRange || ''],
+    ['Levelling', camp.levellingMethod || ''],
+    ['Players', camp.playerCount ? String(camp.playerCount) : ''],
+    ['Format', camp.format || ''],
+    ['Status', camp.status || ''],
+  ];
+  overviewMeta.forEach(([k, v]) => {
     if (!v) return;
     const r = ce(pm, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v);
   });
-  if (safeArr(bib.themes).length) { const r = ce(pm, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Themes'); ce(r, 'span', '', bib.themes.join(', ')); }
+  if (safeArr(bib.themes).length || safeArr(camp.themes).length) {
+    const themes = safeArr(bib.themes).length ? bib.themes : camp.themes;
+    const r = ce(pm, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Themes'); ce(r, 'span', '', themes.join(', '));
+  }
 
+  // ── Acts ──
+  const actEntities = safeArr(state.entities.acts).filter(a => a.campaignId === campId).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const bibActs = safeArr(bib.acts);
   sectionHead(main, 'Act Structure');
-  const acts = safeArr(bib.acts);
-  if (acts.length) {
+  if (actEntities.length || bibActs.length) {
     const g = ce(main, 'div', 'te-grid');
-    acts.forEach((act, i) => {
+    // Entity-backed acts (preferred)
+    actEntities.forEach((act, i) => {
       const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', `${i + 1}.`); ce(h, 'h3', 'te-card-title', act.title || `Act ${i + 1}`);
-      if (act.summary) ce(c, 'p', 'te-card-body', act.summary);
+      const h = ce(c, 'div', 'te-card-head');
+      ce(h, 'span', 'te-card-icon', `${act.order || i + 1}.`);
+      ce(h, 'h3', 'te-card-title', act.name || `Act ${act.order || i + 1}`);
+      if (act.status && act.status !== 'Draft') { const sb = ce(h, 'span', 'te-chip', act.status); sb.style.fontSize = '.72rem'; }
+      if (act.summary) ce(c, 'p', 'te-card-body', act.summary.slice(0, 120));
+      const mt = ce(c, 'div', 'te-card-meta');
+      if (act.levelStart || act.levelEnd) {
+        const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Levels');
+        ce(r, 'span', '', `${act.levelStart || '?'}–${act.levelEnd || '?'}`);
+      }
+      // Linked adventures
+      const linkedAdvs = safeArr(state.entities.adventures).filter(a => a.actId === act.id);
+      if (linkedAdvs.length) {
+        const ar = ce(mt, 'div', 'te-card-meta-row'); ce(ar, 'span', 'te-card-meta-label', 'Adventures');
+        ce(ar, 'span', '', linkedAdvs.map(a => a.name).join(', ').slice(0, 80));
+      }
+      // Linked quests via adventures
+      const advIds = linkedAdvs.map(a => a.id);
+      const linkedQs = safeArr(state.entities.quests).filter(q => q.adventureId && advIds.includes(q.adventureId));
+      if (linkedQs.length) {
+        const qr = ce(mt, 'div', 'te-card-meta-row'); ce(qr, 'span', 'te-card-meta-label', 'Quests');
+        ce(qr, 'span', '', linkedQs.map(q => q.name).join(', ').slice(0, 80));
+      }
+      const aa = ce(c, 'div', 'te-card-actions');
+      btn(aa, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'acts', act, actFields).open());
+      btn(aa, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'acts', act.id); await plugin.saveState(); });
     });
-  } else { emptyState(main, 'No acts defined.', 'Edit the Campaign Bible to add your act structure.'); }
+    // Legacy bible acts (not yet migrated to entities)
+    if (!actEntities.length) {
+      bibActs.forEach((act, i) => {
+        const c = ce(g, 'div', 'te-card');
+        const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', `${i + 1}.`); ce(h, 'h3', 'te-card-title', act.title || `Act ${i + 1}`);
+        if (act.summary) ce(c, 'p', 'te-card-body', act.summary);
+        const aa = ce(c, 'div', 'te-card-actions');
+        btn(aa, 'Promote to Entity', 'te-btn is-sm', async () => {
+          upsert(state, 'acts', { id: uid('act'), campaignId: campId, name: act.title || `Act ${i + 1}`, order: i + 1, summary: act.summary || '', status: 'Draft', createdAt: new Date().toISOString() });
+          await plugin.saveState();
+        });
+      });
+    }
+  } else { emptyState(main, 'No acts defined.', 'Click "+ Act" above to create your first act.'); }
 
+  // ── Adventures ──
+  const campAdvs = safeArr(state.entities.adventures).filter(a => !a.campaignId || a.campaignId === campId);
+  if (campAdvs.length) {
+    sectionHead(main, 'Adventures');
+    const ag = ce(main, 'div', 'te-grid');
+    campAdvs.slice(0, 20).forEach(adv => {
+      const c = ce(ag, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '📝'); ce(h, 'h3', 'te-card-title', adv.name);
+      if (adv.status) { const sb = ce(h, 'span', 'te-chip', adv.status); sb.style.fontSize = '.72rem'; }
+      if (adv.premise || adv.summary) ce(c, 'p', 'te-card-body', (adv.premise || adv.summary || '').slice(0, 100));
+      btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'adventures', adv, adventureFields).open());
+    });
+  }
+
+  // ── Quests ──
+  const campQuests = safeArr(state.entities.quests).filter(q => !q.campaignId || q.campaignId === campId);
+  if (campQuests.length) {
+    sectionHead(main, 'Quests');
+    const qg = ce(main, 'div', 'te-grid');
+    campQuests.slice(0, 20).forEach(q => {
+      const c = ce(qg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '📋'); ce(h, 'h3', 'te-card-title', q.name);
+      if (q.status) { const sb = ce(h, 'span', 'te-chip', q.status); sb.style.fontSize = '.72rem'; }
+      if (q.summary || q.premise) ce(c, 'p', 'te-card-body', (q.summary || q.premise || '').slice(0, 100));
+      btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => defaultEdit(plugin, 'quests', q));
+    });
+  }
+
+  // ── Milestones ──
+  sectionHead(main, 'Milestones');
+  const milestones = safeArr(state.entities.milestones).filter(m => !m.campaignId || m.campaignId === campId);
+  if (milestones.length) {
+    const g = ce(main, 'div', 'te-grid');
+    milestones.forEach(m => {
+      const c = ce(g, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏆'); ce(h, 'h3', 'te-card-title', m.name);
+      if (m.summary) ce(c, 'p', 'te-card-body', m.summary.slice(0, 100));
+      const mt = ce(c, 'div', 'te-card-meta');
+      [['Level', m.level], ['Status', m.status], ['Type', m.type]].forEach(([k, v]) => { if (!v) return; const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m, milestoneFields).open());
+      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'milestones', m.id); await plugin.saveState(); });
+    });
+  } else { emptyState(main, 'No milestones.', 'Click "+ Milestone" above to add milestones.'); }
+
+  // ── Major Factions ──
+  const campFactions = safeArr(state.entities.factions).filter(f => !f.campaignId || f.campaignId === campId);
+  if (campFactions.length) {
+    sectionHead(main, 'Major Factions');
+    const fg = ce(main, 'div', 'te-grid');
+    campFactions.slice(0, 20).forEach(fac => {
+      const c = ce(fg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⚔️'); ce(h, 'h3', 'te-card-title', fac.name);
+      if (fac.summary) ce(c, 'p', 'te-card-body', fac.summary.slice(0, 100));
+      btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => defaultEdit(plugin, 'factions', fac));
+    });
+  }
+
+  // ── DM Secrets Register ──
   sectionHead(main, 'DM Secrets Register');
-  const dmSecrets = safeArr(state.entities.secrets).filter(s => s.visibility === 'dm-only' || !s.visibility);
+  const dmSecrets = safeArr(state.entities.secrets).filter(s => (!s.campaignId || s.campaignId === campId) && (s.visibility === 'dm-only' || !s.visibility));
   if (dmSecrets.length) {
     const g = ce(main, 'div', 'te-grid');
     dmSecrets.forEach(s => {
@@ -4928,26 +5086,12 @@ function renderCampaignBible(main, plugin, tabs) {
       const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🔒'); ce(h, 'h3', 'te-card-title', s.name);
       if (s.summary) ce(c, 'p', 'te-card-body', (s.summary || '').slice(0, 120));
       const m = ce(c, 'div', 'te-card-meta');
-      if (s.type) { const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'type'); ce(r, 'span', '', s.type); }
+      if (s.secretType) { const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'type'); ce(r, 'span', '', s.secretType); }
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, 'Edit', 'te-btn is-sm', () => new SecretModal(plugin.app, plugin, s).open());
+      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'secrets', s.id); await plugin.saveState(); new Notice('Secret deleted.'); });
     });
   } else { emptyState(main, 'No DM secrets.', 'Add secrets in the Secrets & Reveals section.'); }
-
-  sectionHead(main, 'Milestone Progression');
-  const milestones = safeArr(state.entities.milestones);
-  if (milestones.length) {
-    const g = ce(main, 'div', 'te-grid');
-    milestones.forEach(m => {
-      const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏆'); ce(h, 'h3', 'te-card-title', m.name);
-      if (m.summary) ce(c, 'p', 'te-card-body', m.summary);
-      const mt = ce(c, 'div', 'te-card-meta');
-      [['Level', m.level], ['Status', m.status]].forEach(([k, v]) => { if (!v) return; const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'milestones', m, milestoneFields).open());
-    });
-  } else { emptyState(main, 'No milestones.', 'Add milestones in Adventures & Quests.'); }
 
   if (bib.playerPrimer) {
     sectionHead(main, 'Player Primer');
@@ -4957,7 +5101,7 @@ function renderCampaignBible(main, plugin, tabs) {
   }
 
   sectionHead(main, 'Session History');
-  const sessionLog = safeArr(state.entities.sessions).slice().sort((a, b) => {
+  const sessionLog = safeArr(state.entities.sessions).filter(s => !s.campaignId || s.campaignId === campId).slice().sort((a, b) => {
     const da = new Date(a.date || a.createdAt || 0), db = new Date(b.date || b.createdAt || 0);
     return db - da;
   });
@@ -4969,27 +5113,160 @@ function renderCampaignBible(main, plugin, tabs) {
       if (s.summary || s.notes) ce(c, 'p', 'te-card-body', (s.summary || s.notes || '').slice(0, 100));
       const m = ce(c, 'div', 'te-card-meta');
       [['Date', s.date || s.realDate], ['Status', s.status], ['Players', s.players]].forEach(([k, v]) => { if (!v) return; const r = ce(m, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
-      btn(ce(c, 'div', 'te-card-actions'), 'View Log', 'te-btn is-sm', async () => { state.activeSection = 'sessions'; await plugin.saveState(); });
+      btn(ce(c, 'div', 'te-card-actions'), 'View Log', 'te-btn is-sm', async () => { state.activeSubSection = 'sessions'; await plugin.saveState(); });
     });
-    if (sessionLog.length > 12) { const ra = ce(main, 'div', 'te-modal-actions'); btn(ra, `View All ${sessionLog.length} Sessions →`, 'te-btn', async () => { state.activeSection = 'sessions'; await plugin.saveState(); }); }
+    if (sessionLog.length > 12) { const ra = ce(main, 'div', 'te-modal-actions'); btn(ra, `View All ${sessionLog.length} Sessions →`, 'te-btn', async () => { state.activeSubSection = 'sessions'; await plugin.saveState(); }); }
   } else { emptyState(main, 'No sessions logged yet.', 'Log sessions in Sessions & Timeline.'); }
 }
 
 async function exportCampaignBible(plugin) {
-  const camp = activeCampaign(plugin.state);
+  const state = plugin.state;
+  const camp = activeCampaign(state);
   if (!camp) { new Notice('No active campaign.'); return; }
   const bib = camp.bible || {};
   const folder = campaignFolder(plugin);
-  let md = `# Campaign Bible — ${camp.name}\n\n`;
-  md += `*Generated ${new Date().toLocaleDateString()}*\n\n`;
-  if (bib.premise) md += `## Premise\n\n${bib.premise}\n\n`;
-  if (bib.tone) md += `**Tone:** ${bib.tone} | **Genre:** ${bib.genre || '—'} | **Scope:** ${bib.scope || '—'} | **Ruleset:** ${bib.ruleset || '—'}\n\n`;
-  if (safeArr(bib.themes).length) md += `**Themes:** ${bib.themes.join(', ')}\n\n`;
-  if (safeArr(bib.acts).length) { md += `## Act Structure\n\n`; bib.acts.forEach((a, i) => { md += `### Act ${i + 1}: ${a.title || ''}\n\n${a.summary || ''}\n\n`; }); }
-  if (bib.playerPrimer) md += `## Player Primer\n\n${bib.playerPrimer}\n\n`;
+  const campId = camp.id;
+  const lines = [];
+
+  // Minimal YAML frontmatter
+  lines.push('---');
+  lines.push('ttrpg-engine: true');
+  lines.push('entityType: campaign-bible');
+  lines.push(`campaignId: ${campId}`);
+  lines.push(`createdAt: ${new Date().toISOString()}`);
+  lines.push('---');
+  lines.push('');
+  lines.push(`# Campaign Bible — ${camp.name}`);
+  lines.push(`*Generated ${new Date().toLocaleDateString()}*`);
+  lines.push('');
+
+  // Overview
+  if (camp.tagline) lines.push(`> ${camp.tagline}\n`);
+  if (bib.premise || camp.premise || camp.summary) lines.push(`## Premise\n\n${bib.premise || camp.premise || camp.summary}\n`);
+
+  const meta = [];
+  const worldName = camp.worldName || (safeArr(state.entities.worlds).find(w => w.campaignId === campId) || {}).name || '';
+  if (worldName) meta.push(`**World:** ${worldName}`);
+  if (bib.tone || camp.tone) meta.push(`**Tone:** ${bib.tone || (Array.isArray(camp.tone) ? camp.tone.join(', ') : camp.tone)}`);
+  if (bib.genre || camp.genres) meta.push(`**Genre:** ${bib.genre || (Array.isArray(camp.genres) ? camp.genres.join(', ') : camp.genres)}`);
+  if (bib.ruleset || camp.ruleset) meta.push(`**Ruleset:** ${bib.ruleset || camp.ruleset}`);
+  if (camp.levelRange) meta.push(`**Levels:** ${camp.levelRange}`);
+  if (camp.levellingMethod) meta.push(`**Levelling:** ${camp.levellingMethod}`);
+  if (camp.playerCount) meta.push(`**Players:** ${camp.playerCount}`);
+  if (camp.format) meta.push(`**Format:** ${camp.format}`);
+  if (meta.length) lines.push(meta.join(' | ') + '\n');
+
+  const themes = safeArr(bib.themes).length ? bib.themes : safeArr(camp.themes);
+  if (themes.length) lines.push(`**Themes:** ${themes.join(', ')}\n`);
+
+  // Acts
+  const actEntities = safeArr(state.entities.acts).filter(a => a.campaignId === campId).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const bibActs = safeArr(bib.acts);
+  const allActs = actEntities.length ? actEntities : bibActs;
+  if (allActs.length) {
+    lines.push('## Act Structure\n');
+    allActs.forEach((act, i) => {
+      const num = act.order || i + 1;
+      const name = act.name || act.title || `Act ${num}`;
+      lines.push(`### Act ${num}: ${name}`);
+      if (act.status) lines.push(`*Status: ${act.status}*`);
+      if (act.levelStart || act.levelEnd) lines.push(`*Levels ${act.levelStart || '?'}–${act.levelEnd || '?'}*`);
+      if (act.summary) lines.push(`\n${act.summary}`);
+      if (act.goal) lines.push(`\n**Goal:** ${act.goal}`);
+      if (act.turningPoint) lines.push(`\n**Turning Point:** ${act.turningPoint}`);
+      const linkedAdvs = actEntities.length ? safeArr(state.entities.adventures).filter(a => a.actId === act.id) : [];
+      if (linkedAdvs.length) lines.push(`\n**Adventures:** ${linkedAdvs.map(a => a.name).join(', ')}`);
+      lines.push('');
+    });
+  }
+
+  // Adventures
+  const advs = safeArr(state.entities.adventures).filter(a => !a.campaignId || a.campaignId === campId);
+  if (advs.length) {
+    lines.push('## Adventures\n');
+    advs.forEach(adv => {
+      lines.push(`### ${adv.name}`);
+      if (adv.status) lines.push(`*${adv.status}*`);
+      if (adv.premise || adv.summary) lines.push(`\n${adv.premise || adv.summary}`);
+      lines.push('');
+    });
+  }
+
+  // Quests
+  const quests = safeArr(state.entities.quests).filter(q => !q.campaignId || q.campaignId === campId);
+  if (quests.length) {
+    lines.push('## Quests\n');
+    quests.forEach(q => {
+      const statusStr = q.status ? ` *(${q.status})*` : '';
+      lines.push(`- **${q.name}**${statusStr}${q.summary ? ': ' + q.summary.slice(0, 120) : ''}`);
+    });
+    lines.push('');
+  }
+
+  // Milestones
+  const milestones = safeArr(state.entities.milestones).filter(m => !m.campaignId || m.campaignId === campId);
+  if (milestones.length) {
+    lines.push('## Milestones\n');
+    milestones.forEach(m => {
+      const statusStr = m.status ? ` *(${m.status})*` : '';
+      lines.push(`- **${m.name}**${statusStr}${m.summary ? ': ' + m.summary.slice(0, 100) : ''}`);
+    });
+    lines.push('');
+  }
+
+  // Factions
+  const factions = safeArr(state.entities.factions).filter(f => !f.campaignId || f.campaignId === campId);
+  if (factions.length) {
+    lines.push('## Major Factions\n');
+    factions.forEach(f => {
+      lines.push(`### ${f.name}`);
+      if (f.summary) lines.push(f.summary.slice(0, 200));
+      lines.push('');
+    });
+  }
+
+  // Major NPCs
+  const npcs = safeArr(state.entities.npcs).filter(n => !n.campaignId || n.campaignId === campId);
+  if (npcs.length) {
+    lines.push('## Major NPCs\n');
+    npcs.slice(0, 30).forEach(n => {
+      const role = n.role ? ` — ${n.role}` : '';
+      const faction = n.faction ? ` (${n.faction})` : '';
+      lines.push(`- **${n.name}**${role}${faction}${n.summary ? ': ' + n.summary.slice(0, 100) : ''}`);
+    });
+    lines.push('');
+  }
+
+  // Sessions summary
+  const sessions = safeArr(state.entities.sessions).filter(s => !s.campaignId || s.campaignId === campId).sort((a, b) => {
+    const da = new Date(a.date || a.realDate || a.createdAt || 0), db = new Date(b.date || b.realDate || b.createdAt || 0);
+    return da - db;
+  });
+  if (sessions.length) {
+    lines.push('## Session History\n');
+    sessions.forEach(s => {
+      const dateStr = s.date || s.realDate ? ` (${s.date || s.realDate})` : '';
+      lines.push(`- **${s.name || 'Session'}**${dateStr}${s.recap || s.summary ? ': ' + (s.recap || s.summary || '').slice(0, 120) : ''}`);
+    });
+    lines.push('');
+  }
+
+  // Secrets summary (DM only)
+  const secrets = safeArr(state.entities.secrets).filter(s => (!s.campaignId || s.campaignId === campId) && (s.visibility === 'dm-only' || !s.visibility));
+  if (secrets.length) {
+    lines.push('## DM Secrets\n');
+    secrets.forEach(s => {
+      lines.push(`- **${s.name}**${s.secretType ? ' (' + s.secretType + ')' : ''}${s.revealStatus ? ' — ' + s.revealStatus : ''}`);
+    });
+    lines.push('');
+  }
+
+  if (bib.playerPrimer) lines.push(`## Player Primer\n\n${bib.playerPrimer}\n`);
+  if (bib.notes) lines.push(`## DM Notes\n\n${bib.notes}\n`);
+
   const biblePath = `${folder}/Campaign Command Centre/Campaign Bible.md`;
   await ensureFolder(plugin.app, `${folder}/Campaign Command Centre`);
-  await writeNote(plugin.app, biblePath, md);
+  await writeNote(plugin.app, biblePath, lines.join('\n'));
   new Notice(`Campaign Bible exported to ${biblePath}`);
 }
 
@@ -6048,7 +6325,7 @@ const timelineFields = [
   { key: 'type', label: 'Event Type', type: 'select', options: ['World Event','Campaign Event','Session Event','Character Event','Faction Event','Discovery','Battle','Political','Catastrophe','Other'] },
   { key: 'description', label: 'Description', type: 'textarea' },
   { key: 'impact', label: 'World Impact', type: 'textarea' },
-  { key: 'linkedSessionId', label: 'Linked Session', type: 'text' },
+  { key: 'linkedSessionId', label: 'Linked Session', type: 'entityRef', entityType: 'sessions' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 const revealFields = [
@@ -6092,6 +6369,7 @@ const ENTITY_FIELD_SCHEMAS = {
   downtime: downtimeFields,
   bastions: bastionFields,
   milestones: milestoneFields,
+  acts: actFields,
   handouts: handoutFields,
   compendium: compendiumFields,
   journals: journalFields,
@@ -6633,6 +6911,7 @@ class GenericModal extends Modal {
     else if (f.type === 'number') addNumber(el, f.label, this.values[f.key] || 0, v => this.values[f.key] = v);
     else if (f.type === 'toggle') addToggle(el, f.label, !!this.values[f.key], v => this.values[f.key] = v);
     else if (f.type === 'chip') chipField(el, f.label, this.values[f.key] || [], v => this.values[f.key] = v, f.opts || {});
+    else if (f.type === 'entityRef') addEntityPicker(el, f.label, this.values[f.key] || '', this.plugin, f.entityType || '', v => this.values[f.key] = v);
   }
 }
 
@@ -8761,7 +9040,7 @@ class CampaignWizardModal extends Modal {
       levellingMethod: 'Milestone', restRules: 'Standard (Short/Long)', deathRules: 'Standard Death Saves',
       magicItemAvailability: 'Common', treasureStyle: 'Mixed', safetyTools: [], sessionZeroTopics: [],
       playerCount: 4, partyNotes: '', worldName: '', worldPremise: '', worldScale: '',
-      structureNotes: '', campaignLoops: [], factionNames: [], secretSummary: '', playerPrimer: '',
+      structureNotes: '', campaignLoops: [], factionNames: [], milestoneNames: [], secretSummary: '', playerPrimer: '',
       createFolders: true, startingNote: true,
       bible: { premise: '', tone: '', genre: '', scope: '', themes: [], acts: [], playerPrimer: '', notes: '' },
       createdAt: new Date().toISOString(),
@@ -8851,7 +9130,8 @@ class CampaignWizardModal extends Modal {
     chipField(el, 'Core Campaign Loops', this.data.campaignLoops, v => this.data.campaignLoops = v, { bank: 'campaignLoops' });
   }
   renderStep_progression(el) {
-    addField(el, 'Milestone Notes (e.g. Level up at each major arc)', this.data.bible.notes, v => this.data.bible.notes = v, 'textarea');
+    chipField(el, 'Milestones (add key milestones, e.g. "Level 5 after Act 1")', this.data.milestoneNames || [], v => this.data.milestoneNames = v, { placeholder: 'Milestone name…' });
+    addField(el, 'Milestone Notes', this.data.bible.notes, v => this.data.bible.notes = v, 'textarea');
   }
   renderStep_factions(el) {
     chipField(el, 'Major Factions (add names)', this.data.factionNames, v => this.data.factionNames = v, { placeholder: 'Faction name…' });
@@ -8891,6 +9171,10 @@ class CampaignWizardModal extends Modal {
     // Create factions
     d.factionNames.forEach(name => {
       upsert(this.plugin.state, 'factions', { id: uid('faction'), name, summary: '', campaignId: d.id });
+    });
+    // Create milestones
+    safeArr(d.milestoneNames).forEach(name => {
+      upsert(this.plugin.state, 'milestones', { id: uid('milestone'), name, status: 'Pending', campaignId: d.id, createdAt: new Date().toISOString() });
     });
     // Create DM secret
     if (d.secretSummary) {
