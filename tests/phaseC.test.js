@@ -203,7 +203,8 @@ test('districtFields has factionIds entityMultiRef for factions', () => {
 
 // ── roomFields ────────────────────────────────────────────────────────────────
 test('roomFields.locationId is entityRef for locations', () => {
-  includes(src, "{ key: 'locationId', label: 'Location / Dungeon', type: 'entityRef', entityType: 'locations' }");
+  // Phase J upgraded roomFields to typedEntityRef with idKey: 'locationId' supporting locations + dungeons
+  includes(src, "idKey: 'locationId'");
 });
 test('roomFields has connectedRoomIds entityMultiRef for rooms', () => {
   includes(src, "{ key: 'connectedRoomIds', label: 'Connected Rooms', type: 'entityMultiRef', entityType: 'rooms' }");
