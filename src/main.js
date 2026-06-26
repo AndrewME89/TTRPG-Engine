@@ -3480,7 +3480,7 @@ function renderDashboard(main, plugin) {
   qcard(g, '🌍', 'World & Lore', 'Worlds, cosmologies, deities, factions, cultures, and languages.', 'Open World', async () => { state.activeSection = 'world'; await plugin.saveState(); });
   qcard(g, '👤', 'NPCs & Creatures', `${state.entities.npcs.length} NPCs and ${state.entities.creatures.length} creatures in your campaign.`, 'Open NPCs', async () => { state.activeSection = 'npcs'; await plugin.saveState(); });
   qcard(g, '📋', 'Active Quests', `${safeArr(state.entities.quests).filter(q => q.status === 'Active').length} active quests running.`, 'Open Quests', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
-  qcard(g, '🖥️', 'DM Screen', 'Quick reference, conditions, combat rules, and session tools.', 'Open DM Screen', async () => { state.activeSection = 'dmscreen'; await plugin.saveState(); });
+  qcard(g, '▶', 'Run Session', 'Manage your live session, track NPCs, quests, maps, and events.', 'Run Session', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
   qcard(g, '🎲', 'Generators', 'NPC names, quest hooks, loot, taverns, weather, and more.', 'Open Generators', async () => { state.activeSection = 'generators'; await plugin.saveState(); });
   // My content — clickable stat cards navigating to their section
   sectionHead(main, 'My Content / Saved Items');
@@ -3923,7 +3923,7 @@ function renderGeography(main, plugin, tabs) {
   sectionHead(main, 'Points of Interest');
   itemCards(main, plugin, 'pois', { meta: ['type', 'location'] });
   sectionHead(main, 'Routes');
-  itemCards(main, plugin, 'routes', { meta: ['from', 'to', 'travelTime'] });
+  itemCards(main, plugin, 'routes', { meta: ['fromRefId', 'from', 'toRefId', 'to', 'travelTime'] });
 }
 
 const regionFields = [
@@ -3967,10 +3967,19 @@ const poiFields = [
   { key: 'location', label: 'Location (legacy text)', type: 'text' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
+const ROUTE_ENDPOINT_TYPES = [
+  { key: 'regions', label: 'Region' },
+  { key: 'settlements', label: 'Settlement' },
+  { key: 'locations', label: 'Location' },
+  { key: 'pois', label: 'POI' },
+  { key: 'dungeons', label: 'Dungeon' },
+];
 const routeFields = [
   { key: 'name', label: 'Route Name', type: 'text' },
-  { key: 'from', label: 'From', type: 'text' },
-  { key: 'to', label: 'To', type: 'text' },
+  { type: 'typedEntityRef', label: 'From (linked)', typeKey: 'fromRefType', idKey: 'fromRefId', entityTypes: ROUTE_ENDPOINT_TYPES },
+  { key: 'from', label: 'From (legacy text)', type: 'text' },
+  { type: 'typedEntityRef', label: 'To (linked)', typeKey: 'toRefType', idKey: 'toRefId', entityTypes: ROUTE_ENDPOINT_TYPES },
+  { key: 'to', label: 'To (legacy text)', type: 'text' },
   { key: 'travelTime', label: 'Travel Time', type: 'text' },
   { key: 'terrain', label: 'Terrain', type: 'chip', opts: { bank: 'terrainTypes' } },
   { key: 'conditions', label: 'Travel Conditions', type: 'chip', opts: { bank: 'travelConditions' } },
@@ -4779,7 +4788,7 @@ function renderEncounters(main, plugin, tabs) {
   sectionHead(main, 'Encounters');
   itemCards(main, plugin, 'encounters', { meta: ['type', 'difficulty', 'location', 'linkedQuest'] });
   sectionHead(main, 'Loot');
-  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status'] });
+  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status', 'encounterId', 'claimedById', 'claimedBy'] });
 }
 
 function renderInitiativeTracker(parent, plugin) {
@@ -5445,6 +5454,24 @@ function renderCampaignBible(main, plugin, tabs) {
     });
   }
 
+  // ── Domains ──
+  const campDomains = safeArr(state.entities.domains).filter(d => !d.campaignId || d.campaignId === campId);
+  if (campDomains.length) {
+    sectionHead(main, 'Domains');
+    const dg = ce(main, 'div', 'te-grid');
+    campDomains.slice(0, 20).forEach(dom => {
+      const c = ce(dg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏰'); ce(h, 'h3', 'te-card-title', dom.name);
+      if (dom.summary) ce(c, 'p', 'te-card-body', dom.summary.slice(0, 100));
+      const mt = ce(c, 'div', 'te-card-meta');
+      [['Type', dom.type], ['Scale', dom.scale || dom.size]].forEach(([k, v]) => {
+        if (!v) return;
+        const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v));
+      });
+      btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => defaultEdit(plugin, 'domains', dom));
+    });
+  }
+
   // ── DM Secrets Register ──
   sectionHead(main, 'DM Secrets Register');
   const dmSecrets = safeArr(state.entities.secrets).filter(s => (!s.campaignId || s.campaignId === campId) && (s.visibility === 'dm-only' || !s.visibility));
@@ -5730,7 +5757,7 @@ function renderRunSession(main, plugin, tabs) {
   let activeSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
 
   // Session start/end & End Session & Open Review action
-  const startEndLabel = !state.sessionRunMode ? '▶ Start Session' : '⏹ End Session & Review';
+  const startEndLabel = !state.sessionRunMode ? '▶ Start Session' : '⏹ End Session & Open Review';
   pageHead(main, plugin, '▶ Run Session', 'Live session management — combat, context, events, and notes.', [
     { label: startEndLabel, primary: !state.sessionRunMode, run: state.sessionRunMode,
       onClick: async () => {
@@ -5744,7 +5771,7 @@ function renderRunSession(main, plugin, tabs) {
             eventLog: [],
             notes: '',
             sessionContext: {
-              currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+              currentLocationId: '', currentSettlementId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
               activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
               activeTimerIds: [], currentMapId: ''
             }
@@ -5779,10 +5806,11 @@ function renderRunSession(main, plugin, tabs) {
 
   // Ensure sessionContext exists
   if (activeSess) { if (!activeSess.sessionContext) activeSess.sessionContext = {
-      currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+      currentLocationId: '', currentSettlementId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
       activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
       activeTimerIds: [], currentMapId: ''
     };
+    if (activeSess.sessionContext.currentSettlementId === undefined) activeSess.sessionContext.currentSettlementId = '';
   }
   const ctx = activeSess ? activeSess.sessionContext : null;
   // Helper for ctx selects: logs when logType provided and value changes
@@ -5805,20 +5833,64 @@ function renderRunSession(main, plugin, tabs) {
   if (activeSess && ctx) {
     const ctxCard = ce(leftCol, 'div', 'te-card'); ctxCard.style.cssText = 'padding:12px;margin-bottom:8px';
 
-    // Tabs: Location | Map | NPCs | Quests | Factions
-    const CTX_TABS = ['location', 'map', 'npcs', 'quests', 'factions'];
-    const CTX_LABELS = ['📍 Location', '🗺️ Map', '👥 NPCs', '📋 Quests', '⚔️ Factions'];
+    // Tabs: Location | Map | NPCs | Quests | Factions | Encounters
+    const CTX_TABS = ['location', 'map', 'npcs', 'quests', 'factions', 'encounters'];
+    const CTX_LABELS = ['📍 Location', '🗺️ Map', '👥 NPCs', '📋 Quests', '⚔️ Factions', '🎯 Encounters'];
     let activeCtxTab = 'location';
     const ctxTabRow = ce(ctxCard, 'div', 'te-card-actions'); ctxTabRow.style.flexWrap = 'wrap';
     const ctxContent = ce(ctxCard, 'div', ''); ctxContent.style.marginTop = '8px';
     const scopeId = camp ? camp.id : state.activeCampaignId;
+    const selStyle = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+
+    // Campaign-scoped dropdown helper: renders a select that adds to an id array and shows chips
+    const renderSelectorChips = (container, label, idArrayKey, entityKey, logType, chipActions) => {
+      const chips = ce(container, 'div', 'te-chip-row');
+      const rebuildChips = () => {
+        clear(chips);
+        safeArr(ctx[idArrayKey]).forEach(eid => {
+          const ent = safeArr(state.entities[entityKey]).find(x => x.id === eid);
+          if (!ent) return;
+          const chip = ce(chips, 'span', 'te-chip', ent.name || eid);
+          if (chipActions) chipActions(chip, ent, eid, rebuildChips);
+          else {
+            const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove';
+            x.addEventListener('click', async () => {
+              ctx[idArrayKey] = safeArr(ctx[idArrayKey]).filter(id => id !== eid);
+              logSessionEvent(plugin, `${logType} Deactivated`, ent.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildChips();
+            });
+          }
+        });
+      };
+      rebuildChips();
+      const addRow = ce(container, 'div', ''); addRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;align-items:center';
+      const sel = ce(addRow, 'select'); sel.style.cssText = 'flex:1;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+      ce(sel, 'option', '', `— select ${label} —`).value = '';
+      const campEnts = safeArr(state.entities[entityKey]).filter(e => !scopeId || e.campaignId === scopeId);
+      campEnts.forEach(e => { const o = ce(sel, 'option', '', e.name || e.id); o.value = e.id; });
+      if (!campEnts.length) ce(addRow, 'span', 'te-muted-text', `No ${label.toLowerCase()} in campaign`);
+      btn(addRow, '+ Add', 'te-btn is-sm', async () => {
+        const id = sel.value; if (!id) return;
+        if (!safeArr(ctx[idArrayKey]).includes(id)) {
+          const ent = campEnts.find(e => e.id === id);
+          ctx[idArrayKey] = [...safeArr(ctx[idArrayKey]), id];
+          if (ent) logSessionEvent(plugin, `${logType} Activated`, ent.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildChips();
+        }
+        sel.value = '';
+      });
+      return rebuildChips;
+    };
 
     const renderCtxTab = () => {
       clear(ctxContent);
       if (activeCtxTab === 'location') {
+        // Location selector
         const sc = ce(ctxContent, 'div', 'te-stat-card');
         ce(sc, 'div', 'te-stat-label', 'Current Location');
-        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        const sel = ce(sc, 'select'); sel.style.cssText = selStyle;
         ce(sel, 'option', '', '— none —').value = '';
         const locs = safeArr(state.entities.locations).filter(x => !scopeId || x.campaignId === scopeId);
         locs.forEach(x => { const o = ce(sel, 'option', '', x.name || x.id); o.value = x.id; });
@@ -5832,24 +5904,29 @@ function renderRunSession(main, plugin, tabs) {
           }
           upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
         });
-        // Also show settlements as location options
+        if (!locs.length) ce(sc, 'p', 'te-muted-text', 'No locations in campaign yet.');
+        // Settlement selector — persists to currentSettlementId
+        const sc2 = ce(ctxContent, 'div', 'te-stat-card'); sc2.style.marginTop = '8px';
+        ce(sc2, 'div', 'te-stat-label', 'Current Settlement / Town');
+        const sel2 = ce(sc2, 'select'); sel2.style.cssText = selStyle;
+        ce(sel2, 'option', '', '— none —').value = '';
         const settls = safeArr(state.entities.settlements).filter(x => !scopeId || x.campaignId === scopeId);
-        if (settls.length) {
-          const sc2 = ce(ctxContent, 'div', 'te-stat-card'); sc2.style.marginTop = '8px';
-          ce(sc2, 'div', 'te-stat-label', 'Settlement / Town');
-          const sel2 = ce(sc2, 'select'); sel2.style.cssText = sel.style.cssText;
-          ce(sel2, 'option', '', '— none —').value = '';
-          settls.forEach(x => { const o = ce(sel2, 'option', '', x.name || x.id); o.value = x.id; });
-          sel2.addEventListener('change', async () => {
+        settls.forEach(x => { const o = ce(sel2, 'option', '', x.name || x.id); o.value = x.id; });
+        sel2.value = ctx.currentSettlementId || '';
+        sel2.addEventListener('change', async () => {
+          const prev = ctx.currentSettlementId;
+          ctx.currentSettlementId = sel2.value;
+          if (sel2.value !== prev) {
             const chosen = settls.find(x => x.id === sel2.value);
-            if (chosen) logSessionEvent(plugin, 'Location Changed', chosen.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          });
-        }
+            if (chosen) logSessionEvent(plugin, 'Settlement Changed', chosen.name);
+          }
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        });
+        if (!settls.length) ce(sc2, 'p', 'te-muted-text', 'No settlements in campaign yet.');
       } else if (activeCtxTab === 'map') {
         const sc = ce(ctxContent, 'div', 'te-stat-card');
         ce(sc, 'div', 'te-stat-label', 'Current Map');
-        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        const sel = ce(sc, 'select'); sel.style.cssText = selStyle;
         ce(sel, 'option', '', '— none —').value = '';
         const maps = getCampaignMaps(state, scopeId);
         maps.forEach(x => { const o = ce(sel, 'option', '', x.name || 'Untitled'); o.value = x.id; });
@@ -5862,142 +5939,78 @@ function renderRunSession(main, plugin, tabs) {
             if (chosen) logSessionEvent(plugin, 'Map Changed', chosen.name || 'map');
           }
           upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          // Show linked metadata for the newly selected map without re-rendering
+          renderMapMeta();
         });
+        if (!maps.length) ce(sc, 'p', 'te-muted-text', 'No maps in campaign yet.');
+        // Linked location/settlement metadata for selected map
+        const mapMetaEl = ce(ctxContent, 'div', '');
+        const renderMapMeta = () => {
+          clear(mapMetaEl);
+          const chosenId = ctx.currentMapId;
+          if (!chosenId) return;
+          const chosenMap = maps.find(m => m.id === chosenId);
+          if (!chosenMap) return;
+          const meta = ce(mapMetaEl, 'div', 'te-card-meta'); meta.style.marginTop = '8px';
+          const linkedLoc = chosenMap.locationId ? safeArr(state.entities.locations).find(l => l.id === chosenMap.locationId) : null;
+          const linkedSettl = chosenMap.settlementId ? safeArr(state.entities.settlements).find(s => s.id === chosenMap.settlementId) : null;
+          if (linkedLoc) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Location'); ce(r, 'span', '', linkedLoc.name); }
+          if (linkedSettl) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Settlement'); ce(r, 'span', '', linkedSettl.name); }
+          if (chosenMap.summary) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Summary'); ce(r, 'span', '', chosenMap.summary.slice(0, 80)); }
+        };
+        renderMapMeta();
         const mapBtns = ce(ctxContent, 'div', 'te-card-actions'); mapBtns.style.marginTop = '8px';
         btn(mapBtns, '🗺️ Open Tile Map', 'te-btn is-sm is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
       } else if (activeCtxTab === 'npcs') {
-        const activeNpcChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildNpcChips = () => {
-          clear(activeNpcChips);
-          safeArr(ctx.activeNpcIds).forEach((npcId) => {
-            const npc = safeArr(state.entities.npcs).find(n => n.id === npcId);
-            if (!npc) return;
-            const chip = ce(activeNpcChips, 'span', 'te-chip', npc.name);
-            const deadBtn = ce(chip, 'button', 'te-chip-x', '💀');
-            deadBtn.title = 'Mark dead';
-            deadBtn.addEventListener('click', async () => {
-              npc.status = 'Dead'; upsert(state, 'npcs', npc);
-              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-              logSessionEvent(plugin, 'NPC Died', npc.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildNpcChips();
-            });
-            const x = ce(chip, 'button', 'te-chip-x', '×');
-            x.title = 'Remove from scene';
-            x.addEventListener('click', async () => {
-              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-              logSessionEvent(plugin, 'NPC Deactivated', npc.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildNpcChips();
-            });
+        renderSelectorChips(ctxContent, 'NPC', 'activeNpcIds', 'npcs', 'NPC', (chip, npc, npcId, rebuildChips) => {
+          const deadBtn = ce(chip, 'button', 'te-chip-x', '💀'); deadBtn.title = 'Mark dead';
+          deadBtn.addEventListener('click', async () => {
+            npc.status = 'Dead'; upsert(state, 'npcs', npc);
+            ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+            logSessionEvent(plugin, 'NPC Died', npc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildNpcChips();
-        const npcAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); npcAddRow.style.marginTop = '6px';
-        const npcSearch = ce(npcAddRow, 'input'); npcSearch.type = 'text'; npcSearch.placeholder = 'Add NPC…'; npcSearch.style.flex = '1';
-        const campNpcsCtx = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
-        btn(npcAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const q = npcSearch.value.toLowerCase().trim();
-          const match = campNpcsCtx.find(n => (n.name||'').toLowerCase() === q) || campNpcsCtx.find(n => (n.name||'').toLowerCase().includes(q));
-          if (!match) { new Notice('No NPC found.'); return; }
-          if (!safeArr(ctx.activeNpcIds).includes(match.id)) {
-            ctx.activeNpcIds = [...safeArr(ctx.activeNpcIds), match.id];
-            logSessionEvent(plugin, 'NPC Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildNpcChips();
-          }
-          npcSearch.value = '';
+          const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove from scene';
+          x.addEventListener('click', async () => {
+            ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+            logSessionEvent(plugin, 'NPC Deactivated', npc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
         });
-        npcSearch.addEventListener('keydown', e => { if (e.key === 'Enter') npcAddRow.querySelector('button[class*="te-btn"]').click(); });
       } else if (activeCtxTab === 'quests') {
-        const activeQChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildQChips = () => {
-          clear(activeQChips);
-          safeArr(ctx.activeQuestIds).forEach(qId => {
-            const q = safeArr(state.entities.quests).find(x => x.id === qId);
-            if (!q) return;
-            const chip = ce(activeQChips, 'span', 'te-chip', q.name);
-            const completeBtn = ce(chip, 'button', 'te-chip-x', '✅');
-            completeBtn.title = 'Complete quest';
-            completeBtn.addEventListener('click', async () => {
-              q.status = 'Completed'; upsert(state, 'quests', q);
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Completed', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
-            const failBtn = ce(chip, 'button', 'te-chip-x', '❌');
-            failBtn.title = 'Fail quest';
-            failBtn.addEventListener('click', async () => {
-              q.status = 'Failed'; upsert(state, 'quests', q);
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Failed', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
-            const rmQ = ce(chip, 'button', 'te-chip-x', '×');
-            rmQ.title = 'Remove from scene';
-            rmQ.addEventListener('click', async () => {
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Deactivated', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
+        renderSelectorChips(ctxContent, 'Quest', 'activeQuestIds', 'quests', 'Quest', (chip, q, qId, rebuildChips) => {
+          const completeBtn = ce(chip, 'button', 'te-chip-x', '✅'); completeBtn.title = 'Complete quest';
+          completeBtn.addEventListener('click', async () => {
+            q.status = 'Completed'; upsert(state, 'quests', q);
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Completed', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildQChips();
-        const qAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); qAddRow.style.marginTop = '6px';
-        const qSearch = ce(qAddRow, 'input'); qSearch.type = 'text'; qSearch.placeholder = 'Activate quest…'; qSearch.style.flex = '1';
-        const campQuests = safeArr(state.entities.quests).filter(q => !state.activeCampaignId || q.campaignId === state.activeCampaignId);
-        btn(qAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const qq = qSearch.value.toLowerCase().trim();
-          const match = campQuests.find(q => (q.name||'').toLowerCase() === qq) || campQuests.find(q => (q.name||'').toLowerCase().includes(qq));
-          if (!match) { new Notice('No quest found.'); return; }
-          if (!safeArr(ctx.activeQuestIds).includes(match.id)) {
-            ctx.activeQuestIds = [...safeArr(ctx.activeQuestIds), match.id];
-            if (match.status !== 'Active') { match.status = 'Active'; upsert(state, 'quests', match); }
-            logSessionEvent(plugin, 'Quest Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildQChips();
-          }
-          qSearch.value = '';
+          const failBtn = ce(chip, 'button', 'te-chip-x', '❌'); failBtn.title = 'Fail quest';
+          failBtn.addEventListener('click', async () => {
+            q.status = 'Failed'; upsert(state, 'quests', q);
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Failed', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
+          const rmQ = ce(chip, 'button', 'te-chip-x', '×'); rmQ.title = 'Remove from scene';
+          rmQ.addEventListener('click', async () => {
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Deactivated', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
         });
-        qSearch.addEventListener('keydown', e => { if (e.key === 'Enter') qAddRow.querySelector('button[class*="te-btn"]').click(); });
       } else if (activeCtxTab === 'factions') {
-        const activeFacChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildFacChips = () => {
-          clear(activeFacChips);
-          safeArr(ctx.activeFactionIds).forEach(fId => {
-            const fac = safeArr(state.entities.factions).find(x => x.id === fId);
-            if (!fac) return;
-            const chip = ce(activeFacChips, 'span', 'te-chip', fac.name);
-            const x = ce(chip, 'button', 'te-chip-x', '×');
-            x.title = 'Deactivate faction';
-            x.addEventListener('click', async () => {
-              ctx.activeFactionIds = safeArr(ctx.activeFactionIds).filter(id => id !== fId);
-              logSessionEvent(plugin, 'Faction Deactivated', fac.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildFacChips();
-            });
+        renderSelectorChips(ctxContent, 'Faction', 'activeFactionIds', 'factions', 'Faction');
+      } else if (activeCtxTab === 'encounters') {
+        renderSelectorChips(ctxContent, 'Encounter', 'activeEncounterIds', 'encounters', 'Encounter', (chip, enc, encId, rebuildChips) => {
+          const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove encounter';
+          x.addEventListener('click', async () => {
+            ctx.activeEncounterIds = safeArr(ctx.activeEncounterIds).filter(id => id !== encId);
+            logSessionEvent(plugin, 'Encounter Deactivated', enc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildFacChips();
-        const facAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); facAddRow.style.marginTop = '6px';
-        const facSearch = ce(facAddRow, 'input'); facSearch.type = 'text'; facSearch.placeholder = 'Add faction…'; facSearch.style.flex = '1';
-        const campFacs = safeArr(state.entities.factions).filter(f => !scopeId || f.campaignId === scopeId);
-        btn(facAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const qq = facSearch.value.toLowerCase().trim();
-          const match = campFacs.find(f => (f.name||'').toLowerCase() === qq) || campFacs.find(f => (f.name||'').toLowerCase().includes(qq));
-          if (!match) { new Notice('No faction found.'); return; }
-          if (!safeArr(ctx.activeFactionIds).includes(match.id)) {
-            ctx.activeFactionIds = [...safeArr(ctx.activeFactionIds), match.id];
-            logSessionEvent(plugin, 'Faction Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildFacChips();
-          }
-          facSearch.value = '';
         });
-        facSearch.addEventListener('keydown', e => { if (e.key === 'Enter') facAddRow.querySelector('button[class*="te-btn"]').click(); });
       }
     };
 
@@ -6804,10 +6817,11 @@ const religionFields = [
   { key: 'deityId', label: 'Primary Deity', type: 'entityRef', entityType: 'deities' },
   { key: 'deity', label: 'Primary Deity (legacy text)', type: 'text' },
   { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
-  { key: 'domain', label: 'Domain / Aspect', type: 'text' },
+  { key: 'domainId', label: 'Domain (linked)', type: 'entityRef', entityType: 'domains' },
+  { key: 'domain', label: 'Domain / Aspect (legacy text)', type: 'text' },
   { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
   { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
-  { key: 'holyDays', label: 'Holy Days', type: 'text' },
+  { key: 'holyDays', label: 'Holy Days', type: 'chip' },
   { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
   { key: 'templeIds', label: 'Temples / Holy Sites', type: 'entityMultiRef', entityType: 'locations' },
   { key: 'temples', label: 'Temples (legacy text)', type: 'chip' },
@@ -6829,10 +6843,11 @@ const districtFields = [
 ];
 const roomFields = [
   { key: 'name', label: 'Room Name', type: 'text' },
-  { key: 'locationId', label: 'Location / Dungeon', type: 'entityRef', entityType: 'locations' },
+  { type: 'typedEntityRef', label: 'Parent Location / Dungeon (linked)', typeKey: 'locationType', idKey: 'locationId',
+    entityTypes: [{ key: 'locations', label: 'Location' }, { key: 'dungeons', label: 'Dungeon' }] },
   { key: 'type', label: 'Room Type', type: 'select', options: ['Entrance','Corridor','Chamber','Guard Post','Secret Room','Boss Chamber','Treasure Room','Trap Room','Rest Area','Shrine','Prison','Workshop','Library','Other'] },
   { key: 'features', label: 'Features', type: 'chip' },
-  { key: 'traps', label: 'Traps', type: 'chip', opts: { bank: 'hazardTypes' } },
+  { key: 'traps', label: 'Traps (chip — not entity-backed)', type: 'chip', opts: { bank: 'hazardTypes' } },
   { key: 'connectedRoomIds', label: 'Connected Rooms', type: 'entityMultiRef', entityType: 'rooms' },
   { key: 'connections', label: 'Connected Rooms (legacy text)', type: 'chip' },
   { key: 'lootIds', label: 'Loot', type: 'entityMultiRef', entityType: 'loot' },
@@ -6866,9 +6881,16 @@ const lootFields = [
   { key: 'rarity', label: 'Rarity', type: 'select', options: ['Common','Uncommon','Rare','Very Rare','Legendary','Artifact'] },
   { key: 'value', label: 'Value (gp)', type: 'text' },
   { key: 'description', label: 'Description', type: 'textarea' },
-  { key: 'encounterId', label: 'Source Encounter', type: 'text' },
+  { key: 'encounterId', label: 'Source Encounter', type: 'entityRef', entityType: 'encounters' },
   { key: 'status', label: 'Status', type: 'select', options: ['Available','Claimed','Sold','Lost','Destroyed'] },
-  { key: 'claimedBy', label: 'Claimed By', type: 'text' },
+  { type: 'typedEntityRef', label: 'Claimed By (linked)', typeKey: 'claimedByType', idKey: 'claimedById',
+    entityTypes: [
+      { key: 'characters', label: 'PC / Character' },
+      { key: 'npcs', label: 'NPC' },
+      { key: 'factions', label: 'Faction' },
+    ],
+  },
+  { key: 'claimedBy', label: 'Claimed By (legacy text)', type: 'text' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
@@ -7465,8 +7487,14 @@ class CampaignModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('campaign'), name: '', summary: '', theme: 'Heroic Fantasy',
-      levelRange: '1-20', status: 'Active', visibility: 'dm-only',
+      id: uid('campaign'), name: '', tagline: '', summary: '', premise: '',
+      status: 'Active', visibility: 'dm-only', format: '', ruleset: 'D&D 5e',
+      levelRange: '1-20', levellingMethod: 'Milestone',
+      restRules: 'Standard (Short/Long)', deathRules: 'Standard Death Saves',
+      magicItemAvailability: 'Common', playerCount: 4,
+      tone: [], genres: [], themes: [], campaignLoops: [],
+      worldName: '', worldPremise: '', worldScale: '',
+      partyNotes: '', structureNotes: '', playerPrimer: '',
       notes: '', createdAt: new Date().toISOString(),
     }, this.item);
   }
@@ -7475,15 +7503,50 @@ class CampaignModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Campaign` });
-    addField(contentEl, 'Campaign Name *', this.values.name, v => this.values.name = v);
-    addField(contentEl, 'Summary', this.values.summary, v => this.values.summary = v, 'textarea');
-    addSelect(contentEl, 'Status', this.values.status, ['Active','On Hold','Completed','Archived'], v => this.values.status = v);
-    addSelect(contentEl, 'Theme', this.values.theme, ['Heroic Fantasy','Dark Fantasy','Sword & Sorcery','Political Intrigue','Horror','Mystery','Exploration','Epic','Mythic','Other'], v => this.values.theme = v);
-    addField(contentEl, 'Level Range', this.values.levelRange, v => this.values.levelRange = v);
-    addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
+
+    const s1 = ce(contentEl, 'div', 'te-modal-section');
+    s1.createEl('h3', { text: 'Identity' });
+    addField(s1, 'Campaign Name *', this.values.name, v => this.values.name = v);
+    addField(s1, 'Tagline / One-liner', this.values.tagline, v => this.values.tagline = v);
+    addField(s1, 'Premise', this.values.premise, v => this.values.premise = v, 'textarea');
+    addSelect(s1, 'Status', this.values.status, ['Active','On Hold','Completed','Archived'], v => this.values.status = v);
+    addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
+    addSelect(s1, 'Format', this.values.format, OPTION_BANKS.formats, v => this.values.format = v);
+
+    const s2 = ce(contentEl, 'div', 'te-modal-section');
+    s2.createEl('h3', { text: 'Rules & Tone' });
+    addSelect(s2, 'Ruleset', this.values.ruleset, OPTION_BANKS.rulesets, v => this.values.ruleset = v);
+    addField(s2, 'Level Range (e.g. 1-10)', this.values.levelRange, v => this.values.levelRange = v);
+    addSelect(s2, 'Levelling Method', this.values.levellingMethod, OPTION_BANKS.levellingMethods, v => this.values.levellingMethod = v);
+    addSelect(s2, 'Rest Rules', this.values.restRules, OPTION_BANKS.restRules, v => this.values.restRules = v);
+    addSelect(s2, 'Death Rules', this.values.deathRules, OPTION_BANKS.deathRules, v => this.values.deathRules = v);
+    addSelect(s2, 'Magic Item Availability', this.values.magicItemAvailability, OPTION_BANKS.magicItemAvailability, v => this.values.magicItemAvailability = v);
+    chipField(s2, 'Tone(s)', safeArr(this.values.tone), v => this.values.tone = v, { bank: 'tones' });
+    chipField(s2, 'Genre(s)', safeArr(this.values.genres), v => this.values.genres = v, { bank: 'genres' });
+    chipField(s2, 'Themes', safeArr(this.values.themes), v => this.values.themes = v, { bank: 'themes' });
+    chipField(s2, 'Campaign Loops', safeArr(this.values.campaignLoops), v => this.values.campaignLoops = v, { bank: 'campaignLoops' });
+
+    const s3 = ce(contentEl, 'div', 'te-modal-section');
+    s3.createEl('h3', { text: 'World Details' });
+    addField(s3, 'World Name', this.values.worldName, v => this.values.worldName = v);
+    addField(s3, 'World Premise', this.values.worldPremise, v => this.values.worldPremise = v, 'textarea');
+    addSelect(s3, 'World Scale', this.values.worldScale, OPTION_BANKS.worldScales, v => this.values.worldScale = v);
+
+    const s4 = ce(contentEl, 'div', 'te-modal-section');
+    s4.createEl('h3', { text: 'Player & Party' });
+    addNumber(s4, 'Player Count', this.values.playerCount, v => this.values.playerCount = v);
+    addField(s4, 'Party Notes', this.values.partyNotes, v => this.values.partyNotes = v, 'textarea');
+    addField(s4, 'Structure Notes', this.values.structureNotes, v => this.values.structureNotes = v, 'textarea');
+    addField(s4, 'Player Primer (player-safe intro)', this.values.playerPrimer, v => this.values.playerPrimer = v, 'textarea');
+
+    const s5 = ce(contentEl, 'div', 'te-modal-section');
+    s5.createEl('h3', { text: 'DM Notes' });
+    addField(s5, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
+
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Campaign name is required.'); return; }
       this.values.updatedAt = new Date().toISOString();
+      if (!this.values.summary) this.values.summary = this.values.premise || this.values.tagline || '';
       upsert(this.plugin.state, 'campaigns', this.values);
       if (!this.plugin.state.activeCampaignId) this.plugin.state.activeCampaignId = this.values.id;
       await this.plugin.saveState();
@@ -9795,7 +9858,8 @@ class CampaignWizardModal extends Modal {
   }
 }
 
-// ── CampaignBibleModal (Phase 7) ──────────────────────────────────────────────
+// ── CampaignBibleModal ────────────────────────────────────────────────────────
+// Canonical textual bible fields only. Acts are entity-backed (see renderCampaignBible).
 class CampaignBibleModal extends Modal {
   constructor(app, plugin, campaign) {
     super(app);
@@ -9807,7 +9871,7 @@ class CampaignBibleModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     clear(contentEl); contentEl.addClass('te-modal');
-    this.titleEl.setText('Campaign Bible');
+    this.titleEl.setText('Campaign Bible — Edit Textual Fields');
     if (!this.camp) { ce(contentEl, 'p', '', 'No active campaign. Create a campaign first.'); btn(contentEl, 'Close', 'te-btn', () => this.close()); return; }
     const b = this.values.bible;
 
@@ -9820,28 +9884,18 @@ class CampaignBibleModal extends Modal {
     chipField(s1, 'Themes', safeArr(b.themes), v => b.themes = v, { bank: 'themes' });
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
-    s2.createEl('h3', { text: 'Act Structure' });
-    const acts = Array.isArray(b.acts) ? b.acts : [];
-    const actList = ce(s2, 'div', '');
-    const renderActs = () => {
-      clear(actList);
-      acts.forEach((act, i) => {
-        const row = ce(actList, 'div', ''); row.style.cssText = 'border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:10px;margin-bottom:8px';
-        addField(row, `Act ${i + 1} Title`, act.title || '', v => { act.title = v; });
-        addField(row, 'Summary', act.summary || '', v => { act.summary = v; }, 'textarea');
-        btn(row, '× Remove', 'te-btn is-sm is-danger', () => { acts.splice(i, 1); renderActs(); });
-      });
-    };
-    renderActs();
-    btn(s2, '+ Add Act', 'te-btn is-sm', () => { acts.push({ title: '', summary: '' }); b.acts = acts; renderActs(); });
+    s2.createEl('h3', { text: 'Player Primer' });
+    addField(s2, 'Player-safe intro for Session Zero / player packet', b.playerPrimer, v => b.playerPrimer = v, 'textarea');
 
     const s3 = ce(contentEl, 'div', 'te-modal-section');
-    s3.createEl('h3', { text: 'Player Primer' });
-    addField(s3, 'Player-safe intro for Session Zero / player packet', b.playerPrimer, v => b.playerPrimer = v, 'textarea');
+    s3.createEl('h3', { text: 'DM Notes' });
+    addField(s3, 'Internal DM notes', b.notes, v => b.notes = v, 'textarea');
 
-    const s4 = ce(contentEl, 'div', 'te-modal-section');
-    s4.createEl('h3', { text: 'DM Notes' });
-    addField(s4, 'Internal DM notes', b.notes, v => b.notes = v, 'textarea');
+    if (safeArr(b.acts).length) {
+      const legacyNote = ce(contentEl, 'div', 'te-modal-section');
+      legacyNote.createEl('h3', { text: 'Legacy Embedded Acts' });
+      ce(legacyNote, 'p', 'te-card-body', `This campaign has ${b.acts.length} legacy embedded act(s). Use the "Promote to Entity" action in Campaign Bible to migrate them to entity-backed acts.`);
+    }
 
     modalButtons(contentEl, this, async () => {
       this.values.bible = b;
