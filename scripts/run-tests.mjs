@@ -14,7 +14,7 @@ let passed = 0, failed = 0;
 const failures = [];
 
 for (const file of files) {
-  const result = spawnSync('node', [join(testsDir, file)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [join(testsDir, file)], { stdio: 'inherit' });
   if (result.status === 0) {
     passed++;
   } else {

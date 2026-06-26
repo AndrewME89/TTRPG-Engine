@@ -533,6 +533,14 @@ function seedCompendium() {
 }
 
 // ── Default state ────────────────────────────────────────────────────────────
+const CAMPAIGN_SCOPED_ENTITIES = [
+  'acts', 'adventures', 'quests', 'encounters', 'sessions', 'milestones', 'secrets', 'reveals', 'handouts',
+  'worlds', 'cosmologies', 'realms', 'regions', 'domains', 'settlements', 'districts', 'locations', 'pois',
+  'routes', 'dungeons', 'rooms', 'maps', 'npcs', 'creatures', 'bbegs', 'factions', 'nations', 'religions',
+  'cultures', 'languages', 'deities', 'pantheons', 'timelines', 'loot', 'reputations', 'warFronts',
+  'incursions', 'endgameStates', 'nobleFamilies', 'hybridAncestries',
+];
+
 function createDefaultState() {
   return {
     version: PLUGIN_VERSION,
@@ -550,7 +558,7 @@ function createDefaultState() {
     entities: {
       campaigns: [],
       worlds: [], cosmologies: [], realms: [],
-      regions: [], settlements: [], locations: [], pois: [], routes: [],
+      regions: [], domains: [], settlements: [], locations: [], pois: [], routes: [],
       npcs: [], creatures: [], bbegs: [],
       factions: [],
       cultures: [], languages: [], deities: [], pantheons: [],
@@ -702,15 +710,28 @@ function campaignRootFolder(plugin) {
   const root = s.campaignRootFolder || s.noteRootFolder || 'Campaigns';
   return safeFileName(root, 'Campaigns');
 }
-function campaignFolder(plugin) {
-  const c = activeCampaign(plugin.state);
-  const cName = c ? (safeFileName(c.name, 'Unassigned')) : 'Unassigned';
+function campaignFolderFor(plugin, campaign) {
+  const cName = campaign ? safeFileName(campaign.name, 'Unassigned') : 'Unassigned';
   const mode = plugin.state.settings.noteFolderMode || 'workspace';
   if (mode === 'legacy') return cName;
   return `${campaignRootFolder(plugin)}/${cName}`;
 }
+function campaignFolder(plugin) {
+  return campaignFolderFor(plugin, activeCampaign(plugin.state));
+}
 function globalFolder(plugin) {
   return `${campaignRootFolder(plugin)}/_Global`;
+}
+function getCampaignMaps(state, scopeId) {
+  const byId = new Map();
+  ['maps', 'tileMaps'].forEach(key => {
+    safeArr(state && state.entities ? state.entities[key] : []).forEach(map => {
+      if (!map || !map.id) return;
+      if (scopeId && map.campaignId && map.campaignId !== scopeId) return;
+      if (!byId.has(map.id)) byId.set(map.id, map);
+    });
+  });
+  return [...byId.values()];
 }
 function modifier(score) { return Math.floor((Number(score || 10) - 10) / 2); }
 function modStr(score) { const m = modifier(score); return (m >= 0 ? '+' : '') + m; }
@@ -772,8 +793,7 @@ async function runDiagnostics(plugin) {
 
   // Orphaned campaign references
   const campaignIds = new Set(safeArr(e.campaigns).map(c => c.id));
-  const needsCampaign = ['npcs','creatures','bbegs','factions','quests','adventures','encounters','sessions','secrets','handouts','regions','settlements','locations'];
-  needsCampaign.forEach(key => safeArr(e[key]).forEach(item => {
+  CAMPAIGN_SCOPED_ENTITIES.forEach(key => safeArr(e[key]).forEach(item => {
     if (item.campaignId && !campaignIds.has(item.campaignId))
       issues.push({ sev: 'warn', msg: `${key} "${item.name || item.id}": references missing campaign "${item.campaignId}".` });
   }));
@@ -793,6 +813,32 @@ async function runDiagnostics(plugin) {
   safeArr(e.settlements).forEach(s => {
     if (s.regionId && !regionIds.has(s.regionId))
       issues.push({ sev: 'warn', msg: `Settlement "${s.name || s.id}": references missing region "${s.regionId}".` });
+  });
+  const domainIds = new Set(safeArr(e.domains).map(x => x.id));
+  const locationIds = new Set(safeArr(e.locations).map(x => x.id));
+  const settlementIds = new Set(safeArr(e.settlements).map(x => x.id));
+  safeArr(e.domains).forEach(domain => {
+    safeArr(domain.claimedRegionIds).forEach(regionId => {
+      if (!regionIds.has(regionId)) issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": references missing region "${regionId}".` });
+    });
+    safeArr(domain.settlementIds).forEach(settlementId => {
+      if (!settlementIds.has(settlementId)) issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": references missing settlement "${settlementId}".` });
+    });
+    safeArr(domain.locationIds).forEach(locationId => {
+      if (!locationIds.has(locationId)) issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": references missing location "${locationId}".` });
+    });
+    safeArr(domain.factionIds).forEach(factionId => {
+      if (!factionIds.has(factionId)) issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": references missing faction "${factionId}".` });
+    });
+    if (domain.controllerType && domain.controllerId) {
+      const controllerItems = safeArr(e[domain.controllerType]);
+      if (!controllerItems.find(item => item.id === domain.controllerId)) {
+        issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": controller "${domain.controllerId}" not found in ${domain.controllerType}.` });
+      }
+    }
+    if (domain.parentRef && !domainIds.has(domain.parentRef)) {
+      issues.push({ sev: 'warn', msg: `Domain "${domain.name || domain.id}": parent domain "${domain.parentRef}" was not found.` });
+    }
   });
 
   // Invalid visibility states
@@ -923,14 +969,37 @@ function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) 
   renderChips();
 }
 
-function resolveEntityDisplay(idOrText, state) {
-  if (!idOrText || typeof idOrText !== 'string') return null;
-  const colls = ['regions','settlements','locations','npcs','factions','deities','realms','districts','rooms','pois','quests','encounters','sessions','languages','cultures','nations'];
-  for (const c of colls) {
-    const ent = safeArr(state.entities[c]).find(e => e.id === idOrText);
-    if (ent) return ent.name || ent.title || idOrText;
+function resolveEntityDisplay(a, b, c) {
+  const state = c || b;
+  const entityType = c ? a : '';
+  const entityId = c ? b : a;
+  if (entityId == null || entityId === '') return '';
+  if (typeof entityId !== 'string') return String(entityId);
+  const entities = state && state.entities && typeof state.entities === 'object' ? state.entities : {};
+  const collections = [
+    'domains', 'regions', 'settlements', 'districts', 'locations', 'rooms', 'pois', 'routes', 'maps',
+    'npcs', 'characters', 'factions', 'nobleFamilies', 'deities', 'pantheons', 'realms', 'worlds',
+    'cultures', 'languages', 'nations', 'religions', 'quests', 'adventures', 'encounters', 'sessions',
+    'dungeons', 'creatures', 'bbegs',
+  ];
+  const orderedCollections = entityType
+    ? [entityType, ...collections.filter(key => key !== entityType)]
+    : collections;
+  let entity = null;
+  let foundType = entityType || '';
+  for (const key of orderedCollections) {
+    entity = safeArr(entities[key]).find(item => item && item.id === entityId);
+    if (entity) {
+      foundType = key;
+      break;
+    }
   }
-  return null;
+  if (!entity) return entityId;
+  if (foundType === 'nobleFamilies' && entity.migratedFactionId) {
+    const migratedFaction = safeArr(entities.factions).find(faction => faction && faction.id === entity.migratedFactionId);
+    if (migratedFaction) return migratedFaction.name || migratedFaction.title || entity.name || entityId;
+  }
+  return entity.name || entity.title || entityId;
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────
@@ -1114,31 +1183,6 @@ function resolveEntityNotePath(entityType, entity, state, plugin) {
   }
 
   return normalizePath(`${campBase}/${workspaceFolder}/${name}.md`);
-}
-
-/**
- * Resolve a display name for an entity given its type and id.
- * Includes nobleFamilies support; if a noble family has migratedFactionId,
- * returns the faction name instead.
- */
-function resolveEntityDisplay(entityType, entityId, state) {
-  const collections = ['npcs','characters','factions','nobleFamilies','settlements','locations','regions','quests','creatures','bbegs','adventures'];
-  const arr = safeArr(state.entities[entityType] || (
-    collections.reduce((found, key) => found || (state.entities[key] || []).find(e => e.id === entityId), null) ? null : null
-  ));
-  let entity = safeArr(state.entities[entityType]).find(e => e.id === entityId);
-  if (!entity) {
-    for (const col of collections) {
-      entity = safeArr(state.entities[col]).find(e => e.id === entityId);
-      if (entity) break;
-    }
-  }
-  if (!entity) return entityId || '';
-  if (entity.migratedFactionId) {
-    const faction = safeArr(state.entities.factions).find(f => f.id === entity.migratedFactionId);
-    if (faction) return faction.name;
-  }
-  return entity.name || entity.title || entityId;
 }
 
 async function ensureFolder(app, folderPath) {
@@ -2092,6 +2136,7 @@ function emptyState(parent, title, hint) {
 
 // ── Generic item cards ────────────────────────────────────────────────────────
 const ENTITY_ICONS = {
+  domains:'ðŸ°',
   campaigns:'📜', worlds:'🌍', cosmologies:'🌌', realms:'✨', regions:'🗺️',
   settlements:'🏘️', locations:'📍', pois:'⭐', routes:'🛤️',
   npcs:'👤', creatures:'🐉', bbegs:'👹', factions:'⚔️',
@@ -2109,6 +2154,7 @@ const ENTITY_ICONS = {
   acts:'🎭',
 };
 const ENTITY_LABELS = {
+  domains:'Domain',
   campaigns:'Campaign', worlds:'World', cosmologies:'Cosmology', realms:'Realm',
   regions:'Region', settlements:'Settlement', locations:'Location', pois:'Point of Interest',
   routes:'Route', npcs:'NPC', creatures:'Creature', bbegs:'BBEG',
@@ -2127,6 +2173,7 @@ const ENTITY_LABELS = {
 };
 
 const ENTITY_FOLDER_LABELS = {
+  domains:'Domains',
   campaigns:'Campaigns', worlds:'Worlds', cosmologies:'Cosmologies', realms:'Realms',
   regions:'Regions', settlements:'Settlements', locations:'Locations', pois:'Points of Interest',
   routes:'Routes', npcs:'NPCs', creatures:'Creatures', bbegs:'BBEGs',
@@ -2220,14 +2267,15 @@ const PICKABLE_ENTITY_TYPES = [
   { key:'regions',       label:'Region' },
   { key:'quests',        label:'Quest' },
 ];
-function addTypedEntityPicker(el, label, typeValue, idValue, plugin, onTypeChange, onIdChange) {
-  const cur = typeValue || PICKABLE_ENTITY_TYPES[0].key;
+function addTypedEntityPicker(el, label, typeValue, idValue, plugin, onTypeChange, onIdChange, entityTypes) {
+  const typeOptions = Array.isArray(entityTypes) && entityTypes.length ? entityTypes : PICKABLE_ENTITY_TYPES;
+  const cur = typeValue || typeOptions[0].key;
   const wrap = ce(el, 'div', 'te-field-row'); wrap.style.alignItems = 'center';
   ce(wrap, 'label', 'te-field-label', label);
   const right = ce(wrap, 'div', ''); right.style.cssText = 'flex:1;display:flex;gap:6px;align-items:center;flex-wrap:wrap';
   const SX = 'padding:6px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
   const typeSel = ce(right, 'select', 'te-field-select'); typeSel.style.cssText = SX + ';flex:0 0 140px';
-  PICKABLE_ENTITY_TYPES.forEach(et => { const o = ce(typeSel, 'option', '', et.label); o.value = et.key; if (et.key === cur) o.selected = true; });
+  typeOptions.forEach(et => { const o = ce(typeSel, 'option', '', et.label); o.value = et.key; if (et.key === cur) o.selected = true; });
   const entityWrap = ce(right, 'div', ''); entityWrap.style.flex = '1';
   const buildEntitySel = type => {
     clear(entityWrap);
@@ -2920,8 +2968,7 @@ function repairAndReindex(state) {
       if (!item.createdAt) { item.createdAt = now; issues.push(`${key}[${i}] ${item.id}: added missing createdAt`); }
       if (!item.updatedAt) { item.updatedAt = now; issues.push(`${key}[${i}] ${item.id}: added missing updatedAt`); }
       // Missing campaignId for campaign-owned entities
-      const CAMPAIGN_OWNED = ['npcs','creatures','bbegs','factions','quests','encounters','sessions','secrets','handouts','regions','settlements','locations','dungeons','maps','timers','enemyTemplates','nobleFamilies','hybridAncestries'];
-      if (CAMPAIGN_OWNED.includes(key) && !item.campaignId && state.activeCampaignId) {
+      if (CAMPAIGN_SCOPED_ENTITIES.includes(key) && !item.campaignId && state.activeCampaignId) {
         item.campaignId = state.activeCampaignId;
         issues.push(`${key}[${i}] ${item.id}: assigned campaignId from activeCampaignId`);
       }
@@ -3105,33 +3152,65 @@ function renderWorldAtlas(main, plugin) {
 }
 
 function migrateNobleFamiliesToFactions(plugin) {
-  const nf = safeArr(plugin.state.entities.nobleFamilies);
-  let count = 0;
-  nf.forEach(noble => {
-    if (noble.migratedToFaction) return;
+  if (!plugin || !plugin.state || !plugin.state.entities) return 0;
+  const state = plugin.state;
+  const nobles = safeArr(state.entities.nobleFamilies);
+  const factions = safeArr(state.entities.factions);
+  let created = 0;
+  let touched = false;
+  nobles.forEach(noble => {
+    if (!noble || !noble.id) return;
+    const existingFaction = factions.find(faction => faction && (
+      faction.id === noble.migratedFactionId ||
+      faction.migratedFromNobleFamilyId === noble.id ||
+      faction.migratedFromNobleId === noble.id
+    ));
+    if (existingFaction) {
+      if (!noble.migratedToFaction) {
+        noble.migratedToFaction = true;
+        touched = true;
+      }
+      if (!noble.migratedFactionId) {
+        noble.migratedFactionId = existingFaction.id;
+        touched = true;
+      }
+      if (!existingFaction.migratedFromNobleFamilyId) {
+        existingFaction.migratedFromNobleFamilyId = noble.id;
+        touched = true;
+      }
+      if (!existingFaction.migratedFromNobleId) {
+        existingFaction.migratedFromNobleId = noble.id;
+        touched = true;
+      }
+      return;
+    }
     const newFaction = {
       id: uid('faction'),
       name: noble.name || 'Unnamed House',
       type: 'Noble House',
       notes: noble.motto || '',
-      description: noble.motto || '',
+      description: noble.summary || noble.motto || '',
       territory: noble.holdings || '',
-      members: noble.members || '',
-      allies: noble.alliances || '',
-      enemies: noble.rivals || '',
+      members: noble.members || [],
+      allies: noble.alliances || [],
+      enemies: noble.rivals || [],
       secrets: noble.secrets || '',
       status: noble.status || '',
       campaignId: noble.campaignId || '',
       visibility: noble.visibility || 'dm-only',
+      migratedFromNobleFamilyId: noble.id,
       migratedFromNobleId: noble.id,
     };
-    upsert(plugin.state, 'factions', newFaction);
+    upsert(state, 'factions', newFaction);
     noble.migratedToFaction = true;
     noble.migratedFactionId = newFaction.id;
-    count++;
+    created++;
+    touched = true;
   });
-  if (count > 0) plugin.saveState();
-  return count;
+  if (touched && typeof plugin.saveState === 'function') {
+    try { plugin.saveState(); } catch {}
+  }
+  return created;
 }
 
 function renderCastPowers(main, plugin) {
@@ -3760,6 +3839,7 @@ const langFields = [
 function renderGeography(main, plugin, tabs) {
   pageHead(main, plugin, 'Geography & Maps', 'Regions, settlements, locations, points of interest, routes, and the Tile Map Builder.', [
     { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
+    { label: '+ Domain', onClick: () => new GenericModal(plugin.app, plugin, 'domains', null, domainFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Location', onClick: () => new GenericModal(plugin.app, plugin, 'locations', null, locationFields).open() },
     { label: '+ District', onClick: () => new GenericModal(plugin.app, plugin, 'districts', null, districtFields).open() },
@@ -3830,6 +3910,8 @@ function renderGeography(main, plugin, tabs) {
 
   sectionHead(main, 'Regions');
   itemCards(main, plugin, 'regions', { meta: ['terrain', 'climate', 'population'] });
+  sectionHead(main, 'Domains');
+  itemCards(main, plugin, 'domains', { meta: ['domainType', 'controllerId', 'claimedRegionIds', 'settlementIds'] });
   sectionHead(main, 'Settlements');
   itemCards(main, plugin, 'settlements', { meta: ['type', 'population', 'region'] });
   sectionHead(main, 'Districts');
@@ -3894,6 +3976,36 @@ const routeFields = [
   { key: 'conditions', label: 'Travel Conditions', type: 'chip', opts: { bank: 'travelConditions' } },
   { key: 'hazards', label: 'Hazards', type: 'chip', opts: { bank: 'worldHazards' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
+];
+const domainFields = [
+  { key: 'name', label: 'Domain Name', type: 'text' },
+  { key: 'domainType', label: 'Domain Type', type: 'select', options: ['Political','Noble Holding','Divine','Magical','Monster Lair','Faction Territory','Dread Domain','Planar','Other'] },
+  {
+    type: 'typedEntityRef',
+    label: 'Controller',
+    typeKey: 'controllerType',
+    idKey: 'controllerId',
+    entityTypes: [
+      { key: 'factions', label: 'Faction' },
+      { key: 'nations', label: 'Nation' },
+      { key: 'religions', label: 'Religion' },
+      { key: 'deities', label: 'Deity' },
+      { key: 'settlements', label: 'Settlement' },
+      { key: 'regions', label: 'Region' },
+      { key: 'npcs', label: 'NPC' },
+      { key: 'characters', label: 'PC / Character' },
+    ],
+  },
+  { key: 'parentRef', label: 'Parent Domain', type: 'entityRef', entityType: 'domains' },
+  { key: 'claimedRegionIds', label: 'Claimed Regions', type: 'entityMultiRef', entityType: 'regions' },
+  { key: 'settlementIds', label: 'Settlements', type: 'entityMultiRef', entityType: 'settlements' },
+  { key: 'locationIds', label: 'Locations', type: 'entityMultiRef', entityType: 'locations' },
+  { key: 'factionIds', label: 'Factions', type: 'entityMultiRef', entityType: 'factions' },
+  { key: 'laws', label: 'Laws', type: 'textarea' },
+  { key: 'resources', label: 'Resources', type: 'textarea' },
+  { key: 'threats', label: 'Threats', type: 'textarea' },
+  { key: 'summary', label: 'Summary', type: 'textarea' },
+  { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible','secret'] },
 ];
 
 // ── TILE MAP BUILDER ──────────────────────────────────────────────────────────
@@ -4021,12 +4133,13 @@ function renderTileMapBuilder(parent, plugin) {
     upsert(plugin.state, 'maps', mapRecord);
     await saveStatePreserveScroll(plugin);
     const folder = campaignFolder(plugin);
-    await ensureFolder(plugin.app, `${folder}/Maps`);
     // Export PNG
     try {
+      const pngPath = normalizePath(`${folder}/World Atlas/Maps/${slugify(tmState.mapName)}.png`);
+      const pngDir = pngPath.replace(/\/[^/]+$/, '');
+      await ensureFolder(plugin.app, pngDir);
       const blob = await exportMapToPng(tmState, tileAssets);
       const buf  = await blob.arrayBuffer();
-      const pngPath = normalizePath(`${folder}/World Atlas/Maps/${slugify(tmState.mapName)}.png`);
       const existing = plugin.app.vault.getAbstractFileByPath(pngPath);
       if (existing) await plugin.app.vault.modifyBinary(existing, buf);
       else          await plugin.app.vault.createBinary(pngPath, buf);
@@ -5530,6 +5643,7 @@ async function exportCampaignBible(plugin) {
 function renderGazetteer(main, plugin, tabs) {
   pageHead(main, plugin, 'Gazetteer', 'Regions, settlements, dungeons, and locations at a glance.', [
     { label: '+ Region', onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
+    { label: '+ Domain', onClick: () => new GenericModal(plugin.app, plugin, 'domains', null, domainFields).open() },
     { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
     { label: '+ Dungeon', primary: true, onClick: () => new DungeonModal(plugin.app, plugin).open() },
   ], tabs);
@@ -5552,6 +5666,25 @@ function renderGazetteer(main, plugin, tabs) {
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'regions', r.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No regions yet.', 'Add regions to build your world geography.'); }
+
+  sectionHead(main, 'Domains');
+  const domains = safeArr(plugin.state.entities.domains).filter(campFilter).filter(x => matchesSearch(x, plugin.state.search));
+  if (domains.length) {
+    const g = ce(main, 'div', 'te-grid');
+    domains.forEach(domain => {
+      const c = ce(g, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', ENTITY_ICONS.domains || 'ðŸ°'); ce(h, 'h3', 'te-card-title', domain.name || 'Untitled Domain');
+      if (domain.summary) ce(c, 'p', 'te-card-body', (domain.summary || '').slice(0, 100));
+      const m = ce(c, 'div', 'te-card-meta');
+      [['Type', domain.domainType], ['Controller', resolveEntityDisplay(domain.controllerType, domain.controllerId, plugin.state)], ['Regions', safeArr(domain.claimedRegionIds).map(id => resolveEntityDisplay('regions', id, plugin.state)).join(', ')]].forEach(([k, v]) => {
+        if (!v) return; const row = ce(m, 'div', 'te-card-meta-row'); ce(row, 'span', 'te-card-meta-label', k); ce(row, 'span', '', String(v).slice(0, 80));
+      });
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'domains', domain, domainFields).open());
+      btn(a, 'Write Note', 'te-btn is-sm', () => writeEntityNote(plugin, 'domains', domain));
+      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'domains', domain.id); await plugin.saveState(); });
+    });
+  } else { emptyState(main, 'No domains yet.', 'Add domains to track holdings, territories, and spheres of control.'); }
 
   sectionHead(main, 'Settlements');
   const settlements = safeArr(plugin.state.entities.settlements).filter(campFilter).filter(x => matchesSearch(x, plugin.state.search));
@@ -5718,7 +5851,7 @@ function renderRunSession(main, plugin, tabs) {
         ce(sc, 'div', 'te-stat-label', 'Current Map');
         const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
         ce(sel, 'option', '', '— none —').value = '';
-        const maps = safeArr(state.entities.tileMaps || []).filter(x => !scopeId || x.campaignId === scopeId);
+        const maps = getCampaignMaps(state, scopeId);
         maps.forEach(x => { const o = ce(sel, 'option', '', x.name || 'Untitled'); o.value = x.id; });
         sel.value = ctx.currentMapId || '';
         sel.addEventListener('change', async () => {
@@ -6015,8 +6148,15 @@ function renderRunSession(main, plugin, tabs) {
   sectionHead(leftCol, '🗺️ Active Location Map');
   const mapCard = ce(leftCol, 'div', 'te-card'); mapCard.style.cssText = 'padding:12px';
   const selectedMapId = ctx ? ctx.currentMapId : '';
-  const selectedMap = selectedMapId ? safeArr(state.entities.tileMaps || []).find(m => m.id === selectedMapId) : null;
+  const selectedMap = selectedMapId ? getCampaignMaps(state).find(m => m.id === selectedMapId) : null;
   if (selectedMap) {
+    const mapMeta = ce(mapCard, 'div', 'te-card-meta');
+    [['Type', selectedMap.type || (selectedMap.tileMap ? 'Tile Map' : '')], ['Scale', selectedMap.distanceScale || (selectedMap.tileLayout || {}).distanceScale || ''], ['Summary', selectedMap.summary || '']].forEach(([k, v]) => {
+      if (!v) return;
+      const row = ce(mapMeta, 'div', 'te-card-meta-row');
+      ce(row, 'span', 'te-card-meta-label', k);
+      ce(row, 'span', '', String(v).slice(0, 80));
+    });
     const mh = ce(mapCard, 'div', 'te-card-head'); ce(mh, 'span', 'te-card-icon', '🗺️'); ce(mh, 'h3', 'te-card-title', selectedMap.name || 'Map');
     const mapBtns = ce(mapCard, 'div', 'te-card-actions'); mapBtns.style.marginTop = '8px';
     btn(mapBtns, '🗺️ Open Full Map', 'te-btn is-primary is-sm', async () => { state.activeSection = 'tile-map'; state.pendingMapId = selectedMapId; await saveStatePreserveScroll(plugin); });
@@ -6266,17 +6406,14 @@ function renderRelationshipMatrix(main, plugin, tabs) {
   const state = plugin.state;
   const allRels = safeArr(state.relationships);
 
-  pageHead(main, plugin, 'Relationship Matrix', 'Map connections between factions, NPCs, PCs, noble families, settlements, and quests.', [
+  pageHead(main, plugin, 'Relationship Matrix', 'Map connections between factions, NPCs, PCs, settlements, quests, and legacy noble house records.', [
     { label: '+ Relationship', primary: true, onClick: () => new RelationshipModal(plugin.app, plugin).open() },
-    { label: '+ Noble Family', onClick: () => new NobleFamilyModal(plugin.app, plugin).open() },
     { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
   ], tabs);
 
   // Helper to resolve entity name from type + id
   const resolveName = (type, id) => {
-    const arr = safeArr(state.entities[type]);
-    const ent = arr.find(x => x.id === id);
-    return ent ? (ent.name || ent.title || id) : id;
+    return resolveEntityDisplay(type, id, state) || id;
   };
 
   // ── All relationships ──────────────────────────────────────────────────────
@@ -6284,7 +6421,7 @@ function renderRelationshipMatrix(main, plugin, tabs) {
   if (allRels.length) {
     // Group filter buttons
     const filterRow = ce(main, 'div', 'te-card-actions'); filterRow.style.marginBottom = '10px';
-    const filters = ['All','NPC','Faction','PC','Noble Family','Settlement'];
+    const filters = ['All','NPC','Faction','PC','Settlement'];
     let activeFilter = 'All';
     const listEl = ce(main, 'div', 'te-grid');
     const renderRelList = () => {
@@ -6334,7 +6471,7 @@ function renderRelationshipMatrix(main, plugin, tabs) {
   }
 
   // ── Noble Families ─────────────────────────────────────────────────────────
-  sectionHead(main, 'Noble Families & Houses');
+  sectionHead(main, 'Legacy Noble Families');
   const nobles = safeArr(state.entities.nobleFamilies).filter(x => matchesSearch(x, state.search));
   if (nobles.length) {
     const ng = ce(main, 'div', 'te-grid');
@@ -6343,14 +6480,21 @@ function renderRelationshipMatrix(main, plugin, tabs) {
       const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏰'); ce(h, 'h3', 'te-card-title', nf.name || 'Untitled');
       if (nf.motto) ce(c, 'p', 'te-card-body', `"${nf.motto}"`);
       const meta = ce(c, 'div', 'te-card-meta');
-      [['Status', nf.status], ['Holdings', (nf.holdings || '').slice(0, 60)]].forEach(([k, v]) => {
+      [['Status', nf.status], ['Holdings', (nf.holdings || '').slice(0, 60)], ['Managed As', nf.migratedFactionId ? resolveEntityDisplay('factions', nf.migratedFactionId, state) : 'Faction / Noble House workflow']].forEach(([k, v]) => {
         if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', v);
       });
       const acts = ce(c, 'div', 'te-card-actions');
-      btn(acts, 'Edit', 'te-btn is-sm', () => new NobleFamilyModal(plugin.app, plugin, nf).open());
-      btn(acts, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'nobleFamilies', nf.id); await plugin.saveState(); });
+      if (nf.migratedFactionId) {
+        btn(acts, 'Open Noble House Faction', 'te-btn is-sm', () => {
+          const faction = safeArr(state.entities.factions).find(item => item.id === nf.migratedFactionId);
+          if (faction) new FactionModal(plugin.app, plugin, faction).open();
+        });
+      }
+      const legacyLbl = ce(acts, 'span', 'te-muted-text');
+      legacyLbl.textContent = 'Legacy record only';
+      legacyLbl.style.fontSize = '.82rem';
     });
-  } else { emptyState(main, 'No noble families yet.', 'Use "+ Noble Family" to add houses.'); }
+  } else { emptyState(main, 'No legacy noble families found.', 'Manage active noble houses as Factions with the "Noble House" type.'); }
 
   // ── Faction Reputation ─────────────────────────────────────────────────────
   sectionHead(main, 'Faction Reputation');
@@ -6738,6 +6882,7 @@ const ENTITY_FIELD_SCHEMAS = {
   cultures: cultureFields,
   languages: langFields,
   regions: regionFields,
+  domains: domainFields,
   settlements: settlementFields,
   locations: locationFields,
   pois: poiFields,
@@ -7300,6 +7445,16 @@ class GenericModal extends Modal {
     else if (f.type === 'chip') chipField(el, f.label, this.values[f.key] || [], v => this.values[f.key] = v, f.opts || {});
     else if (f.type === 'entityRef') addEntityPicker(el, f.label, this.values[f.key] || '', this.plugin, f.entityType || '', v => this.values[f.key] = v);
     else if (f.type === 'entityMultiRef') addEntityMultiPicker(el, f.label, this.values[f.key] || [], this.plugin, f.entityType || '', v => this.values[f.key] = v);
+    else if (f.type === 'typedEntityRef') addTypedEntityPicker(
+      el,
+      f.label,
+      this.values[f.typeKey] || '',
+      this.values[f.idKey] || '',
+      this.plugin,
+      v => this.values[f.typeKey] = v,
+      v => this.values[f.idKey] = v,
+      f.entityTypes || []
+    );
   }
 }
 
@@ -7332,7 +7487,7 @@ class CampaignModal extends Modal {
       upsert(this.plugin.state, 'campaigns', this.values);
       if (!this.plugin.state.activeCampaignId) this.plugin.state.activeCampaignId = this.values.id;
       await this.plugin.saveState();
-      await ensureFolder(this.plugin.app, slugify(this.values.name));
+      await ensureFolder(this.plugin.app, campaignFolderFor(this.plugin, this.values));
       new Notice(`Campaign "${this.values.name}" saved.`);
       this.close();
     });
@@ -8505,36 +8660,6 @@ class RelationshipModal extends Modal {
   }
 }
 
-/**
- * Migrate noble families to factions. Guards against duplicates by checking
- * if a faction with migratedFromNobleFamilyId === nf.id already exists.
- */
-function migrateNobleFamiliesToFactions(state) {
-  const nobles = safeArr(state.entities.nobleFamilies);
-  const factions = safeArr(state.entities.factions);
-  let count = 0;
-  nobles.forEach(nf => {
-    // Guard: skip if already migrated (by migratedFromNobleFamilyId or nf.migratedToFaction)
-    if (nf.migratedToFaction) return;
-    const alreadyExists = factions.some(f => f.migratedFromNobleFamilyId === nf.id);
-    if (alreadyExists) return;
-    const newFaction = {
-      id: uid('faction'),
-      name: nf.name || 'Unnamed Noble House',
-      type: 'Noble House',
-      ideology: nf.motto || '',
-      campaignId: nf.campaignId || '',
-      migratedFromNobleFamilyId: nf.id,
-      visibility: nf.visibility || 'dm-only',
-    };
-    upsert(state, 'factions', newFaction);
-    nf.migratedToFaction = true;
-    nf.migratedFactionId = newFaction.id;
-    count++;
-  });
-  return count;
-}
-
 // NobleFamilyModal
 class NobleFamilyModal extends Modal {
   constructor(app, plugin, item) {
@@ -9642,7 +9767,7 @@ class CampaignWizardModal extends Modal {
         'Campaign Command Centre/Acts',
         'Campaign Command Centre/Milestones',
         'Campaign Command Centre/Exports',
-        'World Atlas/Worlds', 'World Atlas/Regions', 'World Atlas/Settlements',
+        'World Atlas/Worlds', 'World Atlas/Regions', 'World Atlas/Domains', 'World Atlas/Settlements',
         'World Atlas/Locations', 'World Atlas/Dungeons', 'World Atlas/Maps',
         'Cast & Powers/NPCs', 'Cast & Powers/Factions',
         'Adventure Planner/Adventures', 'Adventure Planner/Quests', 'Adventure Planner/Encounters',
