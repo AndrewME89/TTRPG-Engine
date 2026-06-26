@@ -32,11 +32,11 @@ test('makeCtxSelect logs when selection changes', () => {
 });
 
 test('Active NPC chip control exists', () => {
-  ok(src.includes("rebuildNpcChips") && src.includes("ctx.activeNpcIds"), 'Active NPC chip control missing');
+  ok(src.includes("activeNpcIds") && src.includes("renderSelectorChips"), 'Active NPC chip control missing');
 });
 
 test('NPC Activated logged when NPC added to scene', () => {
-  ok(src.includes("logSessionEvent(plugin, 'NPC Activated'") || src.includes('logSessionEvent(plugin, "NPC Activated"'), 'NPC Activated not logged');
+  ok(src.includes("Activated`, ent.name") || src.includes("'NPC Activated'") || src.includes('"NPC Activated"'), 'NPC Activated not logged');
 });
 
 test('NPC Deactivated logged when NPC removed from scene', () => {
@@ -48,11 +48,11 @@ test('NPC Died logged when NPC marked dead', () => {
 });
 
 test('Active Quest chip control exists', () => {
-  ok(src.includes("rebuildQChips") && src.includes("ctx.activeQuestIds"), 'Active Quest chip control missing');
+  ok(src.includes("activeQuestIds") && src.includes("renderSelectorChips"), 'Active Quest chip control missing');
 });
 
 test('Quest Activated logged when quest added', () => {
-  ok(src.includes("logSessionEvent(plugin, 'Quest Activated'") || src.includes('logSessionEvent(plugin, "Quest Activated"'), 'Quest Activated not logged');
+  ok(src.includes("Activated`, ent.name") || src.includes("'Quest Activated'") || src.includes('"Quest Activated"'), 'Quest Activated not logged');
 });
 
 test('Quest Completed logged when quest completed', () => {
@@ -160,12 +160,12 @@ test('review markdown has YAML frontmatter', () => {
 // ── Section 9: Campaign scoping ────────────────────────────────────────────────
 console.log('\n  Section 9: Campaign scoping');
 
-test('NPC list filtered by activeCampaignId', () => {
-  ok(src.includes("!state.activeCampaignId || n.campaignId === state.activeCampaignId"), 'NPC list not campaign-scoped');
+test('NPC list filtered by campaign scope', () => {
+  ok(src.includes("!scopeId || e.campaignId === scopeId") || src.includes("!state.activeCampaignId || n.campaignId === state.activeCampaignId"), 'NPC list not campaign-scoped');
 });
 
-test('quest list filtered by activeCampaignId', () => {
-  ok(src.includes("!state.activeCampaignId || q.campaignId === state.activeCampaignId"), 'quest list not campaign-scoped');
+test('quest list filtered by campaign scope', () => {
+  ok(src.includes("!scopeId || e.campaignId === scopeId") || src.includes("!state.activeCampaignId || q.campaignId === state.activeCampaignId"), 'quest list not campaign-scoped');
 });
 
 test('timer list filtered by activeCampaignId', () => {

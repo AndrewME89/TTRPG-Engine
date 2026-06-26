@@ -203,12 +203,12 @@ test('EndSessionReviewModal exports using review.markdown', () => {
 // ── Section 9: active campaign scoping ───────────────────────────────────────
 console.log('\n  Section 9: Active campaign scoping');
 
-test('active NPCs list filters by activeCampaignId', () => {
-  ok(src.includes("!state.activeCampaignId || n.campaignId === state.activeCampaignId"), 'NPC list not campaign-scoped');
+test('active NPCs list filters by campaign scope', () => {
+  ok(src.includes("!scopeId || e.campaignId === scopeId") || src.includes("!state.activeCampaignId || n.campaignId === state.activeCampaignId"), 'NPC list not campaign-scoped');
 });
 
-test('active quests filters by activeCampaignId', () => {
-  ok(src.includes("!state.activeCampaignId || q.campaignId === state.activeCampaignId"), 'quest list not campaign-scoped');
+test('active quests filters by campaign scope', () => {
+  ok(src.includes("!scopeId || e.campaignId === scopeId") || src.includes("!state.activeCampaignId || q.campaignId === state.activeCampaignId"), 'quest list not campaign-scoped');
 });
 
 test('timers in run session filtered by activeCampaignId', () => {

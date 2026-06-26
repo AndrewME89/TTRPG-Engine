@@ -38,15 +38,15 @@ test('Session Context has Map tab', () => {
 });
 test('Session Context has NPCs tab', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
-  ok(fn.includes("'npcs'") && fn.includes("NPC Activated"), 'npcs tab missing');
+  ok(fn.includes("'npcs'") && fn.includes("activeNpcIds"), 'npcs tab missing');
 });
 test('Session Context has Quests tab', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
-  ok(fn.includes("'quests'") && fn.includes("Quest Activated"), 'quests tab missing');
+  ok(fn.includes("'quests'") && fn.includes("activeQuestIds"), 'quests tab missing');
 });
 test('Session Context has Factions tab', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
-  ok(fn.includes("'factions'") && fn.includes("Faction Activated"), 'factions tab missing');
+  ok(fn.includes("'factions'") && fn.includes("activeFactionIds"), 'factions tab missing');
 });
 
 console.log('\n  Section 3: Removed sections');
@@ -145,9 +145,9 @@ test('Combat Tracker uses saveStateQuiet', () => {
 });
 
 console.log('\n  Section 9: End Session');
-test('End Session & Review button exists', () => {
+test('End Session & Open Review button exists', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
-  ok(fn.includes('End Session & Review'), 'End Session & Review button missing');
+  ok(fn.includes('End Session & Open Review'), 'End Session & Open Review button missing');
 });
 test('End Session opens review modal', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
