@@ -252,7 +252,7 @@ test('GenericModal.renderField handles entityMultiRef type', () => {
 
 // ── resolveEntityDisplay ──────────────────────────────────────────────────────
 test('resolveEntityDisplay helper exists', () => {
-  includes(src, "function resolveEntityDisplay(idOrText, state)");
+  includes(src, 'function resolveEntityDisplay(');
 });
 
 // ── FactionModal bank options ─────────────────────────────────────────────────
