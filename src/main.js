@@ -5748,7 +5748,7 @@ function renderRunSession(main, plugin, tabs) {
   let activeSess = state.activeSessionId ? safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId) : null;
 
   // Session start/end & End Session & Open Review action
-  const startEndLabel = !state.sessionRunMode ? '▶ Start Session' : '⏹ End Session & Review';
+  const startEndLabel = !state.sessionRunMode ? '▶ Start Session' : '⏹ End Session & Open Review';
   pageHead(main, plugin, '▶ Run Session', 'Live session management — combat, context, events, and notes.', [
     { label: startEndLabel, primary: !state.sessionRunMode, run: state.sessionRunMode,
       onClick: async () => {
@@ -5762,7 +5762,7 @@ function renderRunSession(main, plugin, tabs) {
             eventLog: [],
             notes: '',
             sessionContext: {
-              currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+              currentLocationId: '', currentSettlementId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
               activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
               activeTimerIds: [], currentMapId: ''
             }
@@ -5797,10 +5797,11 @@ function renderRunSession(main, plugin, tabs) {
 
   // Ensure sessionContext exists
   if (activeSess) { if (!activeSess.sessionContext) activeSess.sessionContext = {
-      currentLocationId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
+      currentLocationId: '', currentSettlementId: '', activeNpcIds: [], activeQuestIds: [], activeEncounterIds: [],
       activeFactionIds: [], activeSecretIds: [], activeHandoutIds: [], activeLootIds: [],
       activeTimerIds: [], currentMapId: ''
     };
+    if (activeSess.sessionContext.currentSettlementId === undefined) activeSess.sessionContext.currentSettlementId = '';
   }
   const ctx = activeSess ? activeSess.sessionContext : null;
   // Helper for ctx selects: logs when logType provided and value changes
@@ -5823,20 +5824,64 @@ function renderRunSession(main, plugin, tabs) {
   if (activeSess && ctx) {
     const ctxCard = ce(leftCol, 'div', 'te-card'); ctxCard.style.cssText = 'padding:12px;margin-bottom:8px';
 
-    // Tabs: Location | Map | NPCs | Quests | Factions
-    const CTX_TABS = ['location', 'map', 'npcs', 'quests', 'factions'];
-    const CTX_LABELS = ['📍 Location', '🗺️ Map', '👥 NPCs', '📋 Quests', '⚔️ Factions'];
+    // Tabs: Location | Map | NPCs | Quests | Factions | Encounters
+    const CTX_TABS = ['location', 'map', 'npcs', 'quests', 'factions', 'encounters'];
+    const CTX_LABELS = ['📍 Location', '🗺️ Map', '👥 NPCs', '📋 Quests', '⚔️ Factions', '🎯 Encounters'];
     let activeCtxTab = 'location';
     const ctxTabRow = ce(ctxCard, 'div', 'te-card-actions'); ctxTabRow.style.flexWrap = 'wrap';
     const ctxContent = ce(ctxCard, 'div', ''); ctxContent.style.marginTop = '8px';
     const scopeId = camp ? camp.id : state.activeCampaignId;
+    const selStyle = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+
+    // Campaign-scoped dropdown helper: renders a select that adds to an id array and shows chips
+    const renderSelectorChips = (container, label, idArrayKey, entityKey, logType, chipActions) => {
+      const chips = ce(container, 'div', 'te-chip-row');
+      const rebuildChips = () => {
+        clear(chips);
+        safeArr(ctx[idArrayKey]).forEach(eid => {
+          const ent = safeArr(state.entities[entityKey]).find(x => x.id === eid);
+          if (!ent) return;
+          const chip = ce(chips, 'span', 'te-chip', ent.name || eid);
+          if (chipActions) chipActions(chip, ent, eid, rebuildChips);
+          else {
+            const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove';
+            x.addEventListener('click', async () => {
+              ctx[idArrayKey] = safeArr(ctx[idArrayKey]).filter(id => id !== eid);
+              logSessionEvent(plugin, `${logType} Deactivated`, ent.name);
+              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+              rebuildChips();
+            });
+          }
+        });
+      };
+      rebuildChips();
+      const addRow = ce(container, 'div', ''); addRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;align-items:center';
+      const sel = ce(addRow, 'select'); sel.style.cssText = 'flex:1;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+      ce(sel, 'option', '', `— select ${label} —`).value = '';
+      const campEnts = safeArr(state.entities[entityKey]).filter(e => !scopeId || e.campaignId === scopeId);
+      campEnts.forEach(e => { const o = ce(sel, 'option', '', e.name || e.id); o.value = e.id; });
+      if (!campEnts.length) ce(addRow, 'span', 'te-muted-text', `No ${label.toLowerCase()} in campaign`);
+      btn(addRow, '+ Add', 'te-btn is-sm', async () => {
+        const id = sel.value; if (!id) return;
+        if (!safeArr(ctx[idArrayKey]).includes(id)) {
+          const ent = campEnts.find(e => e.id === id);
+          ctx[idArrayKey] = [...safeArr(ctx[idArrayKey]), id];
+          if (ent) logSessionEvent(plugin, `${logType} Activated`, ent.name);
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          rebuildChips();
+        }
+        sel.value = '';
+      });
+      return rebuildChips;
+    };
 
     const renderCtxTab = () => {
       clear(ctxContent);
       if (activeCtxTab === 'location') {
+        // Location selector
         const sc = ce(ctxContent, 'div', 'te-stat-card');
         ce(sc, 'div', 'te-stat-label', 'Current Location');
-        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        const sel = ce(sc, 'select'); sel.style.cssText = selStyle;
         ce(sel, 'option', '', '— none —').value = '';
         const locs = safeArr(state.entities.locations).filter(x => !scopeId || x.campaignId === scopeId);
         locs.forEach(x => { const o = ce(sel, 'option', '', x.name || x.id); o.value = x.id; });
@@ -5850,24 +5895,29 @@ function renderRunSession(main, plugin, tabs) {
           }
           upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
         });
-        // Also show settlements as location options
+        if (!locs.length) ce(sc, 'p', 'te-muted-text', 'No locations in campaign yet.');
+        // Settlement selector — persists to currentSettlementId
+        const sc2 = ce(ctxContent, 'div', 'te-stat-card'); sc2.style.marginTop = '8px';
+        ce(sc2, 'div', 'te-stat-label', 'Current Settlement / Town');
+        const sel2 = ce(sc2, 'select'); sel2.style.cssText = selStyle;
+        ce(sel2, 'option', '', '— none —').value = '';
         const settls = safeArr(state.entities.settlements).filter(x => !scopeId || x.campaignId === scopeId);
-        if (settls.length) {
-          const sc2 = ce(ctxContent, 'div', 'te-stat-card'); sc2.style.marginTop = '8px';
-          ce(sc2, 'div', 'te-stat-label', 'Settlement / Town');
-          const sel2 = ce(sc2, 'select'); sel2.style.cssText = sel.style.cssText;
-          ce(sel2, 'option', '', '— none —').value = '';
-          settls.forEach(x => { const o = ce(sel2, 'option', '', x.name || x.id); o.value = x.id; });
-          sel2.addEventListener('change', async () => {
+        settls.forEach(x => { const o = ce(sel2, 'option', '', x.name || x.id); o.value = x.id; });
+        sel2.value = ctx.currentSettlementId || '';
+        sel2.addEventListener('change', async () => {
+          const prev = ctx.currentSettlementId;
+          ctx.currentSettlementId = sel2.value;
+          if (sel2.value !== prev) {
             const chosen = settls.find(x => x.id === sel2.value);
-            if (chosen) logSessionEvent(plugin, 'Location Changed', chosen.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-          });
-        }
+            if (chosen) logSessionEvent(plugin, 'Settlement Changed', chosen.name);
+          }
+          upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+        });
+        if (!settls.length) ce(sc2, 'p', 'te-muted-text', 'No settlements in campaign yet.');
       } else if (activeCtxTab === 'map') {
         const sc = ce(ctxContent, 'div', 'te-stat-card');
         ce(sc, 'div', 'te-stat-label', 'Current Map');
-        const sel = ce(sc, 'select'); sel.style.cssText = 'width:100%;padding:4px 6px;font-size:.85rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        const sel = ce(sc, 'select'); sel.style.cssText = selStyle;
         ce(sel, 'option', '', '— none —').value = '';
         const maps = getCampaignMaps(state, scopeId);
         maps.forEach(x => { const o = ce(sel, 'option', '', x.name || 'Untitled'); o.value = x.id; });
@@ -5880,142 +5930,78 @@ function renderRunSession(main, plugin, tabs) {
             if (chosen) logSessionEvent(plugin, 'Map Changed', chosen.name || 'map');
           }
           upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
+          // Show linked metadata for the newly selected map without re-rendering
+          renderMapMeta();
         });
+        if (!maps.length) ce(sc, 'p', 'te-muted-text', 'No maps in campaign yet.');
+        // Linked location/settlement metadata for selected map
+        const mapMetaEl = ce(ctxContent, 'div', '');
+        const renderMapMeta = () => {
+          clear(mapMetaEl);
+          const chosenId = ctx.currentMapId;
+          if (!chosenId) return;
+          const chosenMap = maps.find(m => m.id === chosenId);
+          if (!chosenMap) return;
+          const meta = ce(mapMetaEl, 'div', 'te-card-meta'); meta.style.marginTop = '8px';
+          const linkedLoc = chosenMap.locationId ? safeArr(state.entities.locations).find(l => l.id === chosenMap.locationId) : null;
+          const linkedSettl = chosenMap.settlementId ? safeArr(state.entities.settlements).find(s => s.id === chosenMap.settlementId) : null;
+          if (linkedLoc) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Location'); ce(r, 'span', '', linkedLoc.name); }
+          if (linkedSettl) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Settlement'); ce(r, 'span', '', linkedSettl.name); }
+          if (chosenMap.summary) { const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', 'Summary'); ce(r, 'span', '', chosenMap.summary.slice(0, 80)); }
+        };
+        renderMapMeta();
         const mapBtns = ce(ctxContent, 'div', 'te-card-actions'); mapBtns.style.marginTop = '8px';
         btn(mapBtns, '🗺️ Open Tile Map', 'te-btn is-sm is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
       } else if (activeCtxTab === 'npcs') {
-        const activeNpcChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildNpcChips = () => {
-          clear(activeNpcChips);
-          safeArr(ctx.activeNpcIds).forEach((npcId) => {
-            const npc = safeArr(state.entities.npcs).find(n => n.id === npcId);
-            if (!npc) return;
-            const chip = ce(activeNpcChips, 'span', 'te-chip', npc.name);
-            const deadBtn = ce(chip, 'button', 'te-chip-x', '💀');
-            deadBtn.title = 'Mark dead';
-            deadBtn.addEventListener('click', async () => {
-              npc.status = 'Dead'; upsert(state, 'npcs', npc);
-              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-              logSessionEvent(plugin, 'NPC Died', npc.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildNpcChips();
-            });
-            const x = ce(chip, 'button', 'te-chip-x', '×');
-            x.title = 'Remove from scene';
-            x.addEventListener('click', async () => {
-              ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
-              logSessionEvent(plugin, 'NPC Deactivated', npc.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildNpcChips();
-            });
+        renderSelectorChips(ctxContent, 'NPC', 'activeNpcIds', 'npcs', 'NPC', (chip, npc, npcId, rebuildChips) => {
+          const deadBtn = ce(chip, 'button', 'te-chip-x', '💀'); deadBtn.title = 'Mark dead';
+          deadBtn.addEventListener('click', async () => {
+            npc.status = 'Dead'; upsert(state, 'npcs', npc);
+            ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+            logSessionEvent(plugin, 'NPC Died', npc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildNpcChips();
-        const npcAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); npcAddRow.style.marginTop = '6px';
-        const npcSearch = ce(npcAddRow, 'input'); npcSearch.type = 'text'; npcSearch.placeholder = 'Add NPC…'; npcSearch.style.flex = '1';
-        const campNpcsCtx = safeArr(state.entities.npcs).filter(n => !state.activeCampaignId || n.campaignId === state.activeCampaignId);
-        btn(npcAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const q = npcSearch.value.toLowerCase().trim();
-          const match = campNpcsCtx.find(n => (n.name||'').toLowerCase() === q) || campNpcsCtx.find(n => (n.name||'').toLowerCase().includes(q));
-          if (!match) { new Notice('No NPC found.'); return; }
-          if (!safeArr(ctx.activeNpcIds).includes(match.id)) {
-            ctx.activeNpcIds = [...safeArr(ctx.activeNpcIds), match.id];
-            logSessionEvent(plugin, 'NPC Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildNpcChips();
-          }
-          npcSearch.value = '';
+          const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove from scene';
+          x.addEventListener('click', async () => {
+            ctx.activeNpcIds = safeArr(ctx.activeNpcIds).filter(id => id !== npcId);
+            logSessionEvent(plugin, 'NPC Deactivated', npc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
         });
-        npcSearch.addEventListener('keydown', e => { if (e.key === 'Enter') npcAddRow.querySelector('button[class*="te-btn"]').click(); });
       } else if (activeCtxTab === 'quests') {
-        const activeQChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildQChips = () => {
-          clear(activeQChips);
-          safeArr(ctx.activeQuestIds).forEach(qId => {
-            const q = safeArr(state.entities.quests).find(x => x.id === qId);
-            if (!q) return;
-            const chip = ce(activeQChips, 'span', 'te-chip', q.name);
-            const completeBtn = ce(chip, 'button', 'te-chip-x', '✅');
-            completeBtn.title = 'Complete quest';
-            completeBtn.addEventListener('click', async () => {
-              q.status = 'Completed'; upsert(state, 'quests', q);
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Completed', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
-            const failBtn = ce(chip, 'button', 'te-chip-x', '❌');
-            failBtn.title = 'Fail quest';
-            failBtn.addEventListener('click', async () => {
-              q.status = 'Failed'; upsert(state, 'quests', q);
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Failed', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
-            const rmQ = ce(chip, 'button', 'te-chip-x', '×');
-            rmQ.title = 'Remove from scene';
-            rmQ.addEventListener('click', async () => {
-              ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
-              logSessionEvent(plugin, 'Quest Deactivated', q.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildQChips();
-            });
+        renderSelectorChips(ctxContent, 'Quest', 'activeQuestIds', 'quests', 'Quest', (chip, q, qId, rebuildChips) => {
+          const completeBtn = ce(chip, 'button', 'te-chip-x', '✅'); completeBtn.title = 'Complete quest';
+          completeBtn.addEventListener('click', async () => {
+            q.status = 'Completed'; upsert(state, 'quests', q);
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Completed', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildQChips();
-        const qAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); qAddRow.style.marginTop = '6px';
-        const qSearch = ce(qAddRow, 'input'); qSearch.type = 'text'; qSearch.placeholder = 'Activate quest…'; qSearch.style.flex = '1';
-        const campQuests = safeArr(state.entities.quests).filter(q => !state.activeCampaignId || q.campaignId === state.activeCampaignId);
-        btn(qAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const qq = qSearch.value.toLowerCase().trim();
-          const match = campQuests.find(q => (q.name||'').toLowerCase() === qq) || campQuests.find(q => (q.name||'').toLowerCase().includes(qq));
-          if (!match) { new Notice('No quest found.'); return; }
-          if (!safeArr(ctx.activeQuestIds).includes(match.id)) {
-            ctx.activeQuestIds = [...safeArr(ctx.activeQuestIds), match.id];
-            if (match.status !== 'Active') { match.status = 'Active'; upsert(state, 'quests', match); }
-            logSessionEvent(plugin, 'Quest Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildQChips();
-          }
-          qSearch.value = '';
+          const failBtn = ce(chip, 'button', 'te-chip-x', '❌'); failBtn.title = 'Fail quest';
+          failBtn.addEventListener('click', async () => {
+            q.status = 'Failed'; upsert(state, 'quests', q);
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Failed', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
+          const rmQ = ce(chip, 'button', 'te-chip-x', '×'); rmQ.title = 'Remove from scene';
+          rmQ.addEventListener('click', async () => {
+            ctx.activeQuestIds = safeArr(ctx.activeQuestIds).filter(id => id !== qId);
+            logSessionEvent(plugin, 'Quest Deactivated', q.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
+          });
         });
-        qSearch.addEventListener('keydown', e => { if (e.key === 'Enter') qAddRow.querySelector('button[class*="te-btn"]').click(); });
       } else if (activeCtxTab === 'factions') {
-        const activeFacChips = ce(ctxContent, 'div', 'te-chip-row');
-        const rebuildFacChips = () => {
-          clear(activeFacChips);
-          safeArr(ctx.activeFactionIds).forEach(fId => {
-            const fac = safeArr(state.entities.factions).find(x => x.id === fId);
-            if (!fac) return;
-            const chip = ce(activeFacChips, 'span', 'te-chip', fac.name);
-            const x = ce(chip, 'button', 'te-chip-x', '×');
-            x.title = 'Deactivate faction';
-            x.addEventListener('click', async () => {
-              ctx.activeFactionIds = safeArr(ctx.activeFactionIds).filter(id => id !== fId);
-              logSessionEvent(plugin, 'Faction Deactivated', fac.name);
-              upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-              rebuildFacChips();
-            });
+        renderSelectorChips(ctxContent, 'Faction', 'activeFactionIds', 'factions', 'Faction');
+      } else if (activeCtxTab === 'encounters') {
+        renderSelectorChips(ctxContent, 'Encounter', 'activeEncounterIds', 'encounters', 'Encounter', (chip, enc, encId, rebuildChips) => {
+          const x = ce(chip, 'button', 'te-chip-x', '×'); x.title = 'Remove encounter';
+          x.addEventListener('click', async () => {
+            ctx.activeEncounterIds = safeArr(ctx.activeEncounterIds).filter(id => id !== encId);
+            logSessionEvent(plugin, 'Encounter Deactivated', enc.name);
+            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin); rebuildChips();
           });
-        };
-        rebuildFacChips();
-        const facAddRow = ce(ctxContent, 'div', 'te-chip-add-row'); facAddRow.style.marginTop = '6px';
-        const facSearch = ce(facAddRow, 'input'); facSearch.type = 'text'; facSearch.placeholder = 'Add faction…'; facSearch.style.flex = '1';
-        const campFacs = safeArr(state.entities.factions).filter(f => !scopeId || f.campaignId === scopeId);
-        btn(facAddRow, '+ Add', 'te-btn is-sm', async () => {
-          const qq = facSearch.value.toLowerCase().trim();
-          const match = campFacs.find(f => (f.name||'').toLowerCase() === qq) || campFacs.find(f => (f.name||'').toLowerCase().includes(qq));
-          if (!match) { new Notice('No faction found.'); return; }
-          if (!safeArr(ctx.activeFactionIds).includes(match.id)) {
-            ctx.activeFactionIds = [...safeArr(ctx.activeFactionIds), match.id];
-            logSessionEvent(plugin, 'Faction Activated', match.name);
-            upsert(state, 'sessions', activeSess); await saveStateQuiet(plugin);
-            rebuildFacChips();
-          }
-          facSearch.value = '';
         });
-        facSearch.addEventListener('keydown', e => { if (e.key === 'Enter') facAddRow.querySelector('button[class*="te-btn"]').click(); });
       }
     };
 
