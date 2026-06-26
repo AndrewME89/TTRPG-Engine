@@ -3480,7 +3480,7 @@ function renderDashboard(main, plugin) {
   qcard(g, '🌍', 'World & Lore', 'Worlds, cosmologies, deities, factions, cultures, and languages.', 'Open World', async () => { state.activeSection = 'world'; await plugin.saveState(); });
   qcard(g, '👤', 'NPCs & Creatures', `${state.entities.npcs.length} NPCs and ${state.entities.creatures.length} creatures in your campaign.`, 'Open NPCs', async () => { state.activeSection = 'npcs'; await plugin.saveState(); });
   qcard(g, '📋', 'Active Quests', `${safeArr(state.entities.quests).filter(q => q.status === 'Active').length} active quests running.`, 'Open Quests', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
-  qcard(g, '🖥️', 'DM Screen', 'Quick reference, conditions, combat rules, and session tools.', 'Open DM Screen', async () => { state.activeSection = 'dmscreen'; await plugin.saveState(); });
+  qcard(g, '▶', 'Run Session', 'Manage your live session, track NPCs, quests, maps, and events.', 'Run Session', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
   qcard(g, '🎲', 'Generators', 'NPC names, quest hooks, loot, taverns, weather, and more.', 'Open Generators', async () => { state.activeSection = 'generators'; await plugin.saveState(); });
   // My content — clickable stat cards navigating to their section
   sectionHead(main, 'My Content / Saved Items');
@@ -5442,6 +5442,24 @@ function renderCampaignBible(main, plugin, tabs) {
       const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⚔️'); ce(h, 'h3', 'te-card-title', fac.name);
       if (fac.summary) ce(c, 'p', 'te-card-body', fac.summary.slice(0, 100));
       btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => defaultEdit(plugin, 'factions', fac));
+    });
+  }
+
+  // ── Domains ──
+  const campDomains = safeArr(state.entities.domains).filter(d => !d.campaignId || d.campaignId === campId);
+  if (campDomains.length) {
+    sectionHead(main, 'Domains');
+    const dg = ce(main, 'div', 'te-grid');
+    campDomains.slice(0, 20).forEach(dom => {
+      const c = ce(dg, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🏰'); ce(h, 'h3', 'te-card-title', dom.name);
+      if (dom.summary) ce(c, 'p', 'te-card-body', dom.summary.slice(0, 100));
+      const mt = ce(c, 'div', 'te-card-meta');
+      [['Type', dom.type], ['Scale', dom.scale || dom.size]].forEach(([k, v]) => {
+        if (!v) return;
+        const r = ce(mt, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v));
+      });
+      btn(ce(c, 'div', 'te-card-actions'), 'Edit', 'te-btn is-sm', () => defaultEdit(plugin, 'domains', dom));
     });
   }
 
@@ -7465,8 +7483,14 @@ class CampaignModal extends Modal {
     this.plugin = plugin;
     this.item = item || {};
     this.values = Object.assign({
-      id: uid('campaign'), name: '', summary: '', theme: 'Heroic Fantasy',
-      levelRange: '1-20', status: 'Active', visibility: 'dm-only',
+      id: uid('campaign'), name: '', tagline: '', summary: '', premise: '',
+      status: 'Active', visibility: 'dm-only', format: '', ruleset: 'D&D 5e',
+      levelRange: '1-20', levellingMethod: 'Milestone',
+      restRules: 'Standard (Short/Long)', deathRules: 'Standard Death Saves',
+      magicItemAvailability: 'Common', playerCount: 4,
+      tone: [], genres: [], themes: [], campaignLoops: [],
+      worldName: '', worldPremise: '', worldScale: '',
+      partyNotes: '', structureNotes: '', playerPrimer: '',
       notes: '', createdAt: new Date().toISOString(),
     }, this.item);
   }
@@ -7475,15 +7499,50 @@ class CampaignModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Campaign` });
-    addField(contentEl, 'Campaign Name *', this.values.name, v => this.values.name = v);
-    addField(contentEl, 'Summary', this.values.summary, v => this.values.summary = v, 'textarea');
-    addSelect(contentEl, 'Status', this.values.status, ['Active','On Hold','Completed','Archived'], v => this.values.status = v);
-    addSelect(contentEl, 'Theme', this.values.theme, ['Heroic Fantasy','Dark Fantasy','Sword & Sorcery','Political Intrigue','Horror','Mystery','Exploration','Epic','Mythic','Other'], v => this.values.theme = v);
-    addField(contentEl, 'Level Range', this.values.levelRange, v => this.values.levelRange = v);
-    addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
+
+    const s1 = ce(contentEl, 'div', 'te-modal-section');
+    s1.createEl('h3', { text: 'Identity' });
+    addField(s1, 'Campaign Name *', this.values.name, v => this.values.name = v);
+    addField(s1, 'Tagline / One-liner', this.values.tagline, v => this.values.tagline = v);
+    addField(s1, 'Premise', this.values.premise, v => this.values.premise = v, 'textarea');
+    addSelect(s1, 'Status', this.values.status, ['Active','On Hold','Completed','Archived'], v => this.values.status = v);
+    addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
+    addSelect(s1, 'Format', this.values.format, OPTION_BANKS.formats, v => this.values.format = v);
+
+    const s2 = ce(contentEl, 'div', 'te-modal-section');
+    s2.createEl('h3', { text: 'Rules & Tone' });
+    addSelect(s2, 'Ruleset', this.values.ruleset, OPTION_BANKS.rulesets, v => this.values.ruleset = v);
+    addField(s2, 'Level Range (e.g. 1-10)', this.values.levelRange, v => this.values.levelRange = v);
+    addSelect(s2, 'Levelling Method', this.values.levellingMethod, OPTION_BANKS.levellingMethods, v => this.values.levellingMethod = v);
+    addSelect(s2, 'Rest Rules', this.values.restRules, OPTION_BANKS.restRules, v => this.values.restRules = v);
+    addSelect(s2, 'Death Rules', this.values.deathRules, OPTION_BANKS.deathRules, v => this.values.deathRules = v);
+    addSelect(s2, 'Magic Item Availability', this.values.magicItemAvailability, OPTION_BANKS.magicItemAvailability, v => this.values.magicItemAvailability = v);
+    chipField(s2, 'Tone(s)', safeArr(this.values.tone), v => this.values.tone = v, { bank: 'tones' });
+    chipField(s2, 'Genre(s)', safeArr(this.values.genres), v => this.values.genres = v, { bank: 'genres' });
+    chipField(s2, 'Themes', safeArr(this.values.themes), v => this.values.themes = v, { bank: 'themes' });
+    chipField(s2, 'Campaign Loops', safeArr(this.values.campaignLoops), v => this.values.campaignLoops = v, { bank: 'campaignLoops' });
+
+    const s3 = ce(contentEl, 'div', 'te-modal-section');
+    s3.createEl('h3', { text: 'World Details' });
+    addField(s3, 'World Name', this.values.worldName, v => this.values.worldName = v);
+    addField(s3, 'World Premise', this.values.worldPremise, v => this.values.worldPremise = v, 'textarea');
+    addSelect(s3, 'World Scale', this.values.worldScale, OPTION_BANKS.worldScales, v => this.values.worldScale = v);
+
+    const s4 = ce(contentEl, 'div', 'te-modal-section');
+    s4.createEl('h3', { text: 'Player & Party' });
+    addNumber(s4, 'Player Count', this.values.playerCount, v => this.values.playerCount = v);
+    addField(s4, 'Party Notes', this.values.partyNotes, v => this.values.partyNotes = v, 'textarea');
+    addField(s4, 'Structure Notes', this.values.structureNotes, v => this.values.structureNotes = v, 'textarea');
+    addField(s4, 'Player Primer (player-safe intro)', this.values.playerPrimer, v => this.values.playerPrimer = v, 'textarea');
+
+    const s5 = ce(contentEl, 'div', 'te-modal-section');
+    s5.createEl('h3', { text: 'DM Notes' });
+    addField(s5, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
+
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Campaign name is required.'); return; }
       this.values.updatedAt = new Date().toISOString();
+      if (!this.values.summary) this.values.summary = this.values.premise || this.values.tagline || '';
       upsert(this.plugin.state, 'campaigns', this.values);
       if (!this.plugin.state.activeCampaignId) this.plugin.state.activeCampaignId = this.values.id;
       await this.plugin.saveState();
@@ -9795,7 +9854,8 @@ class CampaignWizardModal extends Modal {
   }
 }
 
-// ── CampaignBibleModal (Phase 7) ──────────────────────────────────────────────
+// ── CampaignBibleModal ────────────────────────────────────────────────────────
+// Canonical textual bible fields only. Acts are entity-backed (see renderCampaignBible).
 class CampaignBibleModal extends Modal {
   constructor(app, plugin, campaign) {
     super(app);
@@ -9807,7 +9867,7 @@ class CampaignBibleModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     clear(contentEl); contentEl.addClass('te-modal');
-    this.titleEl.setText('Campaign Bible');
+    this.titleEl.setText('Campaign Bible — Edit Textual Fields');
     if (!this.camp) { ce(contentEl, 'p', '', 'No active campaign. Create a campaign first.'); btn(contentEl, 'Close', 'te-btn', () => this.close()); return; }
     const b = this.values.bible;
 
@@ -9820,28 +9880,18 @@ class CampaignBibleModal extends Modal {
     chipField(s1, 'Themes', safeArr(b.themes), v => b.themes = v, { bank: 'themes' });
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
-    s2.createEl('h3', { text: 'Act Structure' });
-    const acts = Array.isArray(b.acts) ? b.acts : [];
-    const actList = ce(s2, 'div', '');
-    const renderActs = () => {
-      clear(actList);
-      acts.forEach((act, i) => {
-        const row = ce(actList, 'div', ''); row.style.cssText = 'border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:10px;margin-bottom:8px';
-        addField(row, `Act ${i + 1} Title`, act.title || '', v => { act.title = v; });
-        addField(row, 'Summary', act.summary || '', v => { act.summary = v; }, 'textarea');
-        btn(row, '× Remove', 'te-btn is-sm is-danger', () => { acts.splice(i, 1); renderActs(); });
-      });
-    };
-    renderActs();
-    btn(s2, '+ Add Act', 'te-btn is-sm', () => { acts.push({ title: '', summary: '' }); b.acts = acts; renderActs(); });
+    s2.createEl('h3', { text: 'Player Primer' });
+    addField(s2, 'Player-safe intro for Session Zero / player packet', b.playerPrimer, v => b.playerPrimer = v, 'textarea');
 
     const s3 = ce(contentEl, 'div', 'te-modal-section');
-    s3.createEl('h3', { text: 'Player Primer' });
-    addField(s3, 'Player-safe intro for Session Zero / player packet', b.playerPrimer, v => b.playerPrimer = v, 'textarea');
+    s3.createEl('h3', { text: 'DM Notes' });
+    addField(s3, 'Internal DM notes', b.notes, v => b.notes = v, 'textarea');
 
-    const s4 = ce(contentEl, 'div', 'te-modal-section');
-    s4.createEl('h3', { text: 'DM Notes' });
-    addField(s4, 'Internal DM notes', b.notes, v => b.notes = v, 'textarea');
+    if (safeArr(b.acts).length) {
+      const legacyNote = ce(contentEl, 'div', 'te-modal-section');
+      legacyNote.createEl('h3', { text: 'Legacy Embedded Acts' });
+      ce(legacyNote, 'p', 'te-card-body', `This campaign has ${b.acts.length} legacy embedded act(s). Use the "Promote to Entity" action in Campaign Bible to migrate them to entity-backed acts.`);
+    }
 
     modalButtons(contentEl, this, async () => {
       this.values.bible = b;
