@@ -3923,7 +3923,7 @@ function renderGeography(main, plugin, tabs) {
   sectionHead(main, 'Points of Interest');
   itemCards(main, plugin, 'pois', { meta: ['type', 'location'] });
   sectionHead(main, 'Routes');
-  itemCards(main, plugin, 'routes', { meta: ['from', 'to', 'travelTime'] });
+  itemCards(main, plugin, 'routes', { meta: ['fromRefId', 'from', 'toRefId', 'to', 'travelTime'] });
 }
 
 const regionFields = [
@@ -3967,10 +3967,19 @@ const poiFields = [
   { key: 'location', label: 'Location (legacy text)', type: 'text' },
   { key: 'summary', label: 'Description / Notes', type: 'textarea' },
 ];
+const ROUTE_ENDPOINT_TYPES = [
+  { key: 'regions', label: 'Region' },
+  { key: 'settlements', label: 'Settlement' },
+  { key: 'locations', label: 'Location' },
+  { key: 'pois', label: 'POI' },
+  { key: 'dungeons', label: 'Dungeon' },
+];
 const routeFields = [
   { key: 'name', label: 'Route Name', type: 'text' },
-  { key: 'from', label: 'From', type: 'text' },
-  { key: 'to', label: 'To', type: 'text' },
+  { type: 'typedEntityRef', label: 'From (linked)', typeKey: 'fromRefType', idKey: 'fromRefId', entityTypes: ROUTE_ENDPOINT_TYPES },
+  { key: 'from', label: 'From (legacy text)', type: 'text' },
+  { type: 'typedEntityRef', label: 'To (linked)', typeKey: 'toRefType', idKey: 'toRefId', entityTypes: ROUTE_ENDPOINT_TYPES },
+  { key: 'to', label: 'To (legacy text)', type: 'text' },
   { key: 'travelTime', label: 'Travel Time', type: 'text' },
   { key: 'terrain', label: 'Terrain', type: 'chip', opts: { bank: 'terrainTypes' } },
   { key: 'conditions', label: 'Travel Conditions', type: 'chip', opts: { bank: 'travelConditions' } },
@@ -4779,7 +4788,7 @@ function renderEncounters(main, plugin, tabs) {
   sectionHead(main, 'Encounters');
   itemCards(main, plugin, 'encounters', { meta: ['type', 'difficulty', 'location', 'linkedQuest'] });
   sectionHead(main, 'Loot');
-  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status'] });
+  itemCards(main, plugin, 'loot', { meta: ['type', 'rarity', 'value', 'status', 'encounterId', 'claimedById', 'claimedBy'] });
 }
 
 function renderInitiativeTracker(parent, plugin) {
@@ -6808,10 +6817,11 @@ const religionFields = [
   { key: 'deityId', label: 'Primary Deity', type: 'entityRef', entityType: 'deities' },
   { key: 'deity', label: 'Primary Deity (legacy text)', type: 'text' },
   { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
-  { key: 'domain', label: 'Domain / Aspect', type: 'text' },
+  { key: 'domainId', label: 'Domain (linked)', type: 'entityRef', entityType: 'domains' },
+  { key: 'domain', label: 'Domain / Aspect (legacy text)', type: 'text' },
   { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
   { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
-  { key: 'holyDays', label: 'Holy Days', type: 'text' },
+  { key: 'holyDays', label: 'Holy Days', type: 'chip' },
   { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
   { key: 'templeIds', label: 'Temples / Holy Sites', type: 'entityMultiRef', entityType: 'locations' },
   { key: 'temples', label: 'Temples (legacy text)', type: 'chip' },
@@ -6833,10 +6843,11 @@ const districtFields = [
 ];
 const roomFields = [
   { key: 'name', label: 'Room Name', type: 'text' },
-  { key: 'locationId', label: 'Location / Dungeon', type: 'entityRef', entityType: 'locations' },
+  { type: 'typedEntityRef', label: 'Parent Location / Dungeon (linked)', typeKey: 'locationType', idKey: 'locationId',
+    entityTypes: [{ key: 'locations', label: 'Location' }, { key: 'dungeons', label: 'Dungeon' }] },
   { key: 'type', label: 'Room Type', type: 'select', options: ['Entrance','Corridor','Chamber','Guard Post','Secret Room','Boss Chamber','Treasure Room','Trap Room','Rest Area','Shrine','Prison','Workshop','Library','Other'] },
   { key: 'features', label: 'Features', type: 'chip' },
-  { key: 'traps', label: 'Traps', type: 'chip', opts: { bank: 'hazardTypes' } },
+  { key: 'traps', label: 'Traps (chip — not entity-backed)', type: 'chip', opts: { bank: 'hazardTypes' } },
   { key: 'connectedRoomIds', label: 'Connected Rooms', type: 'entityMultiRef', entityType: 'rooms' },
   { key: 'connections', label: 'Connected Rooms (legacy text)', type: 'chip' },
   { key: 'lootIds', label: 'Loot', type: 'entityMultiRef', entityType: 'loot' },
@@ -6870,9 +6881,16 @@ const lootFields = [
   { key: 'rarity', label: 'Rarity', type: 'select', options: ['Common','Uncommon','Rare','Very Rare','Legendary','Artifact'] },
   { key: 'value', label: 'Value (gp)', type: 'text' },
   { key: 'description', label: 'Description', type: 'textarea' },
-  { key: 'encounterId', label: 'Source Encounter', type: 'text' },
+  { key: 'encounterId', label: 'Source Encounter', type: 'entityRef', entityType: 'encounters' },
   { key: 'status', label: 'Status', type: 'select', options: ['Available','Claimed','Sold','Lost','Destroyed'] },
-  { key: 'claimedBy', label: 'Claimed By', type: 'text' },
+  { type: 'typedEntityRef', label: 'Claimed By (linked)', typeKey: 'claimedByType', idKey: 'claimedById',
+    entityTypes: [
+      { key: 'characters', label: 'PC / Character' },
+      { key: 'npcs', label: 'NPC' },
+      { key: 'factions', label: 'Faction' },
+    ],
+  },
+  { key: 'claimedBy', label: 'Claimed By (legacy text)', type: 'text' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
