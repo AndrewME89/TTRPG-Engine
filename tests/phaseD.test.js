@@ -90,10 +90,11 @@ test('BBEGModal removes campaignId from primary', () => {
 test('FactionModal has leadershipStructure chip', () => assertContains("bank: 'leadershipStructure'"));
 test('FactionModal has leaderNpcIds multi', () => assertContains("Leaders / Key Staff (NPCs)"));
 test('FactionModal territoryIds linked to regions', () => {
-  const idx = src.indexOf("Territory (linked)");
-  assert(idx >= 0, 'Should have Territory (linked)');
-  const snip = src.substring(idx, idx + 100);
-  assert(snip.includes("'regions'"), 'Territory should link to regions');
+  // Phase E renamed to 'Territories (Regions)' — check either label
+  const hasLinked = src.includes("Territory (linked)") || src.includes("Territories (Regions)");
+  assert(hasLinked, 'Should have territory linked to regions picker');
+  const modal = src.slice(src.indexOf('class FactionModal'), src.indexOf('// QuestModal'));
+  assert(modal.includes("'regions'"), 'Territory should link to regions');
 });
 test('FactionModal goals use bank factionGoals', () => {
   const idx = src.indexOf('class FactionModal extends Modal');

@@ -1116,6 +1116,31 @@ function resolveEntityNotePath(entityType, entity, state, plugin) {
   return normalizePath(`${campBase}/${workspaceFolder}/${name}.md`);
 }
 
+/**
+ * Resolve a display name for an entity given its type and id.
+ * Includes nobleFamilies support; if a noble family has migratedFactionId,
+ * returns the faction name instead.
+ */
+function resolveEntityDisplay(entityType, entityId, state) {
+  const collections = ['npcs','characters','factions','nobleFamilies','settlements','locations','regions','quests','creatures','bbegs','adventures'];
+  const arr = safeArr(state.entities[entityType] || (
+    collections.reduce((found, key) => found || (state.entities[key] || []).find(e => e.id === entityId), null) ? null : null
+  ));
+  let entity = safeArr(state.entities[entityType]).find(e => e.id === entityId);
+  if (!entity) {
+    for (const col of collections) {
+      entity = safeArr(state.entities[col]).find(e => e.id === entityId);
+      if (entity) break;
+    }
+  }
+  if (!entity) return entityId || '';
+  if (entity.migratedFactionId) {
+    const faction = safeArr(state.entities.factions).find(f => f.id === entity.migratedFactionId);
+    if (faction) return faction.name;
+  }
+  return entity.name || entity.title || entityId;
+}
+
 async function ensureFolder(app, folderPath) {
   if (!folderPath || !folderPath.trim()) return;
   const norm = normalizePath(folderPath);
@@ -2190,7 +2215,6 @@ const PICKABLE_ENTITY_TYPES = [
   { key:'npcs',          label:'NPC' },
   { key:'characters',    label:'PC / Character' },
   { key:'factions',      label:'Faction' },
-  { key:'nobleFamilies', label:'Noble Family' },
   { key:'settlements',   label:'Settlement' },
   { key:'locations',     label:'Location' },
   { key:'regions',       label:'Region' },
@@ -3116,15 +3140,15 @@ function renderCastPowers(main, plugin) {
   const tabs = [
     { id: 'npcs',            label: '👤 NPCs & Creatures' },
     { id: 'factions',        label: '⚔️ Factions' },
-    { id: 'noble-families',  label: '🏰 Noble Families' },
     { id: 'matrix',          label: '🕸️ Relationship Matrix' },
     { id: 'hybrid-ancestry', label: '🧬 Hybrid Ancestry' },
   ];
-  const sub = state.activeSubSection || 'npcs';
+  let sub = state.activeSubSection || 'npcs';
+  // Redirect old noble-families routes to factions
+  if (sub === 'noble-families' || sub === 'nobleFamilies') sub = 'factions';
   const wrap = ce(main, 'div', 'te-workspace-content');
   if (sub === 'npcs')                 renderNpcs(wrap, plugin, tabs);
   else if (sub === 'factions')        renderFactions(wrap, plugin, tabs);
-  else if (sub === 'noble-families')  renderNobleFamiliesSection(wrap, plugin, tabs);
   else if (sub === 'matrix')          renderRelationshipMatrix(wrap, plugin, tabs);
   else if (sub === 'hybrid-ancestry') renderHybridAncestry(wrap, plugin, tabs);
   else renderNpcs(wrap, plugin, tabs);
@@ -4438,9 +4462,9 @@ function renderNpcs(main, plugin, tabs) {
   ], tabs);
 
   sectionHead(main, 'NPCs');
-  itemCards(main, plugin, 'npcs', { meta: ['race', 'role', 'status', 'faction', 'location'] });
+  itemCards(main, plugin, 'npcs', { meta: ['race', 'role', 'status', 'faction', 'location', 'pronouns', 'occupation'] });
   sectionHead(main, 'Creatures');
-  itemCards(main, plugin, 'creatures', { meta: ['creatureType', 'size', 'cr', 'alignment'] });
+  itemCards(main, plugin, 'creatures', { meta: ['creatureType', 'size', 'cr', 'alignment', 'ac', 'hp', 'factionIds'] });
   sectionHead(main, 'BBEGs');
   itemCards(main, plugin, 'bbegs', { meta: ['title', 'status'] });
 
@@ -4504,7 +4528,24 @@ function renderFactions(main, plugin, tabs) {
     { label: '+ Faction', primary: true, onClick: () => new FactionModal(plugin.app, plugin).open() },
   ], tabs);
   sectionHead(main, 'Factions');
-  itemCards(main, plugin, 'factions', { meta: ['type', 'ideology', 'territory', 'reputation'] });
+
+  // Noble House filter
+  const filterBar = ce(main, 'div', 'te-field-row'); filterBar.style.marginBottom = '8px';
+  const factionFilterSel = ce(filterBar, 'select', 'te-field-select');
+  ['All Factions', 'Noble Houses'].forEach(opt => { const o = ce(factionFilterSel, 'option', '', opt); o.value = opt; });
+  const NOBLE_HOUSE_TYPES = new Set(['Noble House', 'Noble Family']);
+  const applyFactionFilter = () => {
+    const val = factionFilterSel.value;
+    const allFactions = safeArr(plugin.state.entities.factions);
+    const filtered = val === 'Noble Houses'
+      ? allFactions.filter(f => NOBLE_HOUSE_TYPES.has(f.type) || NOBLE_HOUSE_TYPES.has(f.factionSubtype))
+      : allFactions;
+    clear(cardsWrap);
+    itemCards(cardsWrap, plugin, 'factions', { meta: ['type', 'ideology', 'territory', 'reputation'], items: filtered });
+  };
+  factionFilterSel.addEventListener('change', applyFactionFilter);
+  const cardsWrap = ce(main, 'div', '');
+  itemCards(cardsWrap, plugin, 'factions', { meta: ['type', 'ideology', 'territory', 'reputation'] });
 
   // Faction web summary
   const factions = safeArr(plugin.state.entities.factions);
@@ -7403,7 +7444,7 @@ class CreatureModal extends Modal {
       str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
       senses: '', languages: '', traits: '', actions: '', reactions: '',
       legendaryActions: '', lairActions: '', lore: '', habitat: '', loot: '',
-      visibility: 'dm-only', tags: [], campaignId: '',
+      visibility: 'dm-only', tags: [], campaignId: '', factionIds: [],
     }, this.item);
   }
   onOpen() {
@@ -7447,6 +7488,7 @@ class CreatureModal extends Modal {
     addField(loreSec, 'Lore', this.values.lore, v => this.values.lore = v, 'textarea');
     addField(loreSec, 'Habitat', this.values.habitat, v => this.values.habitat = v);
     addField(loreSec, 'Loot / Salvage', this.values.loot, v => this.values.loot = v, 'textarea');
+    addEntityMultiPicker(contentEl, 'Linked Factions', safeArr(this.values.factionIds), this.plugin, 'factions', v => this.values.factionIds = v);
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Creature name is required.'); return; }
@@ -7543,8 +7585,6 @@ class FactionModal extends Modal {
     addSelect(contentEl, 'Faction Type', this.values.type || 'Criminal', ['Criminal','Political','Religious','Military','Mercantile','Academic','Secret Society','Resistance','Cult','Guild','Noble House','Other'], v => this.values.type = v);
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     addField(contentEl, 'Ideology', this.values.ideology, v => this.values.ideology = v, 'textarea');
-    addField(contentEl, 'Territory (text)', this.values.territory, v => this.values.territory = v);
-    addEntityMultiPicker(contentEl, 'Territory (linked)', safeArr(this.values.territoryIds), this.plugin, 'regions', v => this.values.territoryIds = v);
     chipField(contentEl, 'Leadership Structure', safeArr(this.values.leadershipStructure), v => this.values.leadershipStructure = v, { bank: 'leadershipStructure' });
     addEntityMultiPicker(contentEl, 'Leaders / Key Staff (NPCs)', safeArr(this.values.leaderNpcIds), this.plugin, 'npcs', v => this.values.leaderNpcIds = v);
     addEntityPicker(contentEl, 'Primary Leader NPC', this.values.leaderNpcId, this.plugin, 'npcs', v => this.values.leaderNpcId = v);
@@ -7567,8 +7607,32 @@ class FactionModal extends Modal {
 
     addEntityMultiPicker(contentEl, 'Member NPCs', this.values.memberNpcIds, this.plugin, 'npcs', v => this.values.memberNpcIds = v);
     addEntityMultiPicker(contentEl, 'Member PCs', this.values.memberPcIds, this.plugin, 'characters', v => this.values.memberPcIds = v);
-    addEntityMultiPicker(contentEl, 'Territories', this.values.territoryIds, this.plugin, 'settlements', v => this.values.territoryIds = v);
+    addEntityMultiPicker(contentEl, 'Territories (Regions)', this.values.territoryIds, this.plugin, 'regions', v => this.values.territoryIds = v);
     addEntityMultiPicker(contentEl, 'Linked Quests', this.values.linkedQuestIds, this.plugin, 'quests', v => this.values.linkedQuestIds = v);
+
+    // Reputation records for this faction
+    const repSection = ce(contentEl, 'div', 'te-modal-section');
+    repSection.createEl('h3', { text: 'Reputation Records' });
+    const reps = safeArr(this.plugin.state.entities.reputations)
+      .filter(r => r.factionId === this.values.id || r.faction === this.values.name);
+    if (reps.length === 0) {
+      ce(repSection, 'p', 'te-progress-label', 'No reputation records linked to this faction.');
+    } else {
+      reps.forEach(rep => {
+        const row = ce(repSection, 'div', 'te-list-item');
+        ce(row, 'span', 'te-list-meta', `${rep.level || '?'} — ${rep.notes || rep.name || ''}`);
+      });
+    }
+    const addRepBtn = ce(repSection, 'button', 'te-btn is-sm', '+ Add Reputation');
+    addRepBtn.addEventListener('click', () => {
+      new GenericModal(this.plugin.app, this.plugin, 'reputations', { factionId: this.values.id }, reputationFields).open();
+    });
+
+    // Legacy territory text field
+    const legSec = ce(contentEl, 'div', 'te-modal-section');
+    const legDetails = legSec.createEl('details');
+    legDetails.createEl('summary', { text: 'Legacy / Advanced' });
+    addField(legDetails, 'Territory (legacy text)', this.values.territory, v => this.values.territory = v);
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Faction name is required.'); return; }
@@ -8441,6 +8505,36 @@ class RelationshipModal extends Modal {
   }
 }
 
+/**
+ * Migrate noble families to factions. Guards against duplicates by checking
+ * if a faction with migratedFromNobleFamilyId === nf.id already exists.
+ */
+function migrateNobleFamiliesToFactions(state) {
+  const nobles = safeArr(state.entities.nobleFamilies);
+  const factions = safeArr(state.entities.factions);
+  let count = 0;
+  nobles.forEach(nf => {
+    // Guard: skip if already migrated (by migratedFromNobleFamilyId or nf.migratedToFaction)
+    if (nf.migratedToFaction) return;
+    const alreadyExists = factions.some(f => f.migratedFromNobleFamilyId === nf.id);
+    if (alreadyExists) return;
+    const newFaction = {
+      id: uid('faction'),
+      name: nf.name || 'Unnamed Noble House',
+      type: 'Noble House',
+      ideology: nf.motto || '',
+      campaignId: nf.campaignId || '',
+      migratedFromNobleFamilyId: nf.id,
+      visibility: nf.visibility || 'dm-only',
+    };
+    upsert(state, 'factions', newFaction);
+    nf.migratedToFaction = true;
+    nf.migratedFactionId = newFaction.id;
+    count++;
+  });
+  return count;
+}
+
 // NobleFamilyModal
 class NobleFamilyModal extends Modal {
   constructor(app, plugin, item) {
@@ -9029,7 +9123,6 @@ class HybridAncestryModal extends Modal {
     // Section 1: Identity
     const s1 = ce(contentEl, 'div', 'te-modal-section');
     s1.createEl('h3', { text: 'Identity' });
-    addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addField(s1, 'Ancestry Name *', this.values.name, v => this.values.name = v);
     const hybridNames = safeArr(this.plugin.state.entities.hybridAncestries)
       .filter(h => h.id !== this.values.id).map(h => h.name);

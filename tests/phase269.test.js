@@ -284,8 +284,10 @@ test('renderCastPowers includes npcs sub-tab', () => {
   ok(src.includes("id: 'npcs'") && src.includes("NPCs & Creatures"), 'Missing npcs sub-tab');
 });
 
-test('renderCastPowers includes noble-families sub-tab', () => {
-  ok(src.includes("id: 'noble-families'"), 'Missing noble-families sub-tab');
+test('renderCastPowers redirects noble-families to factions (tab removed in Phase E)', () => {
+  // noble-families tab removed; verify redirect exists instead
+  const fn = src.slice(src.indexOf('function renderCastPowers'), src.indexOf('function renderNobleFamiliesSection'));
+  ok(fn.includes("sub === 'noble-families'") && fn.includes("sub = 'factions'"), 'Missing noble-families redirect');
 });
 
 test('renderAdventurePlanner includes adventures sub-tab', () => {
