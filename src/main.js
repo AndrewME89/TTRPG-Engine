@@ -6635,9 +6635,9 @@ function renderWarMachine(main, plugin, tabs) {
       const meta = ce(c, 'div', 'te-card-meta');
       [['Status', t.status], ['Faction', t.faction], ['Consequence', t.consequence]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v).slice(0, 80)); });
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, '+Tick', 'te-btn is-sm is-run', async () => { t.currentTick = Math.min(maxTicks, curTicks + 1); upsert(plugin.state, 'timers', t); await plugin.saveState(); });
+      btn(a, '+Tick', 'te-btn is-sm is-run', async () => { t.currentTick = Math.min(maxTicks, curTicks + 1); upsert(plugin.state, 'timers', t); await saveStateQuiet(plugin); });
       btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
-      btn(a, 'Reset', 'te-btn is-sm', async () => { t.currentTick = 0; upsert(plugin.state, 'timers', t); await plugin.saveState(); });
+      btn(a, 'Reset', 'te-btn is-sm', async () => { t.currentTick = 0; upsert(plugin.state, 'timers', t); await saveStateQuiet(plugin); });
       btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'timers', t.id); await plugin.saveState(); });
     });
   } else { emptyState(main, 'No timers yet.', 'Escalation timers track ticking threats and countdown events.'); }
@@ -7287,9 +7287,9 @@ function renderPCCharacter(main, plugin) {
   const hpInp = ce(hpWrap, 'input'); hpInp.type = 'number'; hpInp.value = String(curHp);
   hpInp.style.cssText = 'width:70px;padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
   hpInp.placeholder = 'Set HP';
-  btn(hpWrap, 'Set HP', 'te-btn is-sm', async () => { const v = parseInt(hpInp.value); if (!isNaN(v)) { char.hp = v; upsert(state, 'characters', char); await plugin.saveState(); } });
-  btn(hpWrap, '-1', 'te-btn is-sm is-danger', async () => { char.hp = Math.max(0, (parseInt(char.hp) || 0) - 1); upsert(state, 'characters', char); await plugin.saveState(); });
-  btn(hpWrap, '+1', 'te-btn is-sm', async () => { char.hp = Math.min(parseInt(char.maxHp) || 999, (parseInt(char.hp) || 0) + 1); upsert(state, 'characters', char); await plugin.saveState(); });
+  btn(hpWrap, 'Set HP', 'te-btn is-sm', async () => { const v = parseInt(hpInp.value); if (!isNaN(v)) { char.hp = v; upsert(state, 'characters', char); await saveStateQuiet(plugin); } });
+  btn(hpWrap, '-1', 'te-btn is-sm is-danger', async () => { char.hp = Math.max(0, (parseInt(char.hp) || 0) - 1); upsert(state, 'characters', char); await saveStateQuiet(plugin); });
+  btn(hpWrap, '+1', 'te-btn is-sm', async () => { char.hp = Math.min(parseInt(char.maxHp) || 999, (parseInt(char.hp) || 0) + 1); upsert(state, 'characters', char); await saveStateQuiet(plugin); });
 
   // XP progress bar
   if (typeof char.xp === 'number') {
@@ -7364,11 +7364,11 @@ function renderPCCharacter(main, plugin) {
           const next = i < cur ? i : i + 1;
           if (kind === 'Successes') char.deathSaves.successes = next;
           else char.deathSaves.failures = next;
-          upsert(state, 'characters', char); await plugin.saveState();
+          upsert(state, 'characters', char); await saveStateQuiet(plugin);
         });
       }
     });
-    btn(dsWrap, 'Reset', 'te-btn is-sm is-danger', async () => { char.deathSaves = { successes: 0, failures: 0 }; upsert(state, 'characters', char); await plugin.saveState(); });
+    btn(dsWrap, 'Reset', 'te-btn is-sm is-danger', async () => { char.deathSaves = { successes: 0, failures: 0 }; upsert(state, 'characters', char); await saveStateQuiet(plugin); });
   }
 
   const a = ce(c, 'div', 'te-card-actions');
@@ -7392,7 +7392,7 @@ async function renderPCInventory(main, plugin) {
     const inp = ce(w, 'input'); inp.type = 'number'; inp.value = String(coins[coin] || 0);
     inp.style.cssText = 'width:100%;text-align:center;font-size:1.2rem;font-weight:700;background:transparent;border:0;color:var(--te-text)';
     ce(w, 'div', 'te-stat-label', coin.toUpperCase());
-    inp.addEventListener('change', async () => { if (!char.currency) char.currency = {}; char.currency[coin] = parseInt(inp.value) || 0; upsert(state, 'characters', char); await plugin.saveState(); });
+    inp.addEventListener('change', async () => { if (!char.currency) char.currency = {}; char.currency[coin] = parseInt(inp.value) || 0; upsert(state, 'characters', char); await saveStateQuiet(plugin); });
   });
 
   sectionHead(main, 'Equipment & Items');
@@ -7477,7 +7477,7 @@ async function renderPCSpellbook(main, plugin) {
         if (!char.spellSlots[lvl]) char.spellSlots[lvl] = { max: slotData.max, used: 0 };
         const cur = char.spellSlots[lvl].used || 0;
         char.spellSlots[lvl].used = i < cur ? i : Math.min(i + 1, char.spellSlots[lvl].max);
-        upsert(state, 'characters', char); await plugin.saveState();
+        upsert(state, 'characters', char); await saveStateQuiet(plugin);
       });
     }
     const maxInp = ce(row, 'input'); maxInp.type = 'number'; maxInp.min = '0'; maxInp.max = '9'; maxInp.value = String(slotData.max || 0);
@@ -7487,7 +7487,7 @@ async function renderPCSpellbook(main, plugin) {
       if (!char.spellSlots) char.spellSlots = {};
       const newMax = Math.max(0, Math.min(9, parseInt(maxInp.value) || 0));
       char.spellSlots[lvl] = { max: newMax, used: Math.min(newMax, (char.spellSlots[lvl] || {}).used || 0) };
-      upsert(state, 'characters', char); await plugin.saveState();
+      upsert(state, 'characters', char); await saveStateQuiet(plugin);
     });
   }
   const resetRow = ce(main, 'div', ''); resetRow.style.marginBottom = '16px';
