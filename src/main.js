@@ -3441,89 +3441,171 @@ function renderSettingsPanel(main, plugin) {
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 function renderDashboard(main, plugin) {
   const state = plugin.state;
-  pageHead(main, plugin, 'Dungeon Master Console', 'Campaign hub — build, run, and track your whole campaign from here.', [
-    { label: '🧙 Campaign Wizard', primary: true, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
+  const camp = activeCampaign(state);
+  const campId = camp ? camp.id : null;
+  const scopedQ = q => !campId || q.campaignId === campId;
+  const scopedF = f => !campId || f.campaignId === campId;
+
+  pageHead(main, plugin, 'Dungeon Master Console', camp ? `${camp.name} — live command cockpit` : 'Campaign hub — start here.', [
+    { label: '🧙 Campaign Wizard', primary: !camp, onClick: () => new CampaignWizardModal(plugin.app, plugin).open() },
     { label: '+ Quick Campaign', onClick: () => new CampaignModal(plugin.app, plugin).open() },
-    { label: '▶ Run Session', run: true, onClick: async () => { state.activeSection = 'run-session'; await plugin.saveState(); } },
+    { label: '▶ Run Session', primary: !!camp, onClick: async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); } },
     { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ]);
-  // Stat grid
-  const sg = ce(main, 'div', 'te-stat-grid');
-  [
-    ['Campaigns', state.entities.campaigns.length],
-    ['NPCs', state.entities.npcs.length],
-    ['Quests', state.entities.quests.length],
-    ['Encounters', state.entities.encounters.length],
-    ['Secrets', state.entities.secrets.length],
-    ['Sessions', state.entities.sessions.length],
-    ['Creatures', state.entities.creatures.length],
-    ['Homebrew', state.entities.homebrew.length],
-  ].forEach(([label, val]) => {
-    const c = ce(sg, 'div', 'te-stat-card');
-    ce(c, 'div', 'te-stat-big', val);
-    ce(c, 'div', 'te-stat-label', label);
-  });
-  // Quick nav cards
-  sectionHead(main, 'Quick Access');
-  const g = ce(main, 'div', 'te-grid');
-  const qcard = (g, icon, title, desc, btnLabel, onClick) => {
-    const c = ce(g, 'div', 'te-card');
-    const hd = ce(c, 'div', 'te-card-head');
-    ce(hd, 'span', 'te-card-icon', icon);
-    ce(hd, 'h3', 'te-card-title', title);
-    ce(c, 'p', 'te-card-body', desc);
-    const acts = ce(c, 'div', 'te-card-actions');
-    btn(acts, btnLabel, 'te-btn is-primary', onClick);
-  };
-  const camp = activeCampaign(state);
-  qcard(g, '📜', 'Active Campaign', camp ? `${camp.name} — ${camp.summary || 'No summary'}` : 'No active campaign. Create one to start.', camp ? 'View Campaigns' : 'New Campaign', async () => { state.activeSection = 'campaigns'; await plugin.saveState(); });
-  qcard(g, '🌍', 'World & Lore', 'Worlds, cosmologies, deities, factions, cultures, and languages.', 'Open World', async () => { state.activeSection = 'world'; await plugin.saveState(); });
-  qcard(g, '👤', 'NPCs & Creatures', `${state.entities.npcs.length} NPCs and ${state.entities.creatures.length} creatures in your campaign.`, 'Open NPCs', async () => { state.activeSection = 'npcs'; await plugin.saveState(); });
-  qcard(g, '📋', 'Active Quests', `${safeArr(state.entities.quests).filter(q => q.status === 'Active').length} active quests running.`, 'Open Quests', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
-  qcard(g, '▶', 'Run Session', 'Manage your live session, track NPCs, quests, maps, and events.', 'Run Session', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
-  qcard(g, '🎲', 'Generators', 'NPC names, quest hooks, loot, taverns, weather, and more.', 'Open Generators', async () => { state.activeSection = 'generators'; await plugin.saveState(); });
-  // My content — clickable stat cards navigating to their section
-  sectionHead(main, 'My Content / Saved Items');
-  const ENTITY_NAV = {
-    campaigns:'campaigns', worlds:'world', cosmologies:'world', realms:'world', regions:'geography',
-    settlements:'gazetteer', locations:'gazetteer', pois:'gazetteer', routes:'gazetteer',
-    npcs:'npcs', creatures:'npcs', bbegs:'npcs', factions:'world',
-    cultures:'world', languages:'world', deities:'world', pantheons:'world', nations:'world', religions:'world',
-    quests:'adventure', adventures:'adventure', encounters:'adventure',
-    sessions:'sessions', milestones:'sessions', secrets:'secrets', handouts:'secrets',
-    homebrew:'homebrew', tables:'library', compendium:'library', rules:'library',
-    characters:'pc-character', journals:'pc-journal',
-    maps:'geography', dungeons:'geography', nobleFamilies:'relationship-matrix',
-    hybridAncestries:'hybrid-ancestry', timers:'war-machine', enemyTemplates:'war-machine',
-    warFronts:'endgame', incursions:'endgame', endgameStates:'endgame',
-  };
-  const dc = ce(main, 'div', 'te-card');
-  const dcHead = ce(dc, 'div', 'te-card-head');
-  ce(dcHead, 'span', 'te-card-icon', '📊');
-  ce(dcHead, 'h3', 'te-card-title', 'Content Summary — click any tile to navigate');
-  const backupRow = ce(dc, 'div', 'te-card-actions');
-  btn(backupRow, '💾 Backup Now', 'te-btn is-sm', () => exportBackup(plugin));
-  btn(backupRow, '📥 Restore Backup', 'te-btn is-sm', () => new RestoreBackupModal(plugin.app, plugin).open());
-  btn(backupRow, '🔧 Repair & Reindex', 'te-btn is-sm', async () => {
-    const issues = repairAndReindex(state); await plugin.saveState();
-    new Notice(issues.length ? `Repaired ${issues.length} issue(s).` : 'No issues found.');
-  });
-  const dcGrid = ce(dc, 'div', 'te-stat-grid');
-  dcGrid.style.marginTop = '8px';
-  const ek = Object.keys(state.entities);
-  ek.forEach(k => {
-    if (!safeArr(state.entities[k]).length) return;
-    const sc = ce(dcGrid, 'div', 'te-stat-card');
-    sc.style.cssText = 'padding:8px;cursor:pointer;transition:box-shadow .15s';
-    sc.title = `Go to ${ENTITY_LABELS[k] || k}`;
-    ce(sc, 'div', 'te-stat-big', state.entities[k].length);
-    ce(sc, 'div', 'te-stat-label', ENTITY_LABELS[k] || k);
-    if (ENTITY_NAV[k]) {
-      sc.addEventListener('click', async () => { state.activeSection = ENTITY_NAV[k]; await plugin.saveState(); });
-      sc.addEventListener('mouseenter', () => { sc.style.boxShadow = '0 0 0 2px var(--te-accent)'; });
-      sc.addEventListener('mouseleave', () => { sc.style.boxShadow = ''; });
+
+  // ── Active Campaign hero card ────────────────────────────────────────────────
+  sectionHead(main, 'Active Campaign');
+  const ac = ce(main, 'div', 'te-card');
+  if (!camp) {
+    const hd = ce(ac, 'div', 'te-card-head');
+    ce(hd, 'span', 'te-card-icon', '📜');
+    ce(hd, 'h3', 'te-card-title', 'No active campaign');
+    ce(ac, 'p', 'te-card-body', 'Set up a campaign to unlock the full cockpit — quests, sessions, maps, and live-play tools all scope to your active campaign.');
+    const acts = ce(ac, 'div', 'te-card-actions');
+    btn(acts, '🧙 Campaign Wizard', 'te-btn is-primary', () => new CampaignWizardModal(plugin.app, plugin).open());
+    btn(acts, '+ Quick Campaign', 'te-btn', () => new CampaignModal(plugin.app, plugin).open());
+    btn(acts, 'View All Campaigns', 'te-btn is-sm', async () => { state.activeSection = 'campaigns'; await plugin.saveState(); });
+  } else {
+    const hd = ce(ac, 'div', 'te-card-head');
+    ce(hd, 'span', 'te-card-icon', '📜');
+    const titleWrap = ce(hd, 'div', ''); titleWrap.style.cssText = 'flex:1';
+    ce(titleWrap, 'h3', 'te-card-title', camp.name);
+    const tagline = camp.tagline || camp.summary || '';
+    if (tagline) { const tl = ce(ac, 'p', 'te-card-body', tagline.slice(0, 200)); tl.style.fontStyle = 'italic'; }
+    const meta = ce(ac, 'div', 'te-card-meta');
+    const mf = [
+      ['Ruleset', camp.ruleset || ''],
+      ['Level Range', camp.levelRange || ''],
+      ['Players', camp.playerCount ? String(camp.playerCount) : ''],
+      ['Sessions', String(safeArr(state.entities.sessions).filter(s => s.campaignId === campId).length)],
+    ];
+    mf.forEach(([label, val]) => {
+      if (!val) return;
+      const row = ce(meta, 'div', 'te-card-meta-row');
+      ce(row, 'span', 'te-card-meta-label', label);
+      ce(row, 'span', '', val);
+    });
+    const acts = ce(ac, 'div', 'te-card-actions');
+    btn(acts, '▶ Run Session', 'te-btn is-primary', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
+    btn(acts, 'Campaign Bible', 'te-btn is-sm', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'bible'; await plugin.saveState(); });
+    btn(acts, 'Edit Campaign', 'te-btn is-sm', () => new CampaignModal(plugin.app, plugin, camp).open());
+    btn(acts, 'Switch Campaign', 'te-btn is-sm', async () => { state.activeSection = 'campaigns'; await plugin.saveState(); });
+  }
+
+  // ── Run Session panel ────────────────────────────────────────────────────────
+  sectionHead(main, 'Run Session');
+  const rs = ce(main, 'div', 'te-card');
+  const rsHd = ce(rs, 'div', 'te-card-head');
+  ce(rsHd, 'span', 'te-card-icon', '▶');
+  ce(rsHd, 'h3', 'te-card-title', state.sessionRunMode ? 'Session in progress' : 'Start a session');
+  if (!camp) {
+    ce(rs, 'p', 'te-card-body', 'Set an active campaign first to unlock session tools.');
+  } else if (state.sessionRunMode) {
+    const activeSess = safeArr(state.entities.sessions).find(s => s.id === state.activeSessionId);
+    const sessLabel = activeSess ? (activeSess.name || activeSess.title || `Session #${activeSess.sessionNum || '?'}`) : 'Active session';
+    ce(rs, 'p', 'te-card-body', `${sessLabel} is running. Resume to continue tracking events, context, and combat.`);
+    const acts = ce(rs, 'div', 'te-card-actions');
+    btn(acts, '▶ Resume Session', 'te-btn is-primary', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
+  } else {
+    ce(rs, 'p', 'te-card-body', 'No session running. Start one to track events, NPCs, quests, dice rolls, and more.');
+    const acts = ce(rs, 'div', 'te-card-actions');
+    btn(acts, '▶ Start Session', 'te-btn is-primary', async () => { state.activeSection = 'campaigns'; state.activeSubSection = 'run-session'; await plugin.saveState(); });
+  }
+  // Latest session review
+  const recentSessions = safeArr(state.entities.sessions)
+    .filter(s => !campId || s.campaignId === campId)
+    .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+  if (recentSessions.length) {
+    const latest = recentSessions[0];
+    const latestLabel = latest.name || latest.title || `Session #${latest.sessionNum || '?'}`;
+    const latestDate = (latest.updatedAt || latest.createdAt || '').slice(0, 10);
+    const latestRow = ce(rs, 'div', 'te-card-meta'); latestRow.style.marginTop = '8px';
+    const lr = ce(latestRow, 'div', 'te-card-meta-row');
+    ce(lr, 'span', 'te-card-meta-label', 'Latest');
+    ce(lr, 'span', '', `${latestLabel}${latestDate ? ' — ' + latestDate : ''}`);
+    if (!rs.querySelector('.te-card-actions')) {
+      const rsa = ce(rs, 'div', 'te-card-actions');
+      btn(rsa, 'View All Sessions', 'te-btn is-sm', async () => { state.activeSection = 'sessions'; await plugin.saveState(); });
+    } else {
+      const rsBtns = rs.querySelector('.te-card-actions');
+      btn(rsBtns, 'View All Sessions', 'te-btn is-sm', async () => { state.activeSection = 'sessions'; await plugin.saveState(); });
     }
-  });
+  }
+
+  // ── Live status: Active Quests & Factions ───────────────────────────────────
+  if (camp) {
+    const activeQuests = safeArr(state.entities.quests).filter(q => scopedQ(q) && q.status === 'Active');
+    const activeFactions = safeArr(state.entities.factions).filter(scopedF);
+    if (activeQuests.length || activeFactions.length) {
+      const liveRow = ce(main, 'div', ''); liveRow.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap';
+
+      if (activeQuests.length) {
+        sectionHead(main, 'Active Quests');
+        const qc = ce(main, 'div', 'te-card');
+        activeQuests.slice(0, 5).forEach(q => {
+          const row = ce(qc, 'div', 'te-card-meta-row');
+          ce(row, 'span', '', q.name || q.title || 'Unnamed quest');
+          if (q.priority) { const pb = ce(row, 'span', 'te-chip', q.priority); pb.style.cssText = 'font-size:.7rem;margin-left:6px'; }
+        });
+        if (activeQuests.length > 5) ce(qc, 'div', 'te-muted-text', `+${activeQuests.length - 5} more`);
+        const qacts = ce(qc, 'div', 'te-card-actions');
+        btn(qacts, 'Open Quests', 'te-btn is-sm', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
+      }
+
+      if (activeFactions.length) {
+        sectionHead(main, 'Factions');
+        const fc = ce(main, 'div', 'te-card');
+        activeFactions.slice(0, 5).forEach(f => {
+          const row = ce(fc, 'div', 'te-card-meta-row');
+          ce(row, 'span', '', f.name || 'Unnamed faction');
+          if (f.alignment) { const ab = ce(row, 'span', 'te-chip', f.alignment); ab.style.cssText = 'font-size:.7rem;margin-left:6px'; }
+        });
+        if (activeFactions.length > 5) ce(fc, 'div', 'te-muted-text', `+${activeFactions.length - 5} more`);
+        const facts = ce(fc, 'div', 'te-card-actions');
+        btn(facts, 'Open Factions', 'te-btn is-sm', async () => { state.activeSection = 'world'; await plugin.saveState(); });
+      }
+    } else {
+      // Empty-state CTA when no quests or factions exist yet
+      sectionHead(main, 'Campaign Progress');
+      const ep = ce(main, 'div', 'te-card');
+      ce(ep, 'p', 'te-card-body', 'No active quests or factions yet. Add quests and factions to start tracking campaign pressure here.');
+      const epacts = ce(ep, 'div', 'te-card-actions');
+      btn(epacts, '+ Add Quest', 'te-btn is-sm', async () => { state.activeSection = 'adventure'; await plugin.saveState(); });
+      btn(epacts, '+ Add Faction', 'te-btn is-sm', async () => { state.activeSection = 'world'; await plugin.saveState(); });
+    }
+  }
+
+  // ── Diagnostics (only when issues detected) ─────────────────────────────────
+  const issues = repairAndReindex(state);
+  if (issues.length) {
+    sectionHead(main, 'Diagnostics');
+    const dc = ce(main, 'div', 'te-card');
+    dc.style.borderColor = 'var(--te-danger, #c0392b)';
+    const dh = ce(dc, 'div', 'te-card-head');
+    ce(dh, 'span', 'te-card-icon', '⚠️');
+    ce(dh, 'h3', 'te-card-title', `${issues.length} data issue${issues.length > 1 ? 's' : ''} detected`);
+    ce(dc, 'p', 'te-card-body', issues.slice(0, 3).join(' • '));
+    const dacts = ce(dc, 'div', 'te-card-actions');
+    btn(dacts, '🔧 Repair & Reindex', 'te-btn is-primary is-sm', async () => {
+      repairAndReindex(state); await plugin.saveState();
+      new Notice('Repair complete.');
+    });
+    btn(dacts, '💾 Backup Now', 'te-btn is-sm', () => exportBackup(plugin));
+  }
+
+  // ── Utilities strip ──────────────────────────────────────────────────────────
+  sectionHead(main, 'Utilities');
+  const uc = ce(main, 'div', 'te-card');
+  const uacts = ce(uc, 'div', 'te-card-actions');
+  btn(uacts, '💾 Backup Now', 'te-btn is-sm', () => exportBackup(plugin));
+  btn(uacts, '📥 Restore Backup', 'te-btn is-sm', () => new RestoreBackupModal(plugin.app, plugin).open());
+  if (!issues.length) {
+    btn(uacts, '🔧 Repair & Reindex', 'te-btn is-sm', async () => {
+      const found = repairAndReindex(state); await plugin.saveState();
+      new Notice(found.length ? `Repaired ${found.length} issue(s).` : 'No issues found.');
+    });
+  }
+  btn(uacts, '🎲 Roll Dice', 'te-btn is-sm', () => new DiceModal(plugin.app, plugin).open());
 }
 
 // ── CAMPAIGNS ─────────────────────────────────────────────────────────────────
