@@ -3281,7 +3281,7 @@ function renderCompendiumLibrary(main, plugin) {
     { id: 'compendium', label: '📚 Compendium' },
     { id: 'reference',  label: '📖 5e Reference' },
     { id: 'homebrew',   label: '🧪 Homebrew' },
-    { id: 'my-content', label: '📊 My Content' },
+    { id: 'my-content', label: '📊 My Content / Saved Items' },
   ];
   const sub = state.activeSubSection || 'compendium';
   const wrap = ce(main, 'div', 'te-workspace-content');
@@ -3294,7 +3294,7 @@ function renderCompendiumLibrary(main, plugin) {
 
 function renderMyContent(main, plugin, tabs) {
   const state = plugin.state;
-  pageHead(main, plugin, 'My Content', 'Overview of everything you have created in this campaign.', [], tabs);
+  pageHead(main, plugin, 'My Content / Saved Items', 'Overview of everything you have created in this campaign.', [], tabs);
   const ENTITY_NAV = {
     campaigns:'campaign-command', worlds:'world-atlas', cosmologies:'world-atlas', realms:'world-atlas',
     regions:'world-atlas', settlements:'world-atlas', locations:'world-atlas', pois:'world-atlas',
@@ -5205,39 +5205,142 @@ const handoutFields = [
 ];
 
 // ── COMPENDIUM & LIBRARY ──────────────────────────────────────────────────────
+
+// Classify a stored item into a source bucket at read time (non-destructive).
+// 5e reference items are never passed here — they live in refData, not entities.
+function classifySourceBucket(item, entityKey) {
+  if (entityKey === 'homebrew' || item.source === 'homebrew' || item.isHomebrew) return 'homebrew';
+  if (item.source === 'imported' || item.importedAt || item.importSource) return 'imported';
+  if (item.source === 'generated' || item.generatedAt || item.isGenerated) return 'generated';
+  if (item.campaignId) return 'campaign';
+  return 'saved';
+}
+
+// Stamp normalized storage metadata onto an item before save.
+// Only fills in missing fields — does not overwrite existing values.
+function normalizeStorageMetadata(item, overrides) {
+  if (!item.source && overrides && overrides.source) item.source = overrides.source;
+  if (!item.status) item.status = (overrides && overrides.status) || 'active';
+  if (!item.visibility) item.visibility = (overrides && overrides.visibility) || 'dm-only';
+  if (!item.campaignId && overrides && overrides.campaignId) item.campaignId = overrides.campaignId;
+  if (!item.tags) item.tags = (overrides && overrides.tags) || [];
+  return item;
+}
+
 function renderLibrary(main, plugin, tabs) {
+  const state = plugin.state;
   pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries. Import JSON or export backups.', [
     { label: '+ Entry', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'compendium', null, compendiumFields).open() },
     { label: '📥 Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() },
     { label: '💾 Export Backup', onClick: () => exportBackup(plugin) },
   ], tabs);
 
-  // Filter by type
-  const types = [...new Set(safeArr(plugin.state.entities.compendium).map(c => c.type).filter(Boolean))];
-  if (types.length > 1) {
-    const filterRow = ce(main, 'div', 'te-card-actions');
-    filterRow.style.marginBottom = '12px';
-    ce(filterRow, 'span', 'te-card-meta-label', 'Filter:');
-    btn(filterRow, 'All', 'te-btn is-sm is-primary', () => {
-      plugin.state.search = ''; plugin.saveState();
-    });
-    types.forEach(type => btn(filterRow, type, 'te-btn is-sm', () => {
-      plugin.state.search = type; plugin.saveState();
-    }));
-  }
+  // Local filter state — does not write to plugin.state.search
+  const libFilter = { search: '', source: '', category: '', visibility: '', campaign: '' };
 
-  sectionHead(main, 'Compendium Entries');
-  itemCards(main, plugin, 'compendium', { meta: ['type', 'source', 'level'] });
-  sectionHead(main, 'Rollable Tables');
-  itemCards(main, plugin, 'tables', {
-    meta: ['type'],
-    onExtra: (acts, item) => {
-      btn(acts, 'Roll', 'te-btn is-sm is-primary', () => {
-        const result = rollTable(item.summary || item.rows || '');
-        new Notice(`Roll result: ${result}`, 6000);
-      });
-    },
+  // Filter bar
+  const filterCard = ce(main, 'div', 'te-card');
+  filterCard.style.marginBottom = '12px';
+  const filterRow = ce(filterCard, 'div', '');
+  filterRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+
+  const searchIn = ce(filterRow, 'input');
+  searchIn.type = 'text'; searchIn.placeholder = 'Search name or tag…';
+  searchIn.style.cssText = 'flex:1;min-width:140px;padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+
+  const sourceSel = ce(filterRow, 'select');
+  sourceSel.style.cssText = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  [['', 'All Sources'], ['campaign', 'Campaign'], ['homebrew', 'Homebrew'], ['imported', 'Imported'], ['generated', 'Generated'], ['saved', 'Saved']].forEach(([v, l]) => {
+    const o = ce(sourceSel, 'option', '', l); o.value = v;
   });
+
+  const catSel = ce(filterRow, 'select');
+  catSel.style.cssText = sourceSel.style.cssText;
+  const allTypes = [...new Set(safeArr(state.entities.compendium).map(c => c.type).filter(Boolean))];
+  [['', 'All Types'], ...allTypes.map(t => [t, t])].forEach(([v, l]) => {
+    const o = ce(catSel, 'option', '', l); o.value = v;
+  });
+
+  const visSel = ce(filterRow, 'select');
+  visSel.style.cssText = sourceSel.style.cssText;
+  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible']].forEach(([v, l]) => {
+    const o = ce(visSel, 'option', '', l); o.value = v;
+  });
+
+  const campSel = ce(filterRow, 'select');
+  campSel.style.cssText = sourceSel.style.cssText;
+  const campaigns = safeArr(state.entities.campaigns);
+  const campOpts = [['', 'All Campaigns'], ...campaigns.map(c => [c.id, c.name])];
+  campOpts.forEach(([v, l]) => { const o = ce(campSel, 'option', '', l); o.value = v; });
+  if (state.activeCampaignId) campSel.value = state.activeCampaignId;
+  libFilter.campaign = campSel.value;
+
+  btn(filterRow, '× Clear', 'te-btn is-sm', () => {
+    searchIn.value = ''; sourceSel.value = ''; catSel.value = ''; visSel.value = ''; campSel.value = '';
+    Object.assign(libFilter, { search: '', source: '', category: '', visibility: '', campaign: '' });
+    rebuild();
+  });
+
+  const contentArea = ce(main, 'div', '');
+
+  const rebuild = () => {
+    clear(contentArea);
+    const q = libFilter.search.toLowerCase();
+    const compItems = safeArr(state.entities.compendium).filter(item => {
+      if (q && !(item.name || '').toLowerCase().includes(q) && !safeArr(item.tags).some(t => t.toLowerCase().includes(q))) return false;
+      if (libFilter.source && classifySourceBucket(item, 'compendium') !== libFilter.source) return false;
+      if (libFilter.category && item.type !== libFilter.category) return false;
+      if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
+      if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
+      return true;
+    });
+    const tableItems = safeArr(state.entities.tables).filter(item => {
+      if (q && !(item.name || '').toLowerCase().includes(q)) return false;
+      if (libFilter.source && classifySourceBucket(item, 'tables') !== libFilter.source) return false;
+      if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
+      if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
+      return true;
+    });
+
+    sectionHead(contentArea, `Compendium Entries${compItems.length !== safeArr(state.entities.compendium).length ? ` (${compItems.length} of ${safeArr(state.entities.compendium).length})` : ''}`);
+    if (!compItems.length) {
+      ce(contentArea, 'p', 'te-muted-text', 'No compendium entries match the current filters.');
+    } else {
+      itemCards(contentArea, plugin, 'compendium', { items: compItems, meta: ['type', 'source', 'level'] });
+    }
+
+    sectionHead(contentArea, `Rollable Tables${tableItems.length !== safeArr(state.entities.tables).length ? ` (${tableItems.length} of ${safeArr(state.entities.tables).length})` : ''}`);
+    if (!tableItems.length) {
+      ce(contentArea, 'p', 'te-muted-text', 'No tables match the current filters.');
+    } else {
+      itemCards(contentArea, plugin, 'tables', {
+        items: tableItems,
+        meta: ['type'],
+        onExtra: (acts, item) => {
+          btn(acts, 'Roll', 'te-btn is-sm is-primary', () => {
+            const result = rollTable(item.summary || item.rows || '');
+            new Notice(`Roll result: ${result}`, 6000);
+          });
+        },
+      });
+    }
+  };
+
+  const onChange = () => {
+    libFilter.search = searchIn.value;
+    libFilter.source = sourceSel.value;
+    libFilter.category = catSel.value;
+    libFilter.visibility = visSel.value;
+    libFilter.campaign = campSel.value;
+    rebuild();
+  };
+  searchIn.addEventListener('input', onChange);
+  sourceSel.addEventListener('change', onChange);
+  catSel.addEventListener('change', onChange);
+  visSel.addEventListener('change', onChange);
+  campSel.addEventListener('change', onChange);
+
+  rebuild();
 }
 
 function rollTable(rows) {
@@ -5262,14 +5365,76 @@ const compendiumFields = [
 
 // ── HOMEBREW ──────────────────────────────────────────────────────────────────
 function renderHomebrew(main, plugin, tabs) {
+  const state = plugin.state;
   pageHead(main, plugin, 'Homebrew', 'Create and manage homebrew content for your campaign.', [
     { label: '+ Homebrew Entry', primary: true, onClick: () => new HomebrewModal(plugin.app, plugin).open() },
   ], tabs);
-  sectionHead(main, 'Homebrew Entries');
-  itemCards(main, plugin, 'homebrew', {
-    meta: ['type', 'status', 'visibility'],
-    onEdit: (plugin, key, item) => new HomebrewModal(plugin.app, plugin, item).open(),
+
+  // Local filter state
+  const hbFilter = { search: '', status: '', visibility: '' };
+
+  const filterCard = ce(main, 'div', 'te-card');
+  filterCard.style.marginBottom = '12px';
+  const filterRow = ce(filterCard, 'div', '');
+  filterRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+
+  const searchIn = ce(filterRow, 'input');
+  searchIn.type = 'text'; searchIn.placeholder = 'Search name…';
+  searchIn.style.cssText = 'flex:1;min-width:140px;padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+
+  const statusSel = ce(filterRow, 'select');
+  statusSel.style.cssText = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  [['', 'All Status'], ['active', 'Active'], ['draft', 'Draft'], ['archived', 'Archived']].forEach(([v, l]) => {
+    const o = ce(statusSel, 'option', '', l); o.value = v;
   });
+
+  const visSel = ce(filterRow, 'select');
+  visSel.style.cssText = statusSel.style.cssText;
+  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible']].forEach(([v, l]) => {
+    const o = ce(visSel, 'option', '', l); o.value = v;
+  });
+
+  btn(filterRow, '× Clear', 'te-btn is-sm', () => {
+    searchIn.value = ''; statusSel.value = ''; visSel.value = '';
+    Object.assign(hbFilter, { search: '', status: '', visibility: '' });
+    rebuildHb();
+  });
+
+  const contentArea = ce(main, 'div', '');
+
+  const rebuildHb = () => {
+    clear(contentArea);
+    const q = hbFilter.search.toLowerCase();
+    const items = safeArr(state.entities.homebrew).filter(item => {
+      if (q && !(item.name || '').toLowerCase().includes(q) && !(item.type || '').toLowerCase().includes(q)) return false;
+      if (hbFilter.status && item.status && item.status.toLowerCase() !== hbFilter.status) return false;
+      if (hbFilter.visibility && item.visibility && item.visibility !== hbFilter.visibility) return false;
+      return true;
+    });
+    const all = safeArr(state.entities.homebrew).length;
+    sectionHead(contentArea, `Homebrew Entries${items.length !== all ? ` (${items.length} of ${all})` : ''}`);
+    if (!items.length) {
+      ce(contentArea, 'p', 'te-muted-text', 'No homebrew entries match the current filters.');
+    } else {
+      itemCards(contentArea, plugin, 'homebrew', {
+        items,
+        meta: ['type', 'status', 'visibility'],
+        onEdit: (plugin, key, item) => new HomebrewModal(plugin.app, plugin, item).open(),
+      });
+    }
+  };
+
+  const onChange = () => {
+    hbFilter.search = searchIn.value;
+    hbFilter.status = statusSel.value;
+    hbFilter.visibility = visSel.value;
+    rebuildHb();
+  };
+  searchIn.addEventListener('input', onChange);
+  statusSel.addEventListener('change', onChange);
+  visSel.addEventListener('change', onChange);
+
+  rebuildHb();
 }
 
 // ── GENERATORS ────────────────────────────────────────────────────────────────
@@ -8279,7 +8444,8 @@ class EndSessionReviewModal extends Modal {
 function logGeneratorHistory(plugin, entry) {
   if (!plugin.state.generatorHistory) plugin.state.generatorHistory = [];
   const camp = activeCampaign(plugin.state);
-  plugin.state.generatorHistory.unshift({ id: uid('gen'), savedAt: Date.now(), status: 'generated', campaignId: camp ? camp.id : '', ...entry });
+  const histItem = normalizeStorageMetadata({ id: uid('gen'), savedAt: Date.now(), campaignId: camp ? camp.id : '', ...entry }, { source: 'generated', status: 'generated' });
+  plugin.state.generatorHistory.unshift(histItem);
   if (plugin.state.generatorHistory.length > 200) plugin.state.generatorHistory.length = 200;
 }
 
@@ -8525,7 +8691,12 @@ class ImportModal extends Modal {
         await this.plugin.saveState();
         new Notice(`Imported ${imported} entities from backup. A safety backup was saved first.`);
       } else {
-        this._parsed.forEach(x => upsert(this.plugin.state, this.key, Object.assign({ id: uid(this.key), name: 'Imported Entry' }, x)));
+        const campId = this.plugin.state.activeCampaignId || '';
+        this._parsed.forEach(x => {
+          const item = Object.assign({ id: uid(this.key), name: 'Imported Entry' }, x);
+          normalizeStorageMetadata(item, { source: 'imported', campaignId: campId });
+          upsert(this.plugin.state, this.key, item);
+        });
         await this.plugin.saveState();
         new Notice(`Imported ${this._parsed.length} item(s) into ${this.key}. A safety backup was saved first.`);
       }
