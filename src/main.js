@@ -6585,30 +6585,120 @@ function renderRunSession(main, plugin, tabs) {
     btn(mapBtns2, '🗺️ Open Tile Map', 'te-btn is-sm is-primary', async () => { state.activeSection = 'tile-map'; await saveStatePreserveScroll(plugin); });
   }
 
-  // ── 6. Full Entity Generators ─────────────────────────────────────────────────
-  sectionHead(leftCol, '⚡ Full Entity Generators');
-  const rsGenGrid = ce(leftCol, 'div', 'te-grid');
-  const RS_GENS = [
-    ['Complete NPC', '👤', generateCompleteNPC, 'npcs', NPCModal],
-    ['Complete Encounter', '⚔️', generateCompleteEncounter, 'encounters', EncounterModal],
-    ['Complete Tavern', '🍺', generateCompleteTavern, 'locations', null],
-    ['Complete Shop', '🛒', generateCompleteShop, 'locations', null],
-    ['Complete Quest', '📋', generateCompleteQuest, 'quests', QuestModal],
-    ['Complete Rumour', '💬', generateCompleteRumour, 'secrets', null],
-    ['Complete Secret', '🔒', generateCompleteSecret, 'secrets', null],
-    ['Complete Loot', '💰', generateCompleteLoot, 'loot', null],
-    ['Complete POI', '📍', generateCompletePOI, 'pois', null],
-    ['Complete Dungeon Room', '🚪', generateCompleteDungeonRoom, 'locations', null],
+  // ── 6. Unified Generator ──────────────────────────────────────────────────────
+  sectionHead(leftCol, '⚡ Generator');
+  const ugenWrap = ce(leftCol, 'div', 'te-card'); ugenWrap.style.cssText = 'padding:12px';
+
+  const ugenResultEl = ce(ugenWrap, 'div', 'te-result-box', 'Select a type and press Generate.');
+  ugenResultEl.style.cssText = 'min-height:48px;padding:10px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:10px;font-size:.9rem;line-height:1.5;white-space:pre-wrap';
+
+  const UNIFIED_GENS = [
+    { label: '── Partial Results ──', disabled: true },
+    { type: 'NPC Name',        label: 'NPC Name',            partial: true,  saveKey: 'npcs' },
+    { type: 'NPC Trait',       label: 'NPC Trait',           partial: true },
+    { type: 'Faction Name',    label: 'Faction Name',        partial: true,  saveKey: 'factions' },
+    { type: 'Quest Hook',      label: 'Quest Hook',          partial: true,  saveKey: 'quests' },
+    { type: 'Plot Twist',      label: 'Plot Twist',          partial: true },
+    { type: 'Rumour',          label: 'Rumour',              partial: true },
+    { type: 'Tavern Name',     label: 'Tavern Name',         partial: true },
+    { type: 'Loot',            label: 'Loot Drop',           partial: true },
+    { type: 'Weather',         label: 'Weather',             partial: true },
+    { type: 'Travel Event',    label: 'Travel Event',        partial: true },
+    { type: 'Dungeon Room',    label: 'Dungeon Room Desc',   partial: true },
+    { type: 'Wild Magic Surge',label: 'Wild Magic Surge',    partial: true },
+    { type: 'Town Event',      label: 'Town Event',          partial: true },
+    { type: 'Trap',            label: 'Trap Description',    partial: true },
+    { label: '── Full Entities ──', disabled: true },
+    { type: 'Full NPC',          label: 'Full NPC',           partial: false, genFn: generateCompleteNPC,         entityKey: 'npcs',        ModalClass: NPCModal },
+    { type: 'Full Encounter',    label: 'Full Encounter',     partial: false, genFn: generateCompleteEncounter,   entityKey: 'encounters',  ModalClass: EncounterModal },
+    { type: 'Full Quest',        label: 'Full Quest',         partial: false, genFn: generateCompleteQuest,       entityKey: 'quests',      ModalClass: QuestModal },
+    { type: 'Full Faction',      label: 'Full Faction',       partial: false, genFn: generateCompleteFaction,     entityKey: 'factions',    ModalClass: FactionModal },
+    { type: 'Full Settlement',   label: 'Full Settlement',    partial: false, genFn: generateCompleteSettlement,  entityKey: 'settlements', ModalClass: null },
+    { type: 'Full Tavern',       label: 'Full Tavern',        partial: false, genFn: generateCompleteTavern,      entityKey: 'locations',   ModalClass: null },
+    { type: 'Full Shop',         label: 'Full Shop',          partial: false, genFn: generateCompleteShop,        entityKey: 'locations',   ModalClass: null },
+    { type: 'Full Rumour',       label: 'Full Rumour',        partial: false, genFn: generateCompleteRumour,      entityKey: 'secrets',     ModalClass: null },
+    { type: 'Full Secret',       label: 'Full Secret',        partial: false, genFn: generateCompleteSecret,      entityKey: 'secrets',     ModalClass: null },
+    { type: 'Full Loot',         label: 'Full Loot',          partial: false, genFn: generateCompleteLoot,        entityKey: 'loot',        ModalClass: null },
+    { type: 'Full POI',          label: 'Full POI',           partial: false, genFn: generateCompletePOI,         entityKey: 'pois',        ModalClass: null },
+    { type: 'Full Dungeon Room', label: 'Full Dungeon Room',  partial: false, genFn: generateCompleteDungeonRoom, entityKey: 'locations',   ModalClass: null },
+    { type: 'Full Travel Event', label: 'Full Travel Event',  partial: false, genFn: generateCompleteTravelEvent, entityKey: 'secrets',     ModalClass: null },
+    { type: 'Full Noble House',  label: 'Full Noble House',   partial: false, genFn: generateCompleteNobleHouse,  entityKey: 'factions',    ModalClass: null },
   ];
-  RS_GENS.forEach(([label, icon, genFn, entityKey, ModalClass]) => {
-    const c = ce(rsGenGrid, 'div', 'te-card');
-    const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', icon); ce(h, 'h3', 'te-card-title', label);
-    const a = ce(c, 'div', 'te-card-actions');
-    btn(a, 'Generate & Preview', 'te-btn is-primary is-sm', () => {
-      const draft = genFn(state);
-      if (activeSess) logSessionEvent(plugin, 'Generator Used', `[${label}] ${draft.name || 'draft'}`);
-      new EntityDraftModal(plugin.app, plugin, label, draft, entityKey, ModalClass).open();
-    });
+
+  const ugenSelRow = ce(ugenWrap, 'div', 'te-chip-add-row'); ugenSelRow.style.marginBottom = '8px';
+  const ugenSel = ce(ugenSelRow, 'select');
+  ugenSel.style.cssText = 'flex:1;padding:6px 8px;font-size:.9rem;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  UNIFIED_GENS.forEach(g => {
+    const o = ce(ugenSel, 'option', '', g.label);
+    if (g.disabled) { o.disabled = true; o.value = ''; } else o.value = g.type;
+  });
+  ugenSel.value = 'NPC Name';
+
+  let ugenLastType = '', ugenLastResult = '', ugenLastDraft = null;
+
+  const ugenActRow = ce(ugenWrap, 'div', 'te-card-actions');
+  ugenActRow.style.cssText = 'margin-top:8px;display:none;flex-wrap:wrap';
+
+  const ugenLogBtn = btn(ugenActRow, 'Log to Session', 'te-btn is-sm', async () => {
+    if (!ugenLastResult && !ugenLastDraft) return;
+    const text = ugenLastDraft ? `[${ugenLastType}] ${ugenLastDraft.name || 'draft'}` : `[${ugenLastType}] ${ugenLastResult}`;
+    logSessionEvent(plugin, 'Generator Used', text);
+    logGeneratorHistory(plugin, { type: ugenLastType, result: ugenLastDraft ? (ugenLastDraft.name || '') : ugenLastResult });
+    await saveStateQuiet(plugin);
+    new Notice('Logged to session.');
+  });
+
+  const ugenSaveBtn = btn(ugenActRow, 'Save as Entity', 'te-btn is-sm is-primary', () => {
+    if (!ugenLastResult && !ugenLastDraft) return;
+    const cfg = UNIFIED_GENS.find(g => g.type === ugenLastType);
+    if (!cfg) return;
+    if (cfg.partial) {
+      if (ugenLastType === 'NPC Name') new NPCModal(plugin.app, plugin, { name: ugenLastResult, campaignId: state.activeCampaignId }).open();
+      else if (ugenLastType === 'Faction Name') new FactionModal(plugin.app, plugin, { name: ugenLastResult, campaignId: state.activeCampaignId }).open();
+      else if (ugenLastType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [ugenLastResult], campaignId: state.activeCampaignId }).open();
+      else new Notice('Copy the result and add it to the relevant entity manually.');
+    } else if (ugenLastDraft) {
+      if (!ugenLastDraft.campaignId) ugenLastDraft.campaignId = state.activeCampaignId || '';
+      new EntityDraftModal(plugin.app, plugin, ugenLastType, ugenLastDraft, cfg.entityKey, cfg.ModalClass).open();
+    }
+  });
+
+  btn(ugenActRow, 'Copy', 'te-btn is-sm', () => {
+    const text = ugenLastDraft ? JSON.stringify(ugenLastDraft, null, 2) : ugenLastResult;
+    if (!text) return;
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => new Notice('Copied.'));
+    else new Notice('Clipboard not available.');
+  });
+
+  btn(ugenActRow, 'Clear', 'te-btn is-sm', () => {
+    ugenLastResult = ''; ugenLastDraft = null; ugenLastType = '';
+    ugenResultEl.textContent = 'Select a type and press Generate.';
+    ugenActRow.style.display = 'none';
+  });
+
+  const ugenBtnRow = ce(ugenWrap, 'div', 'te-card-actions'); ugenBtnRow.style.marginTop = '4px';
+  btn(ugenBtnRow, '⚡ Generate', 'te-btn is-primary', () => {
+    const type = ugenSel.value; if (!type) return;
+    ugenLastType = type; ugenLastResult = ''; ugenLastDraft = null;
+    const cfg = UNIFIED_GENS.find(g => g.type === type);
+    if (!cfg) return;
+    if (cfg.partial) {
+      ugenLastResult = generate(type, state);
+      ugenResultEl.textContent = ugenLastResult;
+    } else {
+      ugenLastDraft = cfg.genFn(state);
+      const lines = [];
+      for (const [k, v] of Object.entries(ugenLastDraft)) {
+        if (['id','campaignId','visibility','updatedAt','createdAt'].includes(k)) continue;
+        if (typeof v === 'string' && v) lines.push(`${k}: ${v.slice(0, 80)}`);
+        else if (Array.isArray(v) && v.length) lines.push(`${k}: ${v.slice(0, 3).join(', ')}`);
+      }
+      ugenResultEl.textContent = lines.slice(0, 12).join('\n') || `Generated ${type}`;
+    }
+    ugenActRow.style.display = '';
+    const canSave = cfg.partial ? ['NPC Name','Faction Name','Quest Hook'].includes(type) : true;
+    ugenSaveBtn.style.display = canSave ? '' : 'none';
+    ugenLogBtn.style.display = activeSess ? '' : 'none';
   });
 
   // ════════════════════════════════════════════════════════
@@ -6645,44 +6735,40 @@ function renderRunSession(main, plugin, tabs) {
   });
   formulaInp.addEventListener('keydown', e => { if (e.key === 'Enter') formulaRow.querySelector('button').click(); });
 
-  // ── 2. Quick Generators ───────────────────────────────────────────────────────
-  sectionHead(rightCol, '⚡ Quick Generators');
-  const genWrap = ce(rightCol, 'div', 'te-card'); genWrap.style.cssText = 'padding:12px';
-  const genResultEl = ce(genWrap, 'div', 'te-result-box', 'Pick a type and generate.');
-  genResultEl.style.cssText = 'min-height:40px;padding:8px 12px;border-radius:var(--te-r-md);border:1px solid var(--te-border);margin-bottom:8px;font-size:.95rem;line-height:1.4';
-  let lastGenType = 'NPC Name', lastGenResult = '';
-  const genTypeRow = ce(genWrap, 'div', 'te-card-actions'); genTypeRow.style.flexWrap = 'wrap';
-  const GEN_QUICK = ['NPC Name','NPC Trait','Quest Hook','Rumour','Faction Name','Dungeon Room','Wild Magic Surge','Weather','Travel Event','Loot','Tavern Name','Plot Twist','Town Event','Trap'];
-  GEN_QUICK.forEach(t => {
-    const b = btn(genTypeRow, t, 'te-btn is-sm' + (t === lastGenType ? ' is-primary' : ''), () => {
-      lastGenType = t;
-      Array.from(genTypeRow.querySelectorAll('button')).forEach(x => x.className = 'te-btn is-sm');
-      b.className = 'te-btn is-sm is-primary';
+  // ── 2. In-World Calendar ──────────────────────────────────────────────────────
+  sectionHead(rightCol, '📅 Calendar');
+  const calCard = ce(rightCol, 'div', 'te-card'); calCard.style.cssText = 'padding:12px';
+  const campCal = camp
+    ? (safeArr(state.entities.calendars).find(c => c.campaignId === camp.id) || state.calendar || null)
+    : (state.calendar || null);
+  if (campCal && (campCal.name || campCal.day !== undefined || campCal.month || campCal.year !== undefined)) {
+    const calMeta = ce(calCard, 'div', 'te-card-meta');
+    [
+      ['Calendar', campCal.name || 'Campaign Calendar'],
+      ['Date', `Day ${campCal.day ?? '—'}, ${campCal.month || '—'}, Year ${campCal.year ?? '—'}`],
+      safeArr(campCal.holidays).length ? ['Holidays', safeArr(campCal.holidays).slice(0, 3).join(' · ')] : null,
+    ].filter(Boolean).forEach(([label, val]) => {
+      const r = ce(calMeta, 'div', 'te-card-meta-row');
+      ce(r, 'span', 'te-card-meta-label', label);
+      ce(r, 'span', '', String(val).slice(0, 100));
     });
-  });
-  const genActRow = ce(genWrap, 'div', 'te-card-actions'); genActRow.style.marginTop = '8px';
-  let saveAsBtn, logToSessBtn;
-  btn(genActRow, 'Generate', 'te-btn is-primary', () => {
-    lastGenResult = generate(lastGenType, state);
-    genResultEl.textContent = lastGenResult;
-    saveAsBtn.style.display = ['NPC Name','Faction Name','Quest Hook'].includes(lastGenType) ? '' : 'none';
-    logToSessBtn.style.display = activeSess ? '' : 'none';
-  });
-  saveAsBtn = btn(genActRow, 'Save as Entity', 'te-btn', () => {
-    if (!lastGenResult) return;
-    if (lastGenType === 'NPC Name') new NPCModal(plugin.app, plugin, { name: lastGenResult }).open();
-    else if (lastGenType === 'Faction Name') new FactionModal(plugin.app, plugin, { name: lastGenResult }).open();
-    else if (lastGenType === 'Quest Hook') new QuestModal(plugin.app, plugin, { name: 'Generated Quest', hooks: [lastGenResult] }).open();
-  });
-  saveAsBtn.style.display = 'none';
-  logToSessBtn = btn(genActRow, 'Log to Session', 'te-btn', async () => {
-    if (!lastGenResult || !activeSess) return;
-    const evtType = lastGenType === 'Loot' ? 'Loot Generated' : 'Generator Used';
-    logSessionEvent(plugin, evtType, `[${lastGenType}] ${lastGenResult}`);
-    await saveStateQuiet(plugin);
-    new Notice('Logged to session.');
-  });
-  logToSessBtn.style.display = 'none';
+    const calBtns = ce(calCard, 'div', 'te-card-actions'); calBtns.style.marginTop = '8px';
+    btn(calBtns, '📅 Manage Calendar', 'te-btn is-sm is-primary', () => new CalendarModal(plugin.app, plugin).open());
+    if (typeof campCal.day === 'number') {
+      btn(calBtns, '+1 Day', 'te-btn is-sm', async () => {
+        campCal.day = (campCal.day || 0) + 1;
+        if (campCal.id) upsert(state, 'calendars', campCal);
+        else state.calendar = campCal;
+        if (activeSess) logSessionEvent(plugin, 'Date Advanced', `Day ${campCal.day}, ${campCal.month || ''}, Year ${campCal.year ?? ''}`);
+        await saveStateQuiet(plugin);
+        new Notice(`Advanced to Day ${campCal.day}.`);
+      });
+    }
+  } else {
+    ce(calCard, 'p', 'te-empty-state', 'No in-world calendar set up for this campaign.');
+    const calBtns2 = ce(calCard, 'div', 'te-card-actions'); calBtns2.style.marginTop = '8px';
+    btn(calBtns2, '📅 Set Up Calendar', 'te-btn is-sm is-primary', () => new CalendarModal(plugin.app, plugin).open());
+  }
 
   // ── 3. Combat Tracker ─────────────────────────────────────────────────────────
   sectionHead(rightCol, '⚔️ Combat Tracker');
