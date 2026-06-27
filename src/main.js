@@ -2318,7 +2318,7 @@ const RICH_EDIT_MAP = {
   sessions:         (p, i) => new SessionModal(p.app, p, i).open(),
   secrets:          (p, i) => new SecretModal(p.app, p, i).open(),
   calendars:        (p, i) => new CalendarModal(p.app, p, i).open(),
-  homebrew:         (p, i) => new HomebrewModal(p.app, p, i).open(),
+  homebrew:         (p, i) => openHomebrewEditor(p.app, p, i),
   characters:       (p, i) => new CharacterModal(p.app, p, i).open(),
   hybridAncestries: (p, i) => new HybridAncestryModal(p.app, p, i).open(),
   nobleFamilies:    (p, i) => new NobleFamilyModal(p.app, p, i).open(),
@@ -5448,6 +5448,7 @@ function getHomebrewSummary(item) {
   return item.summary || item.description || item.payload?.summary || summarizeMarkdownText(item.content);
 }
 function inferHomebrewType(item) {
+  if (item.homebrewType) return item.homebrewType;
   if (item.type) return item.type;
   if (item.category === 'Race / Ancestry' || item.sourceHybridId) return 'Hybrid Ancestry';
   if (item.payload?.kind) return item.payload.kind;
@@ -5459,13 +5460,15 @@ function normalizeHomebrewRecord(item, overrides) {
   record.id = record.id || (overrides && overrides.id) || uid('homebrew');
   record.homebrewId = record.homebrewId || record.id;
   record.name = record.name || record.title || 'Untitled Homebrew';
-  record.type = (overrides && overrides.type) || inferHomebrewType(record);
+  record.homebrewType = (overrides && overrides.homebrewType) || inferHomebrewType(record);
+  record.type = (overrides && overrides.type) || record.type || record.homebrewType;
   record.category = record.category || homebrewCategoryForType(record.type);
   record.source = 'homebrew';
   record.status = homebrewStatusValue(record.status || (overrides && overrides.status));
   record.visibility = record.visibility || (record.playerVisible ? 'player-visible' : '') || (overrides && overrides.visibility) || 'dm-only';
   if (!HOMEBREW_VISIBILITY_OPTIONS.includes(record.visibility)) record.visibility = 'dm-only';
   record.tags = normalizeListField(record.tags);
+  record.balanceNotes = record.balanceNotes || '';
   if (!record.sourceEntityType && record.sourceHybridId) record.sourceEntityType = 'hybridAncestries';
   if (!record.sourceEntityId && record.sourceHybridId) record.sourceEntityId = record.sourceHybridId;
   if (!record.promotedFromEntityType && record.sourceEntityType) record.promotedFromEntityType = record.sourceEntityType;
@@ -5479,6 +5482,10 @@ function normalizeHomebrewRecord(item, overrides) {
 }
 function renderHomebrewContent(item) {
   const h = normalizeHomebrewRecord(item);
+  const builder = (typeof HOMEBREW_BUILDERS !== 'undefined' && HOMEBREW_BUILDERS[h.homebrewType]) ? HOMEBREW_BUILDERS[h.homebrewType] : null;
+  if ((!h.content || !String(h.content).trim()) && builder && typeof builder.toMarkdown === 'function' && h.payload) {
+    return builder.toMarkdown(h.payload, h).trim();
+  }
   if (h.content) return h.content;
   if (h.payload?.kind === 'Creature') {
     const p = h.payload;
@@ -5537,6 +5544,7 @@ function promoteCreatureToHomebrew(plugin, creature) {
     ...(existing || {}),
     id: existing?.id || uid('homebrew'),
     name: creature.name,
+    homebrewType: 'Creature',
     type: 'Creature',
     category: 'Monsters & Statblocks',
     payload: {
@@ -5601,6 +5609,7 @@ function promoteDeityToHomebrew(plugin, deity) {
     ...(existing || {}),
     id: existing?.id || uid('homebrew'),
     name: deity.name,
+    homebrewType: 'Deity',
     type: 'Deity',
     category: 'Worlds & Planes',
     payload: {
@@ -5649,6 +5658,883 @@ function promoteDeityToHomebrew(plugin, deity) {
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   }));
+}
+
+const HOMEBREW_CATEGORY_OPTIONS = ['Character Options', 'Rules & Mechanics', 'Items & Equipment', 'Monsters & Statblocks', 'Worlds & Planes', 'Rollable Tables'];
+const HOMEBREW_ABILITY_OPTIONS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+const HOMEBREW_LANGUAGE_OPTIONS = ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Telepathy','Custom'];
+const HOMEBREW_DAMAGE_TYPES = ['Acid','Bludgeoning','Cold','Fire','Force','Lightning','Necrotic','Piercing','Poison','Psychic','Radiant','Slashing','Thunder','Custom'];
+const HOMEBREW_ITEM_TYPES = ['Adventuring Gear','Magic Item','Weapon','Armour','Wondrous Item','Consumable','Tool','Custom'];
+const HOMEBREW_ITEM_RARITIES = ['Common','Uncommon','Rare','Very Rare','Legendary','Artifact','Mundane','Custom'];
+const HOMEBREW_SPELL_LEVELS = ['0','1','2','3','4','5','6','7','8','9'];
+const HOMEBREW_COMPONENTS = ['V', 'S', 'M'];
+const HOMEBREW_ITEM_PROPERTY_SUGGESTIONS = ['Ammunition','Attunement','Finesse','Heavy','Light','Loading','Reach','Thrown','Two-Handed','Versatile','Requires Strength','Stealth Disadvantage','Custom'];
+const HOMEBREW_ARMOUR_CATEGORIES = ['Light Armour','Medium Armour','Heavy Armour','Shield','Natural Armour','Custom'];
+const HOMEBREW_WEAPON_CATEGORIES = ['Simple Melee','Simple Ranged','Martial Melee','Martial Ranged','Natural Weapon','Siege Weapon','Custom'];
+const HOMEBREW_POWER_TIERS = ['Ribbon','Minor','Moderate','Major','Capstone','Custom'];
+const HOMEBREW_RULE_CATEGORIES = ['Core','Combat','Exploration','Social','Downtime','Spellcasting','Equipment','Optional Rule','Custom'];
+const HOMEBREW_MECHANIC_CATEGORIES = ['Combat','Exploration','Social','Resource','Encounter','Crafting','Faction','Magic','Custom'];
+const HOMEBREW_PLANE_COSMOLOGIES = ['Great Wheel','World Tree','Material Plane + Echo Planes','Elemental Cosmology','Planar Sea','Dream Cosmology','Mythic Underworld','Custom'];
+const HOMEBREW_MOVEMENT_SUGGESTIONS = ['30 ft', '40 ft', '60 ft', 'Fly 30 ft', 'Swim 30 ft', 'Climb 30 ft', 'Burrow 20 ft', 'Hover', 'Custom'];
+
+function canonicalHomebrewBuilderType(type) {
+  const raw = String(type || '').trim();
+  if (['Weapon', 'Armour', 'Armor', 'Magic Item'].includes(raw)) return 'Item';
+  if (['Monster', 'Creature', 'Beast'].includes(raw)) return 'Creature';
+  if (['Race', 'Ancestry', 'Hybrid Ancestry'].includes(raw)) return 'Ancestry';
+  return raw;
+}
+function markdownListSection(title, values) {
+  const list = normalizeListField(values);
+  return list.length ? `## ${title}\n\n${list.map(v => `- ${v}`).join('\n')}\n\n` : '';
+}
+function flattenHomebrewPayload(record) {
+  const h = normalizeHomebrewRecord(record || {});
+  return Object.assign({}, h, h.payload || {});
+}
+function getCustomHomebrewClassOptions(plugin, item) {
+  const current = normalizeHomebrewRecord(item || {});
+  const fromHomebrew = safeArr(plugin.state.entities.homebrew)
+    .map(h => normalizeHomebrewRecord(h))
+    .filter(h => h.homebrewType === 'Class' && h.name)
+    .map(h => h.name);
+  return [...new Set([...CLASSES, ...fromHomebrew, current.parentClass || '', 'Custom'].filter(Boolean))];
+}
+function homebrewSummaryFromValues(definition, values) {
+  return values.summary
+    || values.description
+    || values.flavor
+    || values.effect
+    || values.fullText
+    || values.ruleText
+    || values.notes
+    || definition.label;
+}
+function hybridAncestryToBuilderValues(values) {
+  const traits = safeArr(values.traits).map(id => {
+    const found = HYBRID_TRAIT_LIBRARY.find(t => t.id === id);
+    return found ? found.name : id;
+  }).filter(Boolean);
+  return {
+    description: values.summary || '',
+    flavor: values.summary || '',
+    creatureType: values.creatureType || 'Humanoid',
+    size: values.size || 'Medium',
+    walkingSpeed: values.speed || 30,
+    flyingSpeed: 0,
+    swimmingSpeed: 0,
+    climbingSpeed: 0,
+    burrowingSpeed: 0,
+    abilityScoreMode: values.asiMode === 'manual' ? 'Custom' : 'Flexible',
+    abilityScoreBonuses: [],
+    abilityScoreText: values.asiNotes || '',
+    age: values.ageNotes || '',
+    alignment: '',
+    languages: normalizeListField(values.languages || values.languageNotes),
+    traits,
+    traitText: traits.join('\n'),
+    subraces: [],
+    subraceNotes: '',
+    balanceNotes: values.balanceRating ? `${values.balanceRating} (${values.balanceScore || 0})` : '',
+  };
+}
+
+const HOMEBREW_BUILDERS = {
+  Spell: {
+    label: 'Spell',
+    category: 'Rules & Mechanics',
+    defaults: {
+      flavor: '',
+      level: '0',
+      school: 'Evocation',
+      schoolCustom: '',
+      castingTime: '1 action',
+      range: 'Self',
+      components: ['V', 'S'],
+      material: '',
+      materialCost: '',
+      duration: 'Instantaneous',
+      targetArea: '',
+      savingThrow: '',
+      attackRoll: '',
+      description: '',
+      higherLevels: '',
+      spellLists: [],
+    },
+    sections: [
+      { title: 'Identity', fields: [
+        { key: 'flavor', label: 'Flavor / Description', type: 'textarea' },
+        { key: 'level', label: 'Level', type: 'select', options: HOMEBREW_SPELL_LEVELS },
+        { key: 'school', label: 'School', type: 'select', options: [...OPTION_BANKS.spellSchools, 'Custom'] },
+        { key: 'schoolCustom', label: 'Custom School', type: 'text', when: v => v.school === 'Custom' },
+      ]},
+      { title: 'Casting', fields: [
+        { key: 'castingTime', label: 'Casting Time', type: 'text' },
+        { key: 'range', label: 'Range', type: 'text' },
+        { key: 'components', label: 'Components', type: 'chip', opts: { suggestions: HOMEBREW_COMPONENTS } },
+        { key: 'material', label: 'Material / Cost', type: 'text' },
+        { key: 'duration', label: 'Duration', type: 'text' },
+        { key: 'targetArea', label: 'Target / Area', type: 'text' },
+        { key: 'savingThrow', label: 'Saving Throw', type: 'text' },
+        { key: 'attackRoll', label: 'Attack Roll', type: 'text' },
+      ]},
+      { title: 'Effect', fields: [
+        { key: 'description', label: 'Description / Effect', type: 'textarea' },
+        { key: 'higherLevels', label: 'Higher Levels', type: 'textarea' },
+        { key: 'spellLists', label: 'Spell Lists', type: 'chip', opts: { suggestions: [...CLASSES, 'Artificer', 'Custom'] } },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Spell',
+        flavor: values.flavor || '',
+        level: values.level || '0',
+        school: values.school === 'Custom' ? (values.schoolCustom || 'Custom') : values.school,
+        castingTime: values.castingTime || '',
+        range: values.range || '',
+        components: normalizeListField(values.components),
+        material: values.material || '',
+        materialCost: values.materialCost || '',
+        duration: values.duration || '',
+        targetArea: values.targetArea || '',
+        savingThrow: values.savingThrow || '',
+        attackRoll: values.attackRoll || '',
+        description: values.description || '',
+        higherLevels: values.higherLevels || '',
+        spellLists: normalizeListField(values.spellLists),
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.flavor) md += `${payload.flavor}\n\n`;
+      md += `**Level:** ${payload.level} | **School:** ${payload.school || '—'} | **Casting Time:** ${payload.castingTime || '—'} | **Range:** ${payload.range || '—'}\n\n`;
+      md += `**Components:** ${normalizeListField(payload.components).join(', ') || '—'} | **Duration:** ${payload.duration || '—'}\n\n`;
+      if (payload.targetArea) md += `**Target / Area:** ${payload.targetArea}\n\n`;
+      if (payload.savingThrow) md += `**Saving Throw:** ${payload.savingThrow}\n\n`;
+      if (payload.attackRoll) md += `**Attack Roll:** ${payload.attackRoll}\n\n`;
+      if (payload.description) md += `## Effect\n\n${payload.description}\n\n`;
+      if (payload.higherLevels) md += `## Higher Levels\n\n${payload.higherLevels}\n\n`;
+      if (normalizeListField(payload.spellLists).length) md += `**Spell Lists:** ${normalizeListField(payload.spellLists).join(', ')}\n\n`;
+      return md.trim();
+    },
+  },
+  Feat: {
+    label: 'Feat',
+    category: 'Character Options',
+    defaults: {
+      prerequisite: '',
+      description: '',
+      mechanicalEffects: '',
+      powerTier: 'Moderate',
+      variantNotes: '',
+    },
+    sections: [
+      { title: 'Feat', fields: [
+        { key: 'prerequisite', label: 'Prerequisite', type: 'text' },
+        { key: 'description', label: 'Description', type: 'textarea' },
+        { key: 'mechanicalEffects', label: 'Mechanical Effects', type: 'textarea' },
+        { key: 'powerTier', label: 'Rarity / Power Tier', type: 'select', options: HOMEBREW_POWER_TIERS },
+        { key: 'variantNotes', label: 'Variant / Notes', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Feat',
+        prerequisite: values.prerequisite || '',
+        description: values.description || '',
+        mechanicalEffects: values.mechanicalEffects || '',
+        powerTier: values.powerTier || '',
+        variantNotes: values.variantNotes || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.prerequisite) md += `**Prerequisite:** ${payload.prerequisite}\n\n`;
+      if (payload.powerTier) md += `**Power Tier:** ${payload.powerTier}\n\n`;
+      if (payload.description) md += `## Description\n\n${payload.description}\n\n`;
+      if (payload.mechanicalEffects) md += `## Mechanical Effects\n\n${payload.mechanicalEffects}\n\n`;
+      if (payload.variantNotes) md += `## Variant Notes\n\n${payload.variantNotes}\n\n`;
+      return md.trim();
+    },
+  },
+  Background: {
+    label: 'Background',
+    category: 'Character Options',
+    defaults: {
+      flavor: '',
+      skillProficiencies: [],
+      toolProficiencies: [],
+      languages: [],
+      startingEquipment: '',
+      backgroundFeature: '',
+      characteristicTables: '',
+      variant: '',
+    },
+    sections: [
+      { title: 'Background', fields: [
+        { key: 'flavor', label: 'Flavor / Backstory', type: 'textarea' },
+        { key: 'skillProficiencies', label: 'Skill Proficiencies', type: 'chip', opts: { suggestions: OPTION_BANKS.skillList } },
+        { key: 'toolProficiencies', label: 'Tool Proficiencies', type: 'chip', opts: { suggestions: OPTION_BANKS.tools } },
+        { key: 'languages', label: 'Languages', type: 'chip', opts: { suggestions: HOMEBREW_LANGUAGE_OPTIONS } },
+        { key: 'startingEquipment', label: 'Starting Equipment', type: 'textarea' },
+        { key: 'backgroundFeature', label: 'Background Feature', type: 'textarea' },
+        { key: 'characteristicTables', label: 'Suggested Characteristics Tables', type: 'textarea' },
+        { key: 'variant', label: 'Variant', type: 'text' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Background',
+        flavor: values.flavor || '',
+        skillProficiencies: normalizeListField(values.skillProficiencies),
+        toolProficiencies: normalizeListField(values.toolProficiencies),
+        languages: normalizeListField(values.languages),
+        startingEquipment: values.startingEquipment || '',
+        backgroundFeature: values.backgroundFeature || '',
+        characteristicTables: values.characteristicTables || '',
+        variant: values.variant || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.flavor) md += `${payload.flavor}\n\n`;
+      if (normalizeListField(payload.skillProficiencies).length) md += `**Skill Proficiencies:** ${normalizeListField(payload.skillProficiencies).join(', ')}\n\n`;
+      if (normalizeListField(payload.toolProficiencies).length) md += `**Tool Proficiencies:** ${normalizeListField(payload.toolProficiencies).join(', ')}\n\n`;
+      if (normalizeListField(payload.languages).length) md += `**Languages:** ${normalizeListField(payload.languages).join(', ')}\n\n`;
+      if (payload.startingEquipment) md += `## Starting Equipment\n\n${payload.startingEquipment}\n\n`;
+      if (payload.backgroundFeature) md += `## Background Feature\n\n${payload.backgroundFeature}\n\n`;
+      if (payload.characteristicTables) md += `## Suggested Characteristics\n\n${payload.characteristicTables}\n\n`;
+      if (payload.variant) md += `**Variant:** ${payload.variant}\n\n`;
+      return md.trim();
+    },
+  },
+  Item: {
+    label: 'Item',
+    category: 'Items & Equipment',
+    defaults: {
+      itemType: 'Magic Item',
+      itemTypeCustom: '',
+      rarity: 'Common',
+      rarityCustom: '',
+      weight: '',
+      cost: '',
+      description: '',
+      properties: [],
+      magicalEffects: '',
+      curseDrawback: '',
+      attunement: false,
+      charges: '',
+      weaponCategory: 'Martial Melee',
+      damageDice: '',
+      damageType: 'Slashing',
+      range: '',
+      weaponSpecialRules: '',
+      armourCategory: 'Light Armour',
+      acFormula: '',
+      strengthRequirement: '',
+      stealthDisadvantage: false,
+      armourProperties: [],
+    },
+    sections: [
+      { title: 'Item', fields: [
+        { key: 'itemType', label: 'Type', type: 'select', options: HOMEBREW_ITEM_TYPES },
+        { key: 'itemTypeCustom', label: 'Custom Item Type', type: 'text', when: v => v.itemType === 'Custom' },
+        { key: 'rarity', label: 'Rarity', type: 'select', options: HOMEBREW_ITEM_RARITIES },
+        { key: 'rarityCustom', label: 'Custom Rarity', type: 'text', when: v => v.rarity === 'Custom' },
+        { key: 'weight', label: 'Weight', type: 'text' },
+        { key: 'cost', label: 'Cost', type: 'text' },
+        { key: 'description', label: 'Description', type: 'textarea' },
+        { key: 'properties', label: 'Properties', type: 'chip', opts: { suggestions: HOMEBREW_ITEM_PROPERTY_SUGGESTIONS } },
+        { key: 'magicalEffects', label: 'Magical Effects', type: 'textarea' },
+        { key: 'curseDrawback', label: 'Curse / Drawback', type: 'textarea' },
+        { key: 'attunement', label: 'Requires Attunement', type: 'toggle' },
+        { key: 'charges', label: 'Charges', type: 'text' },
+      ]},
+      { title: 'Weapon Details', fields: [
+        { key: 'weaponCategory', label: 'Weapon Category', type: 'select', options: HOMEBREW_WEAPON_CATEGORIES, when: v => v.itemType === 'Weapon' },
+        { key: 'damageDice', label: 'Damage Dice', type: 'text', when: v => v.itemType === 'Weapon' },
+        { key: 'damageType', label: 'Damage Type', type: 'select', options: HOMEBREW_DAMAGE_TYPES, when: v => v.itemType === 'Weapon' },
+        { key: 'range', label: 'Range', type: 'text', when: v => v.itemType === 'Weapon' },
+        { key: 'weaponSpecialRules', label: 'Special Rules', type: 'textarea', when: v => v.itemType === 'Weapon' },
+      ]},
+      { title: 'Armour Details', fields: [
+        { key: 'armourCategory', label: 'Armour Category', type: 'select', options: HOMEBREW_ARMOUR_CATEGORIES, when: v => v.itemType === 'Armour' },
+        { key: 'acFormula', label: 'AC Formula', type: 'text', when: v => v.itemType === 'Armour' },
+        { key: 'strengthRequirement', label: 'Strength Requirement', type: 'text', when: v => v.itemType === 'Armour' },
+        { key: 'stealthDisadvantage', label: 'Stealth Disadvantage', type: 'toggle', when: v => v.itemType === 'Armour' },
+        { key: 'armourProperties', label: 'Armour Properties', type: 'chip', opts: { suggestions: HOMEBREW_ITEM_PROPERTY_SUGGESTIONS }, when: v => v.itemType === 'Armour' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Item',
+        itemType: values.itemType === 'Custom' ? (values.itemTypeCustom || 'Custom') : values.itemType,
+        rarity: values.rarity === 'Custom' ? (values.rarityCustom || 'Custom') : values.rarity,
+        weight: values.weight || '',
+        cost: values.cost || '',
+        description: values.description || '',
+        properties: normalizeListField(values.properties),
+        magicalEffects: values.magicalEffects || '',
+        curseDrawback: values.curseDrawback || '',
+        attunement: !!values.attunement,
+        charges: values.charges || '',
+        weaponCategory: values.itemType === 'Weapon' ? (values.weaponCategory || '') : '',
+        damageDice: values.itemType === 'Weapon' ? (values.damageDice || '') : '',
+        damageType: values.itemType === 'Weapon' ? (values.damageType || '') : '',
+        range: values.itemType === 'Weapon' ? (values.range || '') : '',
+        weaponSpecialRules: values.itemType === 'Weapon' ? (values.weaponSpecialRules || '') : '',
+        armourCategory: values.itemType === 'Armour' ? (values.armourCategory || '') : '',
+        acFormula: values.itemType === 'Armour' ? (values.acFormula || '') : '',
+        strengthRequirement: values.itemType === 'Armour' ? (values.strengthRequirement || '') : '',
+        stealthDisadvantage: values.itemType === 'Armour' ? !!values.stealthDisadvantage : false,
+        armourProperties: values.itemType === 'Armour' ? normalizeListField(values.armourProperties) : [],
+      };
+    },
+    toMarkdown(payload) {
+      let md = `**Type:** ${payload.itemType || '—'} | **Rarity:** ${payload.rarity || '—'} | **Cost:** ${payload.cost || '—'} | **Weight:** ${payload.weight || '—'}\n\n`;
+      if (payload.description) md += `## Description\n\n${payload.description}\n\n`;
+      if (normalizeListField(payload.properties).length) md += `**Properties:** ${normalizeListField(payload.properties).join(', ')}\n\n`;
+      if (payload.magicalEffects) md += `## Magical Effects\n\n${payload.magicalEffects}\n\n`;
+      if (payload.curseDrawback) md += `## Curse / Drawback\n\n${payload.curseDrawback}\n\n`;
+      if (payload.attunement) md += `**Attunement:** Required\n\n`;
+      if (payload.charges) md += `**Charges:** ${payload.charges}\n\n`;
+      if (payload.weaponCategory) {
+        md += `## Weapon Details\n\n`;
+        md += `**Category:** ${payload.weaponCategory} | **Damage:** ${payload.damageDice || '—'} ${payload.damageType || ''} | **Range:** ${payload.range || '—'}\n\n`;
+        if (payload.weaponSpecialRules) md += `${payload.weaponSpecialRules}\n\n`;
+      }
+      if (payload.armourCategory) {
+        md += `## Armour Details\n\n`;
+        md += `**Category:** ${payload.armourCategory} | **AC:** ${payload.acFormula || '—'} | **Strength Requirement:** ${payload.strengthRequirement || '—'}\n\n`;
+        if (payload.stealthDisadvantage) md += `**Stealth:** Disadvantage\n\n`;
+        if (normalizeListField(payload.armourProperties).length) md += `**Armour Properties:** ${normalizeListField(payload.armourProperties).join(', ')}\n\n`;
+      }
+      return md.trim();
+    },
+  },
+  Creature: {
+    label: 'Creature',
+    category: 'Monsters & Statblocks',
+    defaults: {
+      creatureKind: 'Monster',
+      size: 'Medium',
+      creatureType: 'Humanoid',
+      alignment: 'True Neutral',
+      ac: '12',
+      acSource: '',
+      hpAverage: '7',
+      hpFormula: '',
+      speed: ['30 ft'],
+      str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
+      savingThrows: [],
+      skills: [],
+      damageResistances: [],
+      damageImmunities: [],
+      damageVulnerabilities: [],
+      conditionImmunities: [],
+      senses: [],
+      languages: [],
+      cr: '1',
+      xp: '',
+      traits: [],
+      actions: [],
+      reactions: [],
+      legendaryActions: [],
+      lairActions: [],
+      regionalEffects: '',
+      lore: '',
+      notes: '',
+    },
+    sections: [
+      { title: 'Identity', fields: [
+        { key: 'creatureKind', label: 'Monster / Creature / Beast', type: 'select', options: ['Monster', 'Creature', 'Beast'] },
+        { key: 'size', label: 'Size', type: 'select', options: SIZES },
+        { key: 'creatureType', label: 'Type', type: 'select', options: [...CREATURE_TYPES, 'Custom'] },
+        { key: 'alignment', label: 'Alignment', type: 'select', options: [...ALIGNMENTS, 'Custom'] },
+        { key: 'ac', label: 'AC', type: 'text' },
+        { key: 'acSource', label: 'AC Source', type: 'text' },
+        { key: 'hpAverage', label: 'HP Average', type: 'text' },
+        { key: 'hpFormula', label: 'HP Formula', type: 'text' },
+        { key: 'speed', label: 'Speed', type: 'chip', opts: { suggestions: HOMEBREW_MOVEMENT_SUGGESTIONS } },
+      ]},
+      { title: 'Ability Scores', fields: [
+        { key: 'str', label: 'STR', type: 'number' },
+        { key: 'dex', label: 'DEX', type: 'number' },
+        { key: 'con', label: 'CON', type: 'number' },
+        { key: 'int', label: 'INT', type: 'number' },
+        { key: 'wis', label: 'WIS', type: 'number' },
+        { key: 'cha', label: 'CHA', type: 'number' },
+      ]},
+      { title: 'Combat & Defenses', fields: [
+        { key: 'savingThrows', label: 'Saving Throws', type: 'chip', opts: { suggestions: HOMEBREW_ABILITY_OPTIONS.map(a => `${a} +0`) } },
+        { key: 'skills', label: 'Skills', type: 'chip', opts: { suggestions: OPTION_BANKS.skillList } },
+        { key: 'damageResistances', label: 'Damage Resistances', type: 'chip', opts: { suggestions: HOMEBREW_DAMAGE_TYPES } },
+        { key: 'damageImmunities', label: 'Damage Immunities', type: 'chip', opts: { suggestions: HOMEBREW_DAMAGE_TYPES } },
+        { key: 'damageVulnerabilities', label: 'Damage Vulnerabilities', type: 'chip', opts: { suggestions: HOMEBREW_DAMAGE_TYPES } },
+        { key: 'conditionImmunities', label: 'Condition Immunities', type: 'chip', opts: { suggestions: [...CONDITIONS_LIST, 'Custom'] } },
+        { key: 'senses', label: 'Senses', type: 'chip', opts: { suggestions: OPTION_BANKS.creatureSenses } },
+        { key: 'languages', label: 'Languages', type: 'chip', opts: { suggestions: HOMEBREW_LANGUAGE_OPTIONS } },
+        { key: 'cr', label: 'CR', type: 'text' },
+        { key: 'xp', label: 'XP', type: 'text' },
+      ]},
+      { title: 'Features', fields: [
+        { key: 'traits', label: 'Traits', type: 'chip', opts: { suggestions: OPTION_BANKS.creatureTraits } },
+        { key: 'actions', label: 'Actions', type: 'chip', opts: { suggestions: OPTION_BANKS.creatureActions } },
+        { key: 'reactions', label: 'Reactions', type: 'chip', opts: { suggestions: OPTION_BANKS.creatureReactions } },
+        { key: 'legendaryActions', label: 'Legendary Actions', type: 'chip', opts: { suggestions: OPTION_BANKS.legendaryActions } },
+        { key: 'lairActions', label: 'Lair Actions', type: 'chip', opts: { suggestions: OPTION_BANKS.lairActions } },
+        { key: 'regionalEffects', label: 'Regional Effects', type: 'textarea' },
+        { key: 'lore', label: 'Lore', type: 'textarea' },
+        { key: 'notes', label: 'Notes', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Creature',
+        creatureKind: values.creatureKind || 'Monster',
+        size: values.size || 'Medium',
+        creatureType: values.creatureType || 'Humanoid',
+        alignment: values.alignment || '',
+        ac: values.ac || '',
+        acSource: values.acSource || '',
+        hp: values.hpAverage || '',
+        hpAverage: values.hpAverage || '',
+        hpFormula: values.hpFormula || '',
+        speed: normalizeListField(values.speed),
+        abilities: { str: Number(values.str || 10), dex: Number(values.dex || 10), con: Number(values.con || 10), int: Number(values.int || 10), wis: Number(values.wis || 10), cha: Number(values.cha || 10) },
+        savingThrows: normalizeListField(values.savingThrows),
+        skills: normalizeListField(values.skills),
+        damageResistances: normalizeListField(values.damageResistances),
+        damageImmunities: normalizeListField(values.damageImmunities),
+        damageVulnerabilities: normalizeListField(values.damageVulnerabilities),
+        conditionImmunities: normalizeListField(values.conditionImmunities),
+        senses: normalizeListField(values.senses),
+        languages: normalizeListField(values.languages),
+        cr: values.cr || '',
+        xp: values.xp || '',
+        traits: normalizeListField(values.traits),
+        actions: normalizeListField(values.actions),
+        reactions: normalizeListField(values.reactions),
+        legendaryActions: normalizeListField(values.legendaryActions),
+        lairActions: normalizeListField(values.lairActions),
+        regionalEffects: values.regionalEffects || '',
+        lore: values.lore || '',
+        notes: values.notes || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = `**Kind:** ${payload.creatureKind || 'Monster'} | **Size:** ${payload.size || 'Medium'} | **Type:** ${payload.creatureType || '—'} | **Alignment:** ${payload.alignment || '—'}\n\n`;
+      md += `| AC | HP | Speed | CR |\n|---|---|---|---|\n| ${payload.ac || '—'}${payload.acSource ? ` (${payload.acSource})` : ''} | ${payload.hpAverage || payload.hp || '—'}${payload.hpFormula ? ` (${payload.hpFormula})` : ''} | ${normalizeListField(payload.speed).join(', ') || '—'} | ${payload.cr || '—'} |\n\n`;
+      md += `| STR | DEX | CON | INT | WIS | CHA |\n|---|---|---|---|---|---|\n| ${payload.abilities?.str ?? 10} | ${payload.abilities?.dex ?? 10} | ${payload.abilities?.con ?? 10} | ${payload.abilities?.int ?? 10} | ${payload.abilities?.wis ?? 10} | ${payload.abilities?.cha ?? 10} |\n\n`;
+      [['Saving Throws', payload.savingThrows], ['Skills', payload.skills], ['Damage Resistances', payload.damageResistances], ['Damage Immunities', payload.damageImmunities], ['Damage Vulnerabilities', payload.damageVulnerabilities], ['Condition Immunities', payload.conditionImmunities], ['Senses', payload.senses], ['Languages', payload.languages]]
+        .forEach(([label, values]) => { if (normalizeListField(values).length) md += `**${label}:** ${normalizeListField(values).join(', ')}\n\n`; });
+      md += markdownListSection('Traits', payload.traits);
+      md += markdownListSection('Actions', payload.actions);
+      md += markdownListSection('Reactions', payload.reactions);
+      md += markdownListSection('Legendary Actions', payload.legendaryActions);
+      md += markdownListSection('Lair Actions', payload.lairActions);
+      if (payload.regionalEffects) md += `## Regional Effects\n\n${payload.regionalEffects}\n\n`;
+      if (payload.lore) md += `## Lore\n\n${payload.lore}\n\n`;
+      if (payload.notes) md += `## Notes\n\n${payload.notes}\n\n`;
+      return md.trim();
+    },
+  },
+  Ancestry: {
+    label: 'Race / Ancestry',
+    category: 'Character Options',
+    defaults: {
+      description: '',
+      creatureType: 'Humanoid',
+      size: 'Medium',
+      walkingSpeed: 30,
+      flyingSpeed: 0,
+      swimmingSpeed: 0,
+      climbingSpeed: 0,
+      burrowingSpeed: 0,
+      abilityScoreMode: 'Flexible',
+      abilityScoreBonuses: [],
+      abilityScoreText: '',
+      age: '',
+      alignment: '',
+      languages: [],
+      traits: [],
+      traitText: '',
+      subraces: [],
+      subraceNotes: '',
+    },
+    sections: [
+      { title: 'Ancestry', fields: [
+        { key: 'description', label: 'Description / Flavor', type: 'textarea' },
+        { key: 'creatureType', label: 'Creature Type', type: 'select', options: [...CREATURE_TYPES, 'Custom'] },
+        { key: 'size', label: 'Size', type: 'select', options: SIZES },
+      ]},
+      { title: 'Speed', fields: [
+        { key: 'walkingSpeed', label: 'Walking Speed', type: 'number' },
+        { key: 'flyingSpeed', label: 'Flying Speed', type: 'number' },
+        { key: 'swimmingSpeed', label: 'Swimming Speed', type: 'number' },
+        { key: 'climbingSpeed', label: 'Climbing Speed', type: 'number' },
+        { key: 'burrowingSpeed', label: 'Burrowing Speed', type: 'number' },
+      ]},
+      { title: 'Traits', fields: [
+        { key: 'abilityScoreMode', label: 'Ability Score Increase', type: 'select', options: ['Fixed', 'Flexible', 'Custom'] },
+        { key: 'abilityScoreBonuses', label: 'Ability Score Bonuses', type: 'chip', opts: { suggestions: HOMEBREW_ABILITY_OPTIONS.flatMap(a => [`${a} +1`, `${a} +2`]) } },
+        { key: 'abilityScoreText', label: 'Custom ASI Rules', type: 'textarea', when: v => v.abilityScoreMode === 'Custom' },
+        { key: 'age', label: 'Age', type: 'textarea' },
+        { key: 'alignment', label: 'Alignment', type: 'text' },
+        { key: 'languages', label: 'Languages', type: 'chip', opts: { suggestions: HOMEBREW_LANGUAGE_OPTIONS } },
+        { key: 'traits', label: 'Traits / Features', type: 'chip', opts: { suggestions: OPTION_BANKS.creatureTraits } },
+        { key: 'traitText', label: 'Traits / Features Details', type: 'textarea' },
+        { key: 'subraces', label: 'Subraces', type: 'chip' },
+        { key: 'subraceNotes', label: 'Subrace Notes', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Ancestry',
+        description: values.description || '',
+        creatureType: values.creatureType || 'Humanoid',
+        size: values.size || 'Medium',
+        speed: {
+          walking: Number(values.walkingSpeed || 0),
+          flying: Number(values.flyingSpeed || 0),
+          swimming: Number(values.swimmingSpeed || 0),
+          climbing: Number(values.climbingSpeed || 0),
+          burrowing: Number(values.burrowingSpeed || 0),
+        },
+        abilityScoreMode: values.abilityScoreMode || 'Flexible',
+        abilityScoreBonuses: normalizeListField(values.abilityScoreBonuses),
+        abilityScoreText: values.abilityScoreText || '',
+        age: values.age || '',
+        alignment: values.alignment || '',
+        languages: normalizeListField(values.languages),
+        traits: normalizeListField(values.traits),
+        traitText: values.traitText || '',
+        subraces: normalizeListField(values.subraces),
+        subraceNotes: values.subraceNotes || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.description) md += `${payload.description}\n\n`;
+      md += `**Creature Type:** ${payload.creatureType || 'Humanoid'} | **Size:** ${payload.size || 'Medium'}\n\n`;
+      md += `**Speed:** Walk ${payload.speed?.walking || 0} ft`;
+      ['flying', 'swimming', 'climbing', 'burrowing'].forEach(k => { if (payload.speed?.[k]) md += ` | ${k[0].toUpperCase() + k.slice(1)} ${payload.speed[k]} ft`; });
+      md += `\n\n`;
+      md += `**Ability Score Increase:** ${payload.abilityScoreMode || 'Flexible'}${normalizeListField(payload.abilityScoreBonuses).length ? ` (${normalizeListField(payload.abilityScoreBonuses).join(', ')})` : ''}\n\n`;
+      if (payload.abilityScoreText) md += `${payload.abilityScoreText}\n\n`;
+      if (payload.age) md += `## Age\n\n${payload.age}\n\n`;
+      if (payload.alignment) md += `**Alignment:** ${payload.alignment}\n\n`;
+      if (normalizeListField(payload.languages).length) md += `**Languages:** ${normalizeListField(payload.languages).join(', ')}\n\n`;
+      md += markdownListSection('Traits', payload.traits);
+      if (payload.traitText) md += `## Trait Details\n\n${payload.traitText}\n\n`;
+      if (normalizeListField(payload.subraces).length) md += `**Subraces:** ${normalizeListField(payload.subraces).join(', ')}\n\n`;
+      if (payload.subraceNotes) md += `## Subrace Notes\n\n${payload.subraceNotes}\n\n`;
+      return md.trim();
+    },
+  },
+  Class: {
+    label: 'Class',
+    category: 'Character Options',
+    defaults: {
+      flavor: '',
+      hitDie: '8',
+      primaryAbility: [],
+      savingThrowProficiencies: [],
+      skillProficiencies: [],
+      armourProficiencies: [],
+      weaponProficiencies: [],
+      toolProficiencies: [],
+      levelTable: '',
+      classFeatures: '',
+      spellcastingRules: '',
+      subclassLevel: '3',
+    },
+    sections: [
+      { title: 'Class Core', fields: [
+        { key: 'flavor', label: 'Flavor / Description', type: 'textarea' },
+        { key: 'hitDie', label: 'Hit Die', type: 'select', options: ['6', '8', '10', '12'] },
+        { key: 'primaryAbility', label: 'Primary Ability', type: 'chip', opts: { suggestions: HOMEBREW_ABILITY_OPTIONS } },
+        { key: 'savingThrowProficiencies', label: 'Saving Throw Proficiencies', type: 'chip', opts: { suggestions: HOMEBREW_ABILITY_OPTIONS } },
+        { key: 'skillProficiencies', label: 'Skill Proficiencies', type: 'chip', opts: { suggestions: OPTION_BANKS.skillList } },
+        { key: 'armourProficiencies', label: 'Armour Proficiencies', type: 'chip', opts: { suggestions: HOMEBREW_ARMOUR_CATEGORIES } },
+        { key: 'weaponProficiencies', label: 'Weapon Proficiencies', type: 'chip', opts: { suggestions: HOMEBREW_WEAPON_CATEGORIES } },
+        { key: 'toolProficiencies', label: 'Tool Proficiencies', type: 'chip', opts: { suggestions: OPTION_BANKS.tools } },
+      ]},
+      { title: 'Scaffold', fields: [
+        { key: 'levelTable', label: 'Level Table', type: 'textarea' },
+        { key: 'classFeatures', label: 'Class Features', type: 'textarea' },
+        { key: 'spellcastingRules', label: 'Spellcasting Rules', type: 'textarea' },
+        { key: 'subclassLevel', label: 'Subclass Level', type: 'text' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Class',
+        flavor: values.flavor || '',
+        hitDie: values.hitDie || '8',
+        primaryAbility: normalizeListField(values.primaryAbility),
+        savingThrowProficiencies: normalizeListField(values.savingThrowProficiencies),
+        skillProficiencies: normalizeListField(values.skillProficiencies),
+        armourProficiencies: normalizeListField(values.armourProficiencies),
+        weaponProficiencies: normalizeListField(values.weaponProficiencies),
+        toolProficiencies: normalizeListField(values.toolProficiencies),
+        levelTable: values.levelTable || '',
+        classFeatures: values.classFeatures || '',
+        spellcastingRules: values.spellcastingRules || '',
+        subclassLevel: values.subclassLevel || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.flavor) md += `${payload.flavor}\n\n`;
+      md += `**Hit Die:** d${payload.hitDie || '8'}\n\n`;
+      [['Primary Ability', payload.primaryAbility], ['Saving Throws', payload.savingThrowProficiencies], ['Skills', payload.skillProficiencies], ['Armour Proficiencies', payload.armourProficiencies], ['Weapon Proficiencies', payload.weaponProficiencies], ['Tool Proficiencies', payload.toolProficiencies]]
+        .forEach(([label, values]) => { if (normalizeListField(values).length) md += `**${label}:** ${normalizeListField(values).join(', ')}\n\n`; });
+      if (payload.levelTable) md += `## Level Table\n\n${payload.levelTable}\n\n`;
+      if (payload.classFeatures) md += `## Class Features\n\n${payload.classFeatures}\n\n`;
+      if (payload.spellcastingRules) md += `## Spellcasting Rules\n\n${payload.spellcastingRules}\n\n`;
+      if (payload.subclassLevel) md += `**Subclass Level:** ${payload.subclassLevel}\n\n`;
+      return md.trim();
+    },
+  },
+  Subclass: {
+    label: 'Subclass',
+    category: 'Character Options',
+    defaults: {
+      parentClass: 'Custom',
+      parentClassCustom: '',
+      flavor: '',
+      featureLevels: [],
+      features: '',
+      additionalProficiencies: [],
+      spellAdditions: [],
+    },
+    sections: [
+      { title: 'Subclass', fields: [
+        { key: 'parentClass', label: 'Parent Class', type: 'dynamicSelect', options: (plugin, item) => getCustomHomebrewClassOptions(plugin, item) },
+        { key: 'parentClassCustom', label: 'Custom Parent Class', type: 'text', when: v => v.parentClass === 'Custom' },
+        { key: 'flavor', label: 'Flavor', type: 'textarea' },
+        { key: 'featureLevels', label: 'Feature Levels', type: 'chip', opts: { suggestions: ['1','2','3','6','10','14','18','20'] } },
+        { key: 'features', label: 'Features List', type: 'textarea' },
+        { key: 'additionalProficiencies', label: 'Additional Proficiencies', type: 'chip', opts: { suggestions: [...OPTION_BANKS.tools, ...OPTION_BANKS.skillList] } },
+        { key: 'spellAdditions', label: 'Spell Additions', type: 'chip' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Subclass',
+        parentClass: values.parentClass === 'Custom' ? (values.parentClassCustom || 'Custom') : values.parentClass,
+        flavor: values.flavor || '',
+        featureLevels: normalizeListField(values.featureLevels),
+        features: values.features || '',
+        additionalProficiencies: normalizeListField(values.additionalProficiencies),
+        spellAdditions: normalizeListField(values.spellAdditions),
+      };
+    },
+    toMarkdown(payload) {
+      let md = `**Parent Class:** ${payload.parentClass || '—'}\n\n`;
+      if (payload.flavor) md += `${payload.flavor}\n\n`;
+      if (normalizeListField(payload.featureLevels).length) md += `**Feature Levels:** ${normalizeListField(payload.featureLevels).join(', ')}\n\n`;
+      if (payload.features) md += `## Features\n\n${payload.features}\n\n`;
+      if (normalizeListField(payload.additionalProficiencies).length) md += `**Additional Proficiencies:** ${normalizeListField(payload.additionalProficiencies).join(', ')}\n\n`;
+      if (normalizeListField(payload.spellAdditions).length) md += `**Spell Additions:** ${normalizeListField(payload.spellAdditions).join(', ')}\n\n`;
+      return md.trim();
+    },
+  },
+  Rule: {
+    label: 'Rule / House Rule',
+    category: 'Rules & Mechanics',
+    defaults: {
+      ruleCategory: 'Core',
+      sourceLabel: '',
+      officialEquivalent: '',
+      pageReference: '',
+      fullText: '',
+      mechanicImpact: '',
+    },
+    sections: [
+      { title: 'Rule', fields: [
+        { key: 'ruleCategory', label: 'Category', type: 'select', options: HOMEBREW_RULE_CATEGORIES },
+        { key: 'sourceLabel', label: 'Source', type: 'text' },
+        { key: 'officialEquivalent', label: 'Official Equivalent', type: 'text' },
+        { key: 'pageReference', label: 'Page Reference', type: 'text' },
+        { key: 'fullText', label: 'Full Text', type: 'textarea' },
+        { key: 'mechanicImpact', label: 'Mechanic Impact', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Rule',
+        ruleCategory: values.ruleCategory || 'Core',
+        sourceLabel: values.sourceLabel || '',
+        officialEquivalent: values.officialEquivalent || '',
+        pageReference: values.pageReference || '',
+        fullText: values.fullText || '',
+        mechanicImpact: values.mechanicImpact || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = `**Category:** ${payload.ruleCategory || '—'} | **Source:** ${payload.sourceLabel || '—'}\n\n`;
+      if (payload.officialEquivalent) md += `**Official Equivalent:** ${payload.officialEquivalent}${payload.pageReference ? ` (${payload.pageReference})` : ''}\n\n`;
+      if (payload.fullText) md += `## Full Text\n\n${payload.fullText}\n\n`;
+      if (payload.mechanicImpact) md += `## Mechanic Impact\n\n${payload.mechanicImpact}\n\n`;
+      return md.trim();
+    },
+  },
+  Mechanic: {
+    label: 'Mechanic',
+    category: 'Rules & Mechanics',
+    defaults: {
+      mechanicCategory: 'Combat',
+      system: '',
+      trigger: '',
+      fullRule: '',
+      formula: '',
+      interactions: '',
+      examples: '',
+    },
+    sections: [
+      { title: 'Mechanic', fields: [
+        { key: 'mechanicCategory', label: 'Category', type: 'select', options: HOMEBREW_MECHANIC_CATEGORIES },
+        { key: 'system', label: 'System', type: 'text' },
+        { key: 'trigger', label: 'Trigger / When it Applies', type: 'textarea' },
+        { key: 'fullRule', label: 'Full Rule', type: 'textarea' },
+        { key: 'formula', label: 'Math / Formula', type: 'text' },
+        { key: 'interactions', label: 'Interaction', type: 'textarea' },
+        { key: 'examples', label: 'Examples', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Mechanic',
+        mechanicCategory: values.mechanicCategory || 'Combat',
+        system: values.system || '',
+        trigger: values.trigger || '',
+        fullRule: values.fullRule || '',
+        formula: values.formula || '',
+        interactions: values.interactions || '',
+        examples: values.examples || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = `**Category:** ${payload.mechanicCategory || '—'}${payload.system ? ` | **System:** ${payload.system}` : ''}\n\n`;
+      if (payload.trigger) md += `## Trigger\n\n${payload.trigger}\n\n`;
+      if (payload.fullRule) md += `## Full Rule\n\n${payload.fullRule}\n\n`;
+      if (payload.formula) md += `**Formula:** ${payload.formula}\n\n`;
+      if (payload.interactions) md += `## Interaction\n\n${payload.interactions}\n\n`;
+      if (payload.examples) md += `## Examples\n\n${payload.examples}\n\n`;
+      return md.trim();
+    },
+  },
+  Plane: {
+    label: 'Plane',
+    category: 'Worlds & Planes',
+    defaults: {
+      description: '',
+      cosmology: 'Great Wheel',
+      traits: [],
+      inhabitants: [],
+      connections: '',
+      specialRules: '',
+      travelRules: '',
+    },
+    sections: [
+      { title: 'Plane', fields: [
+        { key: 'description', label: 'Flavor / Description', type: 'textarea' },
+        { key: 'cosmology', label: 'Cosmology', type: 'select', options: HOMEBREW_PLANE_COSMOLOGIES },
+        { key: 'traits', label: 'Traits', type: 'chip', opts: { suggestions: OPTION_BANKS.planarTravelRules } },
+        { key: 'inhabitants', label: 'Inhabitants', type: 'chip' },
+        { key: 'connections', label: 'Connections', type: 'textarea' },
+        { key: 'specialRules', label: 'Special Rules', type: 'textarea' },
+        { key: 'travelRules', label: 'Travel Rules', type: 'textarea' },
+      ]},
+    ],
+    toPayload(values) {
+      return {
+        kind: 'Plane',
+        description: values.description || '',
+        cosmology: values.cosmology || 'Great Wheel',
+        traits: normalizeListField(values.traits),
+        inhabitants: normalizeListField(values.inhabitants),
+        connections: values.connections || '',
+        specialRules: values.specialRules || '',
+        travelRules: values.travelRules || '',
+      };
+    },
+    toMarkdown(payload) {
+      let md = '';
+      if (payload.description) md += `${payload.description}\n\n`;
+      md += `**Cosmology:** ${payload.cosmology || '—'}\n\n`;
+      if (normalizeListField(payload.traits).length) md += `**Traits:** ${normalizeListField(payload.traits).join(', ')}\n\n`;
+      if (normalizeListField(payload.inhabitants).length) md += `**Inhabitants:** ${normalizeListField(payload.inhabitants).join(', ')}\n\n`;
+      if (payload.connections) md += `## Connections\n\n${payload.connections}\n\n`;
+      if (payload.specialRules) md += `## Special Rules\n\n${payload.specialRules}\n\n`;
+      if (payload.travelRules) md += `## Travel Rules\n\n${payload.travelRules}\n\n`;
+      return md.trim();
+    },
+  },
+};
+
+const HOMEBREW_BUILDER_GROUPS = [
+  {
+    title: 'Character Options',
+    cards: [
+      { type: 'Ancestry', label: 'Race / Ancestry', desc: 'Typed ancestry builder with speeds, ASI, languages, traits, and subraces.' },
+      { type: 'Background', label: 'Background', desc: 'Typed background builder with proficiencies, equipment, and feature text.' },
+      { type: 'Feat', label: 'Feat', desc: 'Typed feat builder with prerequisites, effects, and power tier.' },
+      { type: 'Class', label: 'Class', desc: 'Core class schema scaffold with proficiencies, level table, and subclass level.' },
+      { type: 'Subclass', label: 'Subclass', desc: 'Typed subclass builder linked to official or custom parent classes.' },
+    ],
+  },
+  {
+    title: 'Rules & Mechanics',
+    cards: [
+      { type: 'Spell', label: 'Spell', desc: 'Typed spell builder with level, school, components, lists, and scaling text.' },
+      { type: 'Rule', label: 'Rule / House Rule', desc: 'Typed rule builder with source, equivalent, and impact notes.' },
+      { type: 'Mechanic', label: 'Mechanic', desc: 'Typed mechanic builder with trigger, formula, interactions, and examples.' },
+    ],
+  },
+  {
+    title: 'Items & Equipment',
+    cards: [
+      { type: 'Item', label: 'Item / Magic Item', desc: 'Unified item builder with subtype handling for weapon, armour, and magic items.' },
+    ],
+  },
+  {
+    title: 'Monsters & Statblocks',
+    cards: [
+      { type: 'Creature', label: 'Monster / Creature / Beast', desc: 'Typed statblock builder compatible with campaign creature promotion.' },
+    ],
+  },
+  {
+    title: 'Worlds & Planes',
+    cards: [
+      { type: 'Plane', label: 'Plane', desc: 'Typed plane builder with cosmology, traits, inhabitants, and travel rules.' },
+    ],
+  },
+  {
+    title: 'Rollable Tables',
+    cards: [
+      { type: 'Rollable Table', label: 'Rollable Table', desc: 'Open the existing rollable table builder.', special: 'table' },
+    ],
+  },
+];
+
+function openHomebrewBuilder(app, plugin, type, item) {
+  if (type === 'Rollable Table') { new RollableTableModal(app, plugin, item).open(); return; }
+  new TypedHomebrewModal(app, plugin, type, item).open();
+}
+function openHomebrewEditor(app, plugin, item) {
+  const h = normalizeHomebrewRecord(item || {});
+  const builderType = canonicalHomebrewBuilderType(h.homebrewType || h.type);
+  if (HOMEBREW_BUILDERS[builderType]) {
+    const seed = Object.assign({}, h);
+    if (builderType === 'Item' && !seed.itemType && ['Weapon', 'Armour', 'Armor', 'Magic Item'].includes(h.homebrewType || h.type)) seed.itemType = h.homebrewType === 'Armor' ? 'Armour' : (h.homebrewType || h.type);
+    if (builderType === 'Creature' && !seed.creatureKind && ['Monster', 'Creature', 'Beast'].includes(h.homebrewType || h.type)) seed.creatureKind = h.homebrewType || h.type;
+    openHomebrewBuilder(app, plugin, builderType, seed);
+    return;
+  }
+  new HomebrewModal(app, plugin, item).open();
 }
 
 function renderLibrary(main, plugin, tabs) {
@@ -5830,7 +6716,7 @@ function renderHomebrew(main, plugin, tabs) {
   ], tabs);
 
   // Local filter state
-  const hbFilter = { search: '', status: '', visibility: '' };
+  const hbFilter = { search: '', status: '', visibility: '', type: '' };
 
   const filterCard = ce(main, 'div', 'te-card');
   filterCard.style.marginBottom = '12px';
@@ -5853,9 +6739,16 @@ function renderHomebrew(main, plugin, tabs) {
     const o = ce(visSel, 'option', '', l); o.value = v;
   });
 
+  const typeSel = ce(filterRow, 'select');
+  typeSel.style.cssText = statusSel.style.cssText;
+  const hbTypes = [...new Set(safeArr(state.entities.homebrew).map(item => normalizeHomebrewRecord(item).homebrewType).filter(Boolean))].sort();
+  [['', 'All Types'], ...hbTypes.map(v => [v, v])].forEach(([v, l]) => {
+    const o = ce(typeSel, 'option', '', l); o.value = v;
+  });
+
   btn(filterRow, '× Clear', 'te-btn is-sm', () => {
-    searchIn.value = ''; statusSel.value = ''; visSel.value = '';
-    Object.assign(hbFilter, { search: '', status: '', visibility: '' });
+    searchIn.value = ''; statusSel.value = ''; visSel.value = ''; typeSel.value = '';
+    Object.assign(hbFilter, { search: '', status: '', visibility: '', type: '' });
     rebuildHb();
   });
 
@@ -5865,10 +6758,11 @@ function renderHomebrew(main, plugin, tabs) {
     clear(contentArea);
     const q = hbFilter.search.toLowerCase();
     const items = safeArr(state.entities.homebrew).map(item => normalizeHomebrewRecord(item)).filter(item => {
-      const searchText = [item.name, item.type, item.category, item.summary, safeArr(item.tags).join(' ')].join(' ').toLowerCase();
+      const searchText = [item.name, item.type, item.homebrewType, item.category, item.summary, safeArr(item.tags).join(' ')].join(' ').toLowerCase();
       if (q && !searchText.includes(q)) return false;
       if (hbFilter.status && item.status !== hbFilter.status) return false;
       if (hbFilter.visibility && item.visibility !== hbFilter.visibility) return false;
+      if (hbFilter.type && item.homebrewType !== hbFilter.type) return false;
       return true;
     });
     const all = safeArr(state.entities.homebrew).length;
@@ -5878,8 +6772,8 @@ function renderHomebrew(main, plugin, tabs) {
     } else {
       itemCards(contentArea, plugin, 'homebrew', {
         items,
-        meta: ['type', 'status', 'visibility'],
-        onEdit: (plugin, key, item) => new HomebrewModal(plugin.app, plugin, item).open(),
+        meta: ['homebrewType', 'category', 'status', 'visibility'],
+        onEdit: (plugin, key, item) => openHomebrewEditor(plugin.app, plugin, item),
       });
     }
   };
@@ -5888,11 +6782,13 @@ function renderHomebrew(main, plugin, tabs) {
     hbFilter.search = searchIn.value;
     hbFilter.status = statusSel.value;
     hbFilter.visibility = visSel.value;
+    hbFilter.type = typeSel.value;
     rebuildHb();
   };
   searchIn.addEventListener('input', onChange);
   statusSel.addEventListener('change', onChange);
   visSel.addEventListener('change', onChange);
+  typeSel.addEventListener('change', onChange);
 
   rebuildHb();
 }
@@ -9325,6 +10221,106 @@ class RollableTableModal extends Modal {
   }
 }
 
+class TypedHomebrewModal extends Modal {
+  constructor(app, plugin, homebrewType, item) {
+    super(app);
+    this.plugin = plugin;
+    this.homebrewType = homebrewType;
+    this.definition = HOMEBREW_BUILDERS[homebrewType];
+    this.item = item || {};
+    const base = normalizeHomebrewRecord(Object.assign({
+      id: uid('homebrew'),
+      homebrewType,
+      type: homebrewType,
+      category: this.definition ? this.definition.category : homebrewCategoryForType(homebrewType),
+      status: 'Draft',
+      visibility: 'dm-only',
+      scope: plugin.state.activeCampaignId ? 'campaign' : 'global',
+      campaignId: plugin.state.activeCampaignId || '',
+      sourceCampaignId: plugin.state.activeCampaignId || '',
+      tags: [],
+      balanceNotes: '',
+      dmNotes: '',
+    }, this.item));
+    const hybridDefaults = homebrewType === 'Ancestry' && base.sourceHybridId ? hybridAncestryToBuilderValues(base) : {};
+    this.values = Object.assign({}, this.definition ? this.definition.defaults : {}, hybridDefaults, flattenHomebrewPayload(base));
+    this.values.homebrewType = homebrewType;
+    this.values.type = homebrewType;
+    this.values.category = this.definition ? this.definition.category : base.category;
+    this.values.tags = normalizeListField(this.values.tags);
+    if (homebrewType === 'Item' && !this.values.itemType && ['Weapon', 'Armour', 'Armor', 'Magic Item'].includes(base.homebrewType || base.type)) {
+      this.values.itemType = base.homebrewType === 'Armor' ? 'Armour' : (base.homebrewType || base.type);
+    }
+    if (homebrewType === 'Creature' && !this.values.creatureKind && ['Monster', 'Creature', 'Beast'].includes(base.homebrewType || base.type)) {
+      this.values.creatureKind = base.homebrewType || base.type;
+    }
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} ${this.definition.label}` });
+    const meta = ce(contentEl, 'div', 'te-modal-section');
+    meta.createEl('h3', { text: 'Homebrew Metadata' });
+    addField(meta, 'Name *', this.values.name || '', v => this.values.name = v);
+    addSelect(meta, 'Status', this.values.status || 'Draft', HOMEBREW_STATUS_OPTIONS, v => this.values.status = v);
+    addSelect(meta, 'Visibility', this.values.visibility || 'dm-only', HOMEBREW_VISIBILITY_OPTIONS, v => this.values.visibility = v);
+    addSelect(meta, 'Scope', this.values.scope || 'global', ['campaign', 'global'], v => this.values.scope = v);
+    chipField(meta, 'Tags', safeArr(this.values.tags), v => this.values.tags = v);
+    addField(meta, 'Balance Notes', this.values.balanceNotes || '', v => this.values.balanceNotes = v, 'textarea');
+    addField(meta, 'DM Notes', this.values.dmNotes || '', v => this.values.dmNotes = v, 'textarea');
+
+    safeArr(this.definition.sections).forEach(section => {
+      const sec = ce(contentEl, 'div', 'te-modal-section');
+      sec.createEl('h3', { text: section.title });
+      safeArr(section.fields).forEach(field => this.renderField(sec, field));
+    });
+
+    modalButtons(contentEl, this, async () => {
+      if (!String(this.values.name || '').trim()) { new Notice('Name is required.'); return; }
+      if (this.values.scope === 'campaign') {
+        this.values.campaignId = this.plugin.state.activeCampaignId || this.values.campaignId || '';
+        this.values.sourceCampaignId = this.values.sourceCampaignId || this.values.campaignId || '';
+      } else {
+        this.values.campaignId = '';
+      }
+      const payload = this.definition.toPayload(this.values, this.plugin);
+      const content = this.definition.toMarkdown(payload, this.values);
+      const now = new Date().toISOString();
+      const record = normalizeHomebrewRecord({
+        ...this.item,
+        ...this.values,
+        homebrewType: this.homebrewType,
+        type: this.homebrewType,
+        category: this.definition.category,
+        payload,
+        content,
+        summary: homebrewSummaryFromValues(this.definition, this.values),
+        description: this.values.description || this.values.flavor || this.values.fullText || this.values.notes || this.item.description || '',
+        sourceCampaignId: this.values.sourceCampaignId || this.values.campaignId || '',
+        balanceNotes: this.values.balanceNotes || '',
+        dmNotes: this.values.dmNotes || '',
+        updatedAt: now,
+        createdAt: this.values.createdAt || now,
+      });
+      upsert(this.plugin.state, 'homebrew', record);
+      await this.plugin.saveState();
+      new Notice(`${this.definition.label} "${record.name}" saved.`);
+      this.close();
+    });
+  }
+  renderField(parent, field) {
+    if (field.when && !field.when(this.values)) return;
+    const options = typeof field.options === 'function' ? field.options(this.plugin, this.item) : field.options;
+    if (field.type === 'text') addField(parent, field.label, this.values[field.key] || '', v => this.values[field.key] = v);
+    else if (field.type === 'textarea') addField(parent, field.label, this.values[field.key] || '', v => this.values[field.key] = v, 'textarea');
+    else if (field.type === 'select' || field.type === 'dynamicSelect') addSelect(parent, field.label, this.values[field.key] || ((options && options[0]) || ''), options || [], v => { this.values[field.key] = v; this.onOpen(); });
+    else if (field.type === 'number') addNumber(parent, field.label, this.values[field.key] || 0, v => this.values[field.key] = v);
+    else if (field.type === 'toggle') addToggle(parent, field.label, !!this.values[field.key], v => this.values[field.key] = v);
+    else if (field.type === 'chip') chipField(parent, field.label, safeArr(this.values[field.key]), v => this.values[field.key] = v, field.opts || {});
+  }
+}
+
 class HomebrewTypeChooserModal extends Modal {
   constructor(app, plugin) {
     super(app);
@@ -9335,59 +10331,33 @@ class HomebrewTypeChooserModal extends Modal {
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: 'Create Homebrew' });
-    ce(contentEl, 'p', 'te-muted-text', 'Choose a starting point. Promotion keeps the original campaign record and creates a linked Homebrew entry.');
-    const categories = [
-      {
-        title: 'Character Options',
-        actions: [
-          { label: 'Hybrid Ancestry', desc: 'Open the existing hybrid ancestry builder.', run: () => new HybridAncestryModal(this.app, this.plugin).open() },
-        ],
-      },
-      {
-        title: 'Rules & Mechanics',
-        actions: [
-          { label: 'Rule / Mechanic', desc: 'Create a generic homebrew rules entry.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Rules & Mechanics', type: 'Rule', status: 'Draft' }).open() },
-        ],
-      },
-      {
-        title: 'Items & Equipment',
-        actions: [
-          { label: 'Item Concept', desc: 'Create a lightweight item or equipment shell.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Items & Equipment', type: 'Item', status: 'Draft' }).open() },
-        ],
-      },
-      {
-        title: 'Monsters & Statblocks',
-        actions: [
-          { label: 'Creature Entry', desc: 'Create a blank creature homebrew shell or promote from a Creature record.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Monsters & Statblocks', type: 'Creature', status: 'Draft' }).open() },
-        ],
-      },
-      {
-        title: 'Worlds & Planes',
-        actions: [
-          { label: 'Deity / Lore Entry', desc: 'Create deity or world-lore homebrew, or promote from a Deity record.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Worlds & Planes', type: 'Deity', status: 'Draft' }).open() },
-        ],
-      },
-      {
-        title: 'Rollable Tables',
-        actions: [
-          { label: 'Rollable Table', desc: 'Open the rollable table builder.', run: () => new RollableTableModal(this.app, this.plugin).open() },
-        ],
-      },
-    ];
-    categories.forEach(group => {
+    ce(contentEl, 'p', 'te-muted-text', 'Choose a type-specific builder. Promotion keeps the original campaign record and creates a linked reusable Homebrew record.');
+    HOMEBREW_BUILDER_GROUPS.forEach(group => {
       const sec = ce(contentEl, 'div', 'te-modal-section');
       sec.createEl('h3', { text: group.title });
-      group.actions.forEach(action => {
+      group.cards.forEach(card => {
         const row = ce(sec, 'div', 'te-card');
         const head = ce(row, 'div', 'te-card-head');
-        ce(head, 'h4', 'te-card-title', action.label);
-        ce(row, 'p', 'te-card-body', action.desc);
+        ce(head, 'h4', 'te-card-title', card.label);
+        ce(row, 'p', 'te-card-body', card.desc);
         const acts = ce(row, 'div', 'te-card-actions');
-        btn(acts, action.label, 'te-btn is-sm is-primary', () => {
+        btn(acts, card.label, 'te-btn is-sm is-primary', () => {
           this.close();
-          action.run();
+          if (card.special === 'table') new RollableTableModal(this.app, this.plugin).open();
+          else openHomebrewBuilder(this.app, this.plugin, card.type);
         });
       });
+      if (group.title === 'Character Options') {
+        const hybridRow = ce(sec, 'div', 'te-card');
+        const head = ce(hybridRow, 'div', 'te-card-head');
+        ce(head, 'h4', 'te-card-title', 'Hybrid Ancestry');
+        ce(hybridRow, 'p', 'te-card-body', 'Open the existing hybrid ancestry builder. Hybrid saves remain compatible with the ancestry homebrew schema.');
+        const acts = ce(hybridRow, 'div', 'te-card-actions');
+        btn(acts, 'Hybrid Ancestry', 'te-btn is-sm', () => {
+          this.close();
+          new HybridAncestryModal(this.app, this.plugin).open();
+        });
+      }
     });
   }
 }
@@ -10618,10 +11588,13 @@ class HybridAncestryModal extends Modal {
       const hb = normalizeHomebrewRecord(existingHb
         ? {
           ...existingHb,
+          homebrewType: 'Ancestry',
           type: 'Hybrid Ancestry',
           category: 'Character Options',
+          payload: { kind: 'Ancestry', ...HOMEBREW_BUILDERS.Ancestry.toPayload(hybridAncestryToBuilderValues(this.values)) },
           content: this._toMarkdown(),
           summary: this.values.summary || existingHb.summary || '',
+          balanceNotes: this.values.balanceRating ? `${this.values.balanceRating} (${this.values.balanceScore || 0})` : (existingHb.balanceNotes || ''),
           updatedAt: new Date().toISOString(),
           visibility: this.values.visibility,
         }
@@ -10634,11 +11607,14 @@ class HybridAncestryModal extends Modal {
           promotedFromEntityId: this.values.id,
           homebrewId: '',
           name: this.values.name,
+          homebrewType: 'Ancestry',
           type: 'Hybrid Ancestry',
           category: 'Character Options',
+          payload: { kind: 'Ancestry', ...HOMEBREW_BUILDERS.Ancestry.toPayload(hybridAncestryToBuilderValues(this.values)) },
           content: this._toMarkdown(),
           summary: this.values.summary || '',
           tags: ['hybrid', 'ancestry'],
+          balanceNotes: this.values.balanceRating ? `${this.values.balanceRating} (${this.values.balanceScore || 0})` : '',
           visibility: this.values.visibility,
           sourceCampaignId: this.plugin.state.activeCampaignId || '',
           campaignId: this.plugin.state.activeCampaignId || '',
