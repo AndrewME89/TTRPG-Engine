@@ -3211,17 +3211,18 @@ function renderMilestonesSection(main, plugin, tabs) {
 
 function renderWorldAtlas(main, plugin) {
   const state = plugin.state;
+  // Redirect legacy gazetteer route to geography
+  if (state.activeSubSection === 'gazetteer') state.activeSubSection = 'geography';
   const tabs = [
-    { id: 'lore',       label: '🌍 World & Lore' },
-    { id: 'geography',  label: '🗺️ Geography & Maps' },
-    { id: 'gazetteer',  label: '📍 Gazetteer' },
+    { id: 'lore',      label: '🌍 World & Lore' },
+    { id: 'geography', label: '🗺️ Geography & Maps' },
+    { id: 'tilemap',   label: '🧩 Tile Map Builder' },
   ];
   const sub = state.activeSubSection || 'lore';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'lore')           renderWorld(wrap, plugin, tabs);
-  else if (sub === 'geography') renderGeography(wrap, plugin, tabs);
-  else if (sub === 'gazetteer') renderGazetteer(wrap, plugin, tabs);
-  else renderWorld(wrap, plugin, tabs);
+  if (sub === 'lore')       renderWorld(wrap, plugin, tabs);
+  else if (sub === 'tilemap') renderTileMapTab(wrap, plugin, tabs);
+  else                      renderGeography(wrap, plugin, tabs);
 }
 
 function migrateNobleFamiliesToFactions(plugin) {
@@ -4018,23 +4019,9 @@ const langFields = [
 ];
 
 // ── GEOGRAPHY & MAPS ──────────────────────────────────────────────────────────
-function renderGeography(main, plugin, tabs) {
-  pageHead(main, plugin, 'Geography & Maps', 'Regions, settlements, locations, points of interest, routes, and the Tile Map Builder.', [
-    { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
-    { label: '+ Domain', onClick: () => new GenericModal(plugin.app, plugin, 'domains', null, domainFields).open() },
-    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
-    { label: '+ Location', onClick: () => new GenericModal(plugin.app, plugin, 'locations', null, locationFields).open() },
-    { label: '+ District', onClick: () => new GenericModal(plugin.app, plugin, 'districts', null, districtFields).open() },
-    { label: '+ Room', onClick: () => new GenericModal(plugin.app, plugin, 'rooms', null, roomFields).open() },
-    { label: '+ POI', onClick: () => new GenericModal(plugin.app, plugin, 'pois', null, poiFields).open() },
-    { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
-  ], tabs);
-
-  // Tile Map Builder (inline)
-  sectionHead(main, 'Tile Map Builder');
+function renderTileMapTab(main, plugin, tabs) {
+  pageHead(main, plugin, '🧩 Tile Map Builder', 'Build and save campaign maps tile by tile.', [], tabs);
   renderTileMapBuilder(main, plugin);
-
-  // Saved Maps
   sectionHead(main, 'Saved Maps');
   const savedMaps = safeArr(plugin.state.entities.maps);
   if (!savedMaps.length) {
@@ -4089,6 +4076,20 @@ function renderGeography(main, plugin, tabs) {
       });
     });
   }
+}
+
+function renderGeography(main, plugin, tabs) {
+  pageHead(main, plugin, 'Geography & Maps', 'Regions, settlements, dungeons, locations, and points of interest.', [
+    { label: '+ Region', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'regions', null, regionFields).open() },
+    { label: '+ Domain', onClick: () => new GenericModal(plugin.app, plugin, 'domains', null, domainFields).open() },
+    { label: '+ Settlement', onClick: () => new GenericModal(plugin.app, plugin, 'settlements', null, settlementFields).open() },
+    { label: '+ Dungeon', onClick: () => new DungeonModal(plugin.app, plugin).open() },
+    { label: '+ Location', onClick: () => new GenericModal(plugin.app, plugin, 'locations', null, locationFields).open() },
+    { label: '+ District', onClick: () => new GenericModal(plugin.app, plugin, 'districts', null, districtFields).open() },
+    { label: '+ Room', onClick: () => new GenericModal(plugin.app, plugin, 'rooms', null, roomFields).open() },
+    { label: '+ POI', onClick: () => new GenericModal(plugin.app, plugin, 'pois', null, poiFields).open() },
+    { label: '+ Route', onClick: () => new GenericModal(plugin.app, plugin, 'routes', null, routeFields).open() },
+  ], tabs);
 
   sectionHead(main, 'Regions');
   itemCards(main, plugin, 'regions', { meta: ['terrain', 'climate', 'population'] });
@@ -4096,6 +4097,8 @@ function renderGeography(main, plugin, tabs) {
   itemCards(main, plugin, 'domains', { meta: ['domainType', 'controllerId', 'claimedRegionIds', 'settlementIds'] });
   sectionHead(main, 'Settlements');
   itemCards(main, plugin, 'settlements', { meta: ['type', 'population', 'region'] });
+  sectionHead(main, 'Dungeons & Keyed Locations');
+  itemCards(main, plugin, 'dungeons', { meta: ['type', 'threatLevel', 'rooms'] });
   sectionHead(main, 'Districts');
   itemCards(main, plugin, 'districts', { meta: ['type', 'settlementId', 'atmosphere'] });
   sectionHead(main, 'Locations');
@@ -4168,9 +4171,10 @@ const routeFields = [
   { key: 'hazards', label: 'Hazards', type: 'chip', opts: { bank: 'worldHazards' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
+const DOMAIN_TYPES = ['Political','Noble Holding','Divine','Fey Domain / Domain of Delight','Dread Domain','Magical Region','Monster Lair','Faction Territory','Planar Domain','Custom'];
 const domainFields = [
   { key: 'name', label: 'Domain Name', type: 'text' },
-  { key: 'domainType', label: 'Domain Type', type: 'select', options: ['Political','Noble Holding','Divine','Magical','Monster Lair','Faction Territory','Dread Domain','Planar','Other'] },
+  { key: 'domainType', label: 'Domain Type', type: 'select', options: DOMAIN_TYPES },
   {
     type: 'typedEntityRef',
     label: 'Controller',
@@ -4195,7 +4199,17 @@ const domainFields = [
   { key: 'laws', label: 'Laws', type: 'textarea' },
   { key: 'resources', label: 'Resources', type: 'textarea' },
   { key: 'threats', label: 'Threats', type: 'textarea' },
+  // Domain of Delight / Fey Domain fields (shown for all domains; relevant when domainType = Fey Domain / Domain of Delight)
+  { key: 'archfeyRuler', label: 'Archfey Ruler', type: 'text', hint: 'Fey Domain / Domain of Delight' },
+  { key: 'delightTheme', label: 'Theme / Emotional Logic', type: 'text', hint: 'e.g. Vanity, Revelry, Grief, Conquest' },
+  { key: 'entranceRules', label: 'Entrance / Exit Rules', type: 'textarea' },
+  { key: 'feyBargains', label: 'Fey Bargains / Geas', type: 'textarea' },
+  { key: 'timeDistortion', label: 'Time Distortion', type: 'text', hint: 'e.g. 1 day = 1 week outside' },
+  { key: 'planarTraits', label: 'Planar Traits', type: 'chip' },
+  { key: 'delightDreadTone', label: 'Tone', type: 'select', options: ['Delight','Dread','Ambiguous','Shifting'] },
+  // Shared
   { key: 'summary', label: 'Summary', type: 'textarea' },
+  { key: 'campaignId', label: 'Campaign', type: 'campaign' },
   { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible','secret'] },
 ];
 
@@ -10370,7 +10384,12 @@ class DungeonModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.item = item || {};
-    this.values = Object.assign({ id: uid('dungeon'), name: '', type: 'Ancient Ruins', summary: '', threatLevel: '', boss: '', rooms: [], visibility: 'dm-only', notes: '' }, this.item);
+    this.values = Object.assign({
+      id: uid('dungeon'), name: '', type: 'Ancient Ruins', summary: '', threatLevel: '',
+      boss: '', bossRef: null, bossNpcId: '', bossCreatureId: '',
+      rooms: [], linkedRoomIds: [],
+      regionId: '', campaignId: '', visibility: 'dm-only', notes: '',
+    }, this.item);
   }
   onOpen() {
     const { contentEl } = this;
@@ -10383,35 +10402,86 @@ class DungeonModal extends Modal {
     addSelect(s1, 'Type', this.values.type, OPTION_BANKS.dungeonTypes, v => this.values.type = v);
     addField(s1, 'Summary', this.values.summary, v => this.values.summary = v, 'textarea');
     addField(s1, 'Threat Level / CR Range', this.values.threatLevel, v => this.values.threatLevel = v);
-    addField(s1, 'Boss / Key Enemy', this.values.boss, v => this.values.boss = v);
-    addEntityPicker(s1, 'Boss NPC (entity link)', this.values.bossNpcId || '', this.plugin, 'npcs', v => this.values.bossNpcId = v);
     addEntityPicker(s1, 'Linked Region', this.values.regionId, this.plugin, 'regions', v => this.values.regionId = v);
     addCampaignPicker(s1, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
     addSelect(s1, 'Visibility', this.values.visibility, ['dm-only','player-visible'], v => this.values.visibility = v);
 
+    // Boss / Key Enemy — structured selector
+    const bossSec = ce(contentEl, 'div', 'te-modal-section');
+    bossSec.createEl('h3', { text: 'Boss / Key Enemy' });
+    // Legacy text field (preserved for backwards compat)
+    addField(bossSec, 'Boss / Key Enemy (text)', this.values.boss, v => this.values.boss = v);
+    // Entity pickers for structured reference
+    addEntityPicker(bossSec, 'Boss — NPC', this.values.bossNpcId || '', this.plugin, 'npcs', v => {
+      this.values.bossNpcId = v;
+      if (v) { const npc = safeArr(this.plugin.state.entities.npcs).find(n => n.id === v); this.values.bossRef = { sourceType: 'npc', id: v, name: npc ? npc.name : v, source: 'entity' }; }
+    });
+    addEntityPicker(bossSec, 'Boss — Creature', this.values.bossCreatureId || '', this.plugin, 'creatures', v => {
+      this.values.bossCreatureId = v;
+      if (v) { const cr = safeArr(this.plugin.state.entities.creatures).find(c => c.id === v); this.values.bossRef = { sourceType: 'creature', id: v, name: cr ? cr.name : v, source: 'entity' }; }
+    });
+    // Bestiary reference picker
+    const bestiaryRow = ce(bossSec, 'div', 'te-card-actions');
+    ce(bestiaryRow, 'span', 'te-muted-text', 'Boss — Bestiary: ');
+    const bestiaryLabel = ce(bestiaryRow, 'span', '');
+    bestiaryLabel.textContent = this.values.bossRef && this.values.bossRef.source === 'bestiary' ? this.values.bossRef.name : '(none)';
+    btn(bestiaryRow, '🐉 Pick from Bestiary', 'te-btn is-sm', async () => {
+      const bestiary = await this.plugin.refData.get('bestiary');
+      new RefDataPickerModal(this.plugin.app, bestiary, 'Monster', monster => {
+        this.values.bossRef = { sourceType: 'bestiary', id: monster.id || monster.name, name: monster.name, source: 'bestiary' };
+        bestiaryLabel.textContent = monster.name;
+        if (!this.values.boss) this.values.boss = monster.name;
+      }).open();
+    });
+    // Show resolved boss reference
+    if (this.values.bossRef) {
+      const refRow = ce(bossSec, 'div', ''); refRow.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin-top:4px';
+      refRow.textContent = `Structured ref: ${this.values.bossRef.sourceType} — ${this.values.bossRef.name} (${this.values.bossRef.source})`;
+    }
+
+    // Rooms & Keyed Areas
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Rooms & Keyed Areas' });
+
+    // Link existing Room entities
+    addEntityMultiPicker(s2, 'Linked Room Entities', safeArr(this.values.linkedRoomIds), this.plugin, 'rooms', v => this.values.linkedRoomIds = v);
+
+    // Quick-create a new Room entity pre-linked to this dungeon
+    btn(s2, '+ Create New Room (linked)', 'te-btn is-sm', () => {
+      const dungeonId = this.values.id;
+      const newRoom = { id: uid('room'), name: '', type: 'Chamber', description: '', dungeonId, locationType: 'dungeons', locationId: dungeonId, campaignId: this.values.campaignId || '', visibility: this.values.visibility || 'dm-only' };
+      new GenericModal(this.plugin.app, this.plugin, 'rooms', newRoom, roomFields).open();
+    });
+
+    // Legacy inline rooms (preserved for backwards compat display)
     const rooms = Array.isArray(this.values.rooms) ? this.values.rooms : [];
-    const roomList = ce(s2, 'div', '');
-    const renderRooms = () => {
-      clear(roomList);
-      rooms.forEach((room, i) => {
-        const row = ce(roomList, 'div', ''); row.style.cssText = 'border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:10px;margin-bottom:8px';
-        addField(row, `Room ${i + 1} — Name`, room.name || '', v => room.name = v);
-        addSelect(row, 'Type', room.type || 'Chamber', OPTION_BANKS.roomTypes, v => room.type = v);
-        addField(row, 'Description', room.description || '', v => room.description = v, 'textarea');
-        addField(row, 'Enemies / Hazards', room.enemies || '', v => room.enemies = v);
-        addField(row, 'Treasure', room.treasure || '', v => room.treasure = v);
-        btn(row, '× Remove', 'te-btn is-sm is-danger', () => { rooms.splice(i, 1); renderRooms(); });
-      });
-    };
-    renderRooms();
-    btn(s2, '+ Add Room', 'te-btn is-sm', () => { rooms.push({ name: '', type: 'Chamber', description: '', enemies: '', treasure: '' }); this.values.rooms = rooms; renderRooms(); });
+    if (rooms.length) {
+      const legacyHead = ce(s2, 'div', ''); legacyHead.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin:8px 0 4px';
+      legacyHead.textContent = 'Legacy inline rooms:';
+      const roomList = ce(s2, 'div', '');
+      const renderRooms = () => {
+        clear(roomList);
+        rooms.forEach((room, i) => {
+          const row = ce(roomList, 'div', ''); row.style.cssText = 'border:1px solid var(--te-border);border-radius:var(--te-r-sm);padding:10px;margin-bottom:8px';
+          addField(row, `Room ${i + 1} — Name`, room.name || '', v => room.name = v);
+          addSelect(row, 'Type', room.type || 'Chamber', OPTION_BANKS.roomTypes, v => room.type = v);
+          addField(row, 'Description', room.description || '', v => room.description = v, 'textarea');
+          addField(row, 'Enemies / Hazards', room.enemies || '', v => room.enemies = v);
+          addField(row, 'Treasure', room.treasure || '', v => room.treasure = v);
+          btn(row, '× Remove', 'te-btn is-sm is-danger', () => { rooms.splice(i, 1); renderRooms(); });
+        });
+      };
+      renderRooms();
+      btn(s2, '+ Add Inline Room', 'te-btn is-sm', () => { rooms.push({ name: '', type: 'Chamber', description: '', enemies: '', treasure: '' }); this.values.rooms = rooms; renderRooms(); });
+    } else {
+      btn(s2, '+ Add Inline Room', 'te-btn is-sm', () => { rooms.push({ name: '', type: 'Chamber', description: '', enemies: '', treasure: '' }); this.values.rooms = rooms; this.onOpen(); });
+    }
 
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Dungeon name is required.'); return; }
       this.values.rooms = rooms;
+      if (!this.values.campaignId) this.values.campaignId = this.plugin.state.activeCampaignId || '';
       upsert(this.plugin.state, 'dungeons', this.values);
       await this.plugin.saveState();
       new Notice(`Dungeon "${this.values.name}" saved.`);
