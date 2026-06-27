@@ -216,6 +216,14 @@ const CONDITIONS_LIST = ['Blinded','Charmed','Deafened','Exhaustion (1)','Exhaus
   'Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified',
   'Poisoned','Prone','Restrained','Stunned','Unconscious'];
 const SPELLCASTING_CLASSES = ['Artificer','Bard','Cleric','Druid','Paladin','Ranger','Sorcerer','Warlock','Wizard'];
+const HIT_DIE_BY_CLASS = { Barbarian: 12, Fighter: 10, Paladin: 10, Ranger: 10, Bard: 8, Cleric: 8, Druid: 8, Monk: 8, Rogue: 8, Warlock: 8, Artificer: 8, Sorcerer: 6, Wizard: 6 };
+const NPC_STAT_PRESETS = {
+  'Commoner':    { ac: 10, hp: 4,  str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+  'Skilled NPC': { ac: 11, hp: 9,  str: 11, dex: 12, con: 11, int: 12, wis: 11, cha: 11 },
+  'Combat NPC':  { ac: 14, hp: 26, str: 14, dex: 13, con: 14, int: 10, wis: 11, cha: 10 },
+  'Elite NPC':   { ac: 16, hp: 52, str: 16, dex: 14, con: 16, int: 12, wis: 12, cha: 12 },
+  'Caster':      { ac: 12, hp: 22, str: 9,  dex: 14, con: 12, int: 16, wis: 14, cha: 11 },
+};
 // XP required to reach each level (index = level, so [1] = XP for level 2, etc.)
 const XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
 // D&D 5e encounter XP thresholds per character by level [easy, medium, hard, deadly]
@@ -7494,9 +7502,19 @@ async function renderPCInventory(main, plugin) {
   if (items.length) {
     const g = ce(main, 'div', 'te-grid');
     items.forEach((item, i) => {
+      const isObj = item && typeof item === 'object';
+      const name = isObj ? (item.name || 'Item') : item;
+      const meta = isObj ? [item.category, item.type, item.quantity > 1 ? `×${item.quantity}` : null].filter(Boolean).join(' · ') : '';
+      const equipped = isObj ? item.equipped : false;
       const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '🎒'); ce(h, 'h3', 'te-card-title', item);
+      const h = ce(c, 'div', 'te-card-head');
+      ce(h, 'span', 'te-card-icon', equipped ? '✅' : '🎒');
+      ce(h, 'h3', 'te-card-title', name);
+      if (meta) { const m = ce(h, 'span', 'te-card-meta-label', meta); m.style.marginLeft = '6px'; }
       const a = ce(c, 'div', 'te-card-actions');
+      if (isObj) {
+        btn(a, equipped ? 'Unequip' : 'Equip', 'te-btn is-sm', async () => { char.equipment[i] = { ...item, equipped: !equipped }; upsert(state, 'characters', char); await plugin.saveState(); });
+      }
       btn(a, 'Remove', 'te-btn is-sm is-danger', async () => { char.equipment = char.equipment.filter((_, j) => j !== i); upsert(state, 'characters', char); await plugin.saveState(); });
     });
   }
@@ -7504,7 +7522,7 @@ async function renderPCInventory(main, plugin) {
   const inp = ce(addRow, 'input'); inp.type = 'text'; inp.placeholder = 'Item name…'; inp.style.flex = '1';
   btn(addRow, '+ Add', 'te-btn is-sm is-primary', async () => {
     const v = inp.value.trim();
-    if (v) { if (!char.equipment) char.equipment = []; char.equipment.push(v); upsert(state, 'characters', char); await plugin.saveState(); inp.value = ''; }
+    if (v) { if (!char.equipment) char.equipment = []; char.equipment.push({ name: v, type: '', category: '', quantity: 1, equipped: false, sourceKey: 'custom' }); upsert(state, 'characters', char); await plugin.saveState(); inp.value = ''; }
   });
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addRow.querySelector('button').click(); } });
 
@@ -7523,7 +7541,7 @@ async function renderPCInventory(main, plugin) {
     const filtered = plugin.refData.search(allEquip, ebs.search).slice(0, 80);
     const listEl = ce(eWrap, 'div', 'te-grid');
     filtered.forEach(eq => {
-      const carried = safeArr(char.equipment).includes(eq.name);
+      const carried = safeArr(char.equipment).some(it => (typeof it === 'string' ? it : it.name) === eq.name);
       const c = ce(listEl, 'div', 'te-card');
       const h = ce(c, 'div', 'te-card-head'); h.style.cursor = 'pointer';
       ce(h, 'h3', 'te-card-title', eq.name);
@@ -7536,7 +7554,7 @@ async function renderPCInventory(main, plugin) {
         const lbl = ce(a, 'span', 'te-muted-text'); lbl.textContent = '✓ Carried'; lbl.style.fontSize = '.82rem';
       } else {
         btn(a, '+ Carry', 'te-btn is-sm is-primary', async () => {
-          if (!char.equipment) char.equipment = []; char.equipment.push(eq.name); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${eq.name}" added to inventory.`);
+          if (!char.equipment) char.equipment = []; char.equipment.push({ name: eq.name, type: eq.type || '', category: eq.category || '', quantity: 1, equipped: false, sourceKey: 'equipment' }); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${eq.name}" added to inventory.`);
         });
       }
     });
@@ -7590,18 +7608,19 @@ async function renderPCSpellbook(main, plugin) {
     upsert(state, 'characters', char); await plugin.saveState(); new Notice('Spell slots reset (Long Rest).');
   });
 
-  // Known Spells (from char.spells array)
-  sectionHead(main, `${char.name}'s Known / Prepared Spells`);
-  const knownSpells = safeArr(char.spells);
+  // Known Spells — use knownSpells field; fall back to legacy char.spells
+  if (!char.knownSpells || !char.knownSpells.length) {
+    if (safeArr(char.spells).length) { char.knownSpells = [...safeArr(char.spells)]; char.spells = []; }
+  }
   const allRefSpells = await plugin.refData.get('spells');
-  if (knownSpells.length) {
-    const g = ce(main, 'div', 'te-grid');
-    knownSpells.forEach((spellName, i) => {
+
+  const renderSpellList = (parent, spellNames, onRemove) => {
+    if (!spellNames.length) { ce(parent, 'p', 'te-empty-state', 'None yet.'); return; }
+    const g = ce(parent, 'div', 'te-grid');
+    spellNames.forEach((spellName, i) => {
       const refSpell = allRefSpells.find(s => s.name.toLowerCase() === spellName.toLowerCase());
       const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head');
-      ce(h, 'span', 'te-card-icon', '✨');
-      ce(h, 'h3', 'te-card-title', spellName);
+      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '✨'); ce(h, 'h3', 'te-card-title', spellName);
       if (refSpell) { const m = ce(h, 'span', 'te-card-meta-label', refItemMeta('spells', refSpell)); m.style.marginLeft = '6px'; }
       if (refSpell) {
         const detail = ce(c, 'div', 'te-ref-detail'); detail.style.display = 'none';
@@ -7610,13 +7629,24 @@ async function renderPCSpellbook(main, plugin) {
         h.addEventListener('click', () => { detail.style.display = detail.style.display === 'none' ? '' : 'none'; });
       }
       const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Remove', 'te-btn is-sm is-danger', async () => {
-        char.spells = char.spells.filter((_, j) => j !== i); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${spellName}" removed.`);
-      });
+      btn(a, 'Remove', 'te-btn is-sm is-danger', async () => { onRemove(i); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${spellName}" removed.`); });
     });
-  } else {
-    ce(main, 'p', 'te-empty-state', 'No spells added yet. Browse the spell list below to add spells.');
-  }
+  };
+
+  sectionHead(main, `${char.name}'s Known Spells`);
+  const knownSpells = safeArr(char.knownSpells);
+  renderSpellList(main, knownSpells, i => { char.knownSpells.splice(i, 1); });
+
+  sectionHead(main, 'Prepared Spells');
+  ce(main, 'p', 'te-progress-label', 'Mark spells as prepared from your known list, or add prepared-only spells here.');
+  const preparedSpells = safeArr(char.preparedSpells);
+  renderSpellList(main, preparedSpells, i => { char.preparedSpells.splice(i, 1); });
+  const prepAddRow = ce(main, 'div', ''); prepAddRow.style.cssText = 'display:flex;gap:8px;margin-top:6px';
+  const prepInp = ce(prepAddRow, 'input'); prepInp.type = 'text'; prepInp.placeholder = 'Spell name to prepare…'; prepInp.style.flex = '1';
+  btn(prepAddRow, '+ Prepare', 'te-btn is-sm is-primary', async () => {
+    const v = prepInp.value.trim();
+    if (v && !safeArr(char.preparedSpells).includes(v)) { if (!char.preparedSpells) char.preparedSpells = []; char.preparedSpells.push(v); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${v}" marked as prepared.`); prepInp.value = ''; }
+  });
 
   // Spell Browser (search + level filter)
   sectionHead(main, 'Spell Browser');
@@ -7637,7 +7667,7 @@ async function renderPCSpellbook(main, plugin) {
     const shown = filtered.slice(0, 80);
     if (!shown.length) { listEl.className = ''; ce(listEl, 'p', 'te-empty-state', bs.search ? `No spells match "${bs.search}".` : 'No spells available.'); }
     shown.forEach(sp => {
-      const known = knownSpells.some(n => n.toLowerCase() === sp.name.toLowerCase());
+      const known = safeArr(char.knownSpells).some(n => n.toLowerCase() === sp.name.toLowerCase());
       const c = ce(listEl, 'div', 'te-card');
       const h = ce(c, 'div', 'te-card-head'); h.style.cursor = 'pointer';
       ce(h, 'h3', 'te-card-title', sp.name);
@@ -7650,7 +7680,7 @@ async function renderPCSpellbook(main, plugin) {
         const lbl = ce(a, 'span', 'te-muted-text'); lbl.textContent = '✓ Known'; lbl.style.fontSize = '.82rem';
       } else {
         btn(a, '+ Learn', 'te-btn is-sm is-primary', async () => {
-          if (!char.spells) char.spells = []; if (!char.spells.includes(sp.name)) { char.spells.push(sp.name); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${sp.name}" added to spellbook.`); }
+          if (!char.knownSpells) char.knownSpells = []; if (!char.knownSpells.includes(sp.name)) { char.knownSpells.push(sp.name); upsert(state, 'characters', char); await plugin.saveState(); new Notice(`"${sp.name}" added to spellbook.`); }
         });
       }
     });
@@ -7948,8 +7978,32 @@ class NPCModal extends Modal {
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Combat Stats' });
-    addNumber(s2, 'AC', this.values.ac, v => this.values.ac = v);
-    addNumber(s2, 'HP', this.values.hp, v => this.values.hp = v);
+
+    // NPC preset selector
+    const presetRow = ce(s2, 'div', ''); presetRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
+    ce(presetRow, 'span', 'te-muted-text', 'Preset:');
+    Object.keys(NPC_STAT_PRESETS).forEach(name => {
+      btn(presetRow, name, 'te-btn is-sm', () => {
+        const p = NPC_STAT_PRESETS[name];
+        Object.assign(this.values, p);
+        this.onOpen();
+      });
+    });
+
+    const acInput = { el: null }; const hpInput = { el: null };
+    new Setting(s2).setName('AC').addText(t => { t.inputEl.type = 'number'; t.setValue(String(this.values.ac)); t.onChange(v => this.values.ac = parseInt(v) || 0); acInput.el = t.inputEl; });
+    const acSugRow = ce(s2, 'div', ''); acSugRow.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin:-6px 0 8px 0;display:flex;align-items:center;gap:8px';
+    const dexMod = () => Math.floor((this.values.dex - 10) / 2);
+    const acSugLabel = ce(acSugRow, 'span', ''); acSugLabel.textContent = `Suggested: 10 + DEX mod (${dexMod() >= 0 ? '+' : ''}${dexMod()}) = ${10 + dexMod()}`;
+    btn(acSugRow, 'Apply', 'te-btn is-sm', () => { this.values.ac = 10 + dexMod(); this.onOpen(); });
+
+    new Setting(s2).setName('HP').addText(t => { t.inputEl.type = 'number'; t.setValue(String(this.values.hp)); t.onChange(v => this.values.hp = parseInt(v) || 0); hpInput.el = t.inputEl; });
+    const hpSugRow = ce(s2, 'div', ''); hpSugRow.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin:-6px 0 8px 0;display:flex;align-items:center;gap:8px';
+    const conMod = () => Math.floor((this.values.con - 10) / 2);
+    const hpSug = () => Math.max(1, 8 + conMod());
+    const hpSugLabel = ce(hpSugRow, 'span', ''); hpSugLabel.textContent = `Suggested: 1d8 avg (5) + CON mod (${conMod() >= 0 ? '+' : ''}${conMod()}) = ${hpSug()}`;
+    btn(hpSugRow, 'Apply', 'te-btn is-sm', () => { this.values.hp = hpSug(); this.onOpen(); });
+
     addField(s2, 'Speed', this.values.speed, v => this.values.speed = v);
     const abRow = ce(s2, 'div', '');
     abRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px';
@@ -7959,6 +8013,11 @@ class NPCModal extends Modal {
         t.inputEl.type = 'number'; t.setValue(String(this.values[ab]));
         t.onChange(v => { this.values[ab] = parseInt(v) || 10; });
       });
+    });
+    // Roll Stats button
+    btn(s2, '🎲 Roll Stats (4d6 drop lowest)', 'te-btn is-sm', () => {
+      ['str','dex','con','int','wis','cha'].forEach(ab => { this.values[ab] = roll4d6dl(); });
+      this.onOpen();
     });
 
     const s3 = ce(contentEl, 'div', 'te-modal-section');
@@ -8031,8 +8090,16 @@ class CreatureModal extends Modal {
         t.onChange(v => this.values[ab] = parseInt(v) || 10);
       });
     });
+    btn(statSec, '🎲 Roll Stats (4d6 drop lowest)', 'te-btn is-sm', () => {
+      ['str','dex','con','int','wis','cha'].forEach(ab => { this.values[ab] = roll4d6dl(); });
+      this.onOpen();
+    });
     chipField(statSec, 'Senses', safeArr(this.values.senses), v => this.values.senses = v, { bank: 'creatureSenses' });
-    chipField(statSec, 'Languages', safeArr(this.values.languages), v => this.values.languages = v);
+    // Languages: migrate legacy string to array, then show chip field with bank
+    if (typeof this.values.languages === 'string') this.values.languages = this.values.languages ? [this.values.languages] : [];
+    const langSuggestions = ['Common','Dwarvish','Elvish','Gnomish','Halfling','Orc','Draconic','Infernal','Celestial','Sylvan','Undercommon','Abyssal','Primordial','Deep Speech','Giant','Goblin','Telepathy'];
+    chipField(statSec, 'Languages', safeArr(this.values.languages), v => this.values.languages = v, { suggestions: langSuggestions });
+    { const sel = statSec.lastElementChild && statSec.lastElementChild.querySelector('select'); if (sel) this.plugin.refData.get('languages').then(langs => { const ex = new Set(langSuggestions); [...new Set(langs.map(l => l.name).filter(Boolean))].filter(n => !ex.has(n)).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); }); }).catch(()=>{}); }
 
     const abilitySec = ce(contentEl, 'div', 'te-modal-section');
     abilitySec.createEl('h3', { text: 'Abilities & Actions' });
@@ -9463,7 +9530,7 @@ class CharacterModal extends Modal {
       skills: [], savingThrows: [], features: [], spells: [],
       equipment: [], currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
       xp: 0, spellSlots: {}, deathSaves: { successes: 0, failures: 0 },
-      backstory: '', notes: '', languages: [], knownSpells: [],
+      backstory: '', notes: '', languages: [], knownSpells: [], preparedSpells: [],
     }, this.item);
   }
   onOpen() {
@@ -9552,9 +9619,27 @@ class CharacterModal extends Modal {
     const s3 = ce(contentEl, 'div', 'te-modal-section');
     s3.createEl('h3', { text: 'Combat Stats' });
     addNumber(s3, 'Max HP', this.values.maxHp, v => { this.values.maxHp = v; if (!this.values.hp) this.values.hp = v; });
+    // Max HP suggestion: hit die avg + CON mod per level
+    {
+      const conMod = Math.floor((this.values.con - 10) / 2);
+      const hitDie = HIT_DIE_BY_CLASS[this.values.class] || 8;
+      const lvl = this.values.level || 1;
+      const avgRoll = Math.ceil(hitDie / 2) + 1;
+      const sugMaxHp = hitDie + conMod + (lvl - 1) * (avgRoll + conMod);
+      const mhpSug = ce(s3, 'div', ''); mhpSug.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin:-6px 0 8px 0;display:flex;align-items:center;gap:8px';
+      ce(mhpSug, 'span', '', `Suggested (d${hitDie}, Lvl ${lvl}, CON ${conMod >= 0 ? '+' : ''}${conMod}): ${sugMaxHp}`);
+      btn(mhpSug, 'Apply', 'te-btn is-sm', () => { this.values.maxHp = sugMaxHp; if (!this.values.hp) this.values.hp = sugMaxHp; this.onOpen(); });
+    }
     addNumber(s3, 'Current HP', this.values.hp, v => this.values.hp = v);
     addNumber(s3, 'Temp HP', this.values.tempHp, v => this.values.tempHp = v);
     addNumber(s3, 'AC', this.values.ac, v => this.values.ac = v);
+    // AC suggestion: 10 + DEX mod (unarmored baseline)
+    {
+      const dexMod = Math.floor((this.values.dex - 10) / 2);
+      const acSug = ce(s3, 'div', ''); acSug.style.cssText = 'font-size:.82rem;color:var(--te-muted);margin:-6px 0 8px 0;display:flex;align-items:center;gap:8px';
+      ce(acSug, 'span', '', `Unarmored baseline: 10 + DEX mod (${dexMod >= 0 ? '+' : ''}${dexMod}) = ${10 + dexMod}`);
+      btn(acSug, 'Apply', 'te-btn is-sm', () => { this.values.ac = 10 + dexMod; this.onOpen(); });
+    }
     addField(s3, 'Speed', this.values.speed, v => this.values.speed = v);
     addNumber(s3, 'Experience Points (XP)', this.values.xp || 0, v => this.values.xp = v);
 
