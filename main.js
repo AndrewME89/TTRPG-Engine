@@ -3030,11 +3030,23 @@ function repairAndReindex(state) {
       if (item.visibility && !VALID_VIS.includes(item.visibility)) {
         issues.push(`${key}[${i}] ${item.id}: invalid visibility "${item.visibility}" (not changed, requires manual fix)`);
       }
+      // Placeholder text saved as field value
+      const PLACEHOLDER_STRINGS = ['Select existing', 'Select common options', 'Make noted changes', 'Confirm what this connects to', 'select common', 'select existing'];
+      for (const [field, val] of Object.entries(item)) {
+        if (typeof val === 'string' && PLACEHOLDER_STRINGS.some(p => val === p)) {
+          item[field] = '';
+          issues.push(`${key}[${i}] ${item.id}: cleared placeholder text in field "${field}"`);
+        }
+      }
     });
   }
-  // Check relationships
+  // Check relationships — stamp missing campaignId and validate canonical fields
   safeArr(state.relationships).forEach((rel, i) => {
     if (!rel.id) { rel.id = `rel-repaired-${Date.now()}-${i}`; issues.push(`relationship[${i}]: assigned missing id`); }
+    if (!rel.campaignId && state.activeCampaignId) {
+      rel.campaignId = state.activeCampaignId;
+      issues.push(`relationship[${i}] ${rel.id}: assigned missing campaignId`);
+    }
     if (rel.fromEntityType && rel.fromId) {
       const arr = safeArr((state.entities || {})[rel.fromEntityType]);
       if (!arr.find(x => x.id === rel.fromId)) issues.push(`relationship[${i}] ${rel.id}: fromId ${rel.fromId} not found in ${rel.fromEntityType}`);
@@ -3901,7 +3913,6 @@ function renderWorld(main, plugin, tabs) {
     { label: '+ Cosmology', onClick: () => new GenericModal(plugin.app, plugin, 'cosmologies', null, cosmologyFields).open() },
     { label: '+ Realm', onClick: () => new GenericModal(plugin.app, plugin, 'realms', null, realmFields).open() },
     { label: '+ Deity', onClick: () => new GenericModal(plugin.app, plugin, 'deities', null, deityFields).open() },
-    { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
     { label: '+ Culture', onClick: () => new GenericModal(plugin.app, plugin, 'cultures', null, cultureFields).open() },
     { label: '+ Language', onClick: () => new GenericModal(plugin.app, plugin, 'languages', null, langFields).open() },
     { label: '+ Nation', onClick: () => new GenericModal(plugin.app, plugin, 'nations', null, nationFields).open() },
@@ -4832,6 +4843,34 @@ function renderFactions(main, plugin, tabs) {
   const cardsWrap = ce(main, 'div', '');
   itemCards(cardsWrap, plugin, 'factions', { meta: ['type', 'ideology', 'territory', 'reputation'] });
 
+  // ── Faction Standing (Reputation) ──────────────────────────────────────────
+  const allReps = safeArr(plugin.state.entities.reputations);
+  if (allReps.length) {
+    sectionHead(main, 'Faction Standing');
+    const repGrid = ce(main, 'div', 'te-grid');
+    allReps.forEach(rep => {
+      const fac = safeArr(plugin.state.entities.factions).find(f => f.id === rep.factionId);
+      const c = ce(repGrid, 'div', 'te-card');
+      const h = ce(c, 'div', 'te-card-head');
+      ce(h, 'span', 'te-card-icon', '⭐');
+      ce(h, 'h3', 'te-card-title', fac ? fac.name : (rep.name || 'Unknown Faction'));
+      const lvl = rep.level || 'Neutral';
+      const lvlIdx = OPTION_BANKS.reputationLevels.indexOf(lvl);
+      const lvlPct = Math.max(5, ((OPTION_BANKS.reputationLevels.length - 1 - lvlIdx) / (OPTION_BANKS.reputationLevels.length - 1)) * 100);
+      const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = lvlPct + '%';
+      ce(c, 'p', 'te-progress-label', `Standing: ${lvl}`);
+      if (rep.notes) ce(c, 'p', 'te-card-body', rep.notes.slice(0, 100));
+      const a = ce(c, 'div', 'te-card-actions');
+      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open());
+      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(plugin.state, 'reputations', rep.id); await plugin.saveState(); });
+    });
+  }
+  btn(ce(main, 'div', 'te-modal-actions'), '+ Add Faction Standing', 'te-btn', () => {
+    const factions = safeArr(plugin.state.entities.factions);
+    const rep = { id: uid('rep'), name: 'Party Standing', factionId: factions[0]?.id || '', level: 'Neutral', notes: '', campaignId: plugin.state.activeCampaignId || '' };
+    new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open();
+  });
+
   // Faction web summary
   const factions = safeArr(plugin.state.entities.factions);
   if (factions.length > 1) {
@@ -4918,7 +4957,6 @@ function renderEncounters(main, plugin, tabs) {
   pageHead(main, plugin, 'Encounters & Combat', 'Encounter builder, initiative tracker, and combat tools.', [
     { label: '+ Encounter', primary: true, onClick: () => new EncounterModal(plugin.app, plugin).open() },
     { label: '+ Loot', onClick: () => new GenericModal(plugin.app, plugin, 'loot', null, lootFields).open() },
-    { label: '🎲 Roll Dice', onClick: () => new DiceModal(plugin.app, plugin).open() },
   ], tabs);
 
   // Party XP Budget
@@ -6749,7 +6787,6 @@ function renderRelationshipMatrix(main, plugin, tabs) {
 
   pageHead(main, plugin, 'Relationship Matrix', 'Map connections between factions, NPCs, PCs, settlements, quests, and legacy noble house records.', [
     { label: '+ Relationship', primary: true, onClick: () => new RelationshipModal(plugin.app, plugin).open() },
-    { label: '+ Faction', onClick: () => new FactionModal(plugin.app, plugin).open() },
   ], tabs);
 
   // Helper to resolve entity name from type + id
@@ -6837,30 +6874,6 @@ function renderRelationshipMatrix(main, plugin, tabs) {
     });
   } else { emptyState(main, 'No legacy noble families found.', 'Manage active noble houses as Factions with the "Noble House" type.'); }
 
-  // ── Faction Reputation ─────────────────────────────────────────────────────
-  sectionHead(main, 'Faction Reputation');
-  const factions = safeArr(state.entities.factions);
-  const reps = safeArr(state.entities.reputations).filter(x => matchesSearch(x, state.search));
-  if (reps.length) {
-    const g = ce(main, 'div', 'te-grid');
-    reps.forEach(rep => {
-      const fac = factions.find(f => f.id === rep.factionId);
-      const c = ce(g, 'div', 'te-card');
-      const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⭐'); ce(h, 'h3', 'te-card-title', fac ? fac.name : 'Unknown Faction');
-      const lvl = rep.level || 'Neutral';
-      const lvlIdx = OPTION_BANKS.reputationLevels.indexOf(lvl);
-      const lvlPct = Math.max(5, ((OPTION_BANKS.reputationLevels.length - 1 - lvlIdx) / (OPTION_BANKS.reputationLevels.length - 1)) * 100);
-      const pb = ce(c, 'div', 'te-progress-bar'); const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = lvlPct + '%';
-      ce(c, 'p', 'te-progress-label', `Reputation: ${lvl}`);
-      const a = ce(c, 'div', 'te-card-actions');
-      btn(a, 'Edit', 'te-btn is-sm', () => new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open());
-      btn(a, 'Delete', 'te-btn is-sm is-danger', async () => { removeItem(state, 'reputations', rep.id); await plugin.saveState(); });
-    });
-  }
-  btn(ce(main, 'div', 'te-modal-actions'), '+ Add Reputation', 'te-btn', () => {
-    const rep = { id: uid('rep'), name: 'Party Reputation', factionId: factions[0]?.id || '', level: 'Neutral', notes: '' };
-    new GenericModal(plugin.app, plugin, 'reputations', rep, reputationFields).open();
-  });
 }
 
 // ── ENDGAME (Phase 19) ────────────────────────────────────────────────────────
@@ -9050,6 +9063,8 @@ class RelationshipModal extends Modal {
     addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret'], v => this.values.visibility = v);
     modalButtons(contentEl, this, async () => {
       if (!this.values.fromId || !this.values.toId) { new Notice('Both From and To entities must be selected.'); return; }
+      // Stamp campaignId from active campaign if not already set
+      if (!this.values.campaignId) this.values.campaignId = this.plugin.state.activeCampaignId || '';
       if (!Array.isArray(this.plugin.state.relationships)) this.plugin.state.relationships = [];
       const idx = this.plugin.state.relationships.findIndex(r => r.id === this.values.id);
       if (idx >= 0) this.plugin.state.relationships[idx] = this.values;
@@ -10152,9 +10167,28 @@ class CampaignWizardModal extends Modal {
     d.factionNames.forEach(name => {
       upsert(this.plugin.state, 'factions', { id: uid('faction'), name, summary: '', campaignId: d.id });
     });
-    // Create milestones
-    safeArr(d.milestoneNames).forEach(name => {
-      upsert(this.plugin.state, 'milestones', { id: uid('milestone'), name, status: 'Pending', campaignId: d.id, createdAt: new Date().toISOString() });
+    // Create milestones — only add those not already present (avoid duplicates on repeated save)
+    const existingMilestoneNames = new Set(
+      safeArr(this.plugin.state.entities.milestones)
+        .filter(m => m.campaignId === d.id)
+        .map(m => m.name)
+    );
+    const now = new Date().toISOString();
+    safeArr(d.milestoneNames).forEach((name, i) => {
+      if (!name || existingMilestoneNames.has(name)) return;
+      upsert(this.plugin.state, 'milestones', {
+        id: uid('milestone'),
+        campaignId: d.id,
+        name,
+        level: '',
+        summary: '',
+        order: i,
+        status: 'Pending',
+        visibility: 'dm-only',
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
+      });
     });
     // Create DM secret
     if (d.secretSummary) {
