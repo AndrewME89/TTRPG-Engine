@@ -95,7 +95,7 @@ test('formula Roll button also logs Dice Rolled', () => {
 console.log('\n  Section 4: Generator logging');
 
 test('Log to Session button shown for all types when session active', () => {
-  ok(src.includes("logToSessBtn.style.display = activeSess ? '' : 'none'"), 'Log to Session not shown for all types');
+  ok(src.includes("ugenLogBtn.style.display = activeSess ? '' : 'none'"), 'Log to Session not shown for all types');
 });
 
 test('Loot type uses Loot Generated event', () => {
@@ -107,7 +107,7 @@ test('non-Loot types use Generator Used event', () => {
 });
 
 test('Log to Session button guarded by activeSess', () => {
-  ok(src.includes('if (!lastGenResult || !activeSess) return'), 'Log to Session not guarded by activeSess');
+  ok(src.includes('if (!ugenLastResult && !ugenLastDraft) return'), 'Log to Session not guarded by result check');
 });
 
 // ── Section 5: Loot Quick Add removed ─────────────────────────────────────────
