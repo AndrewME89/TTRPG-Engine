@@ -490,6 +490,13 @@ const OPTION_BANKS = {
   worldHazards:    ['Bandits','Monsters','Undead','Fey crossings','Wild magic','Dead magic','Poisonous plants','Disease','Harsh weather','Avalanches','Flooding','Quicksand','Sinkholes','Cursed ground','Haunted ruins','Volcanic activity','Toxic gas','Predators','Political unrest','War zone','Planar instability','Treacherous roads','Custom'],
   travelConditions: ['Clear roads','Muddy roads','Washed-out roads','Snowbound passes','Bandit activity','Monster sightings','Military patrols','Toll roads','Closed borders','Dangerous river crossing','Poor visibility','Magical fog','Extreme heat','Extreme cold','Storms','Supply shortage','Safe caravan route','Unsafe at night','Road under repair','Pilgrim traffic','Refugee traffic','Custom'],
   religiousTaboos: ['Blasphemy','Eating sacred animals','Working on holy days','Entering shrines unclean','Wearing forbidden colours','Speaking divine names','Interfaith marriage','Arcane magic','Necromancy','Blood sacrifice','Refusing confession','Touching holy relics','Breaking pilgrimage vows','Custom'],
+  religionPractices: ['Prayer','Sacrifice','Pilgrimage','Ritual Fasting','Meditation','Chanting','Ceremony','Initiation Rite','Coming-of-Age Ritual','Funeral Rite','Wedding Ceremony','Festival','Tithe','Confession','Divination','Blood Ritual','Seasonal Observance','Custom'],
+  clergyTypes: ['Priest','Priestess','High Priest','High Priestess','Acolyte','Deacon','Archbishop','Inquisitor','Paladin','Cleric','Druid','Oracle','Shaman','Monk','Abbess','Abbot','Lector','Sexton','Custom'],
+  encounterTerrain: ['Open Field','Dense Forest','Underground Cave','Urban Street','Ruined Building','Desert Sands','Coastal Cliff','Swamp','Mountain Pass','River Crossing','Temple Interior','Dungeon Chamber','Tavern','Rooftop','Ship Deck','Feywild Glade','Infernal Wasteland','Custom'],
+  districtAtmosphere: ['Bustling','Quiet','Tense','Lawless','Prosperous','Decrepit','Mysterious','Dangerous','Festive','Mourning','Industrious','Scholarly','Devout','Corrupt','Custom'],
+  economyTypes: ['Agrarian','Trade Hub','Mining','Fishing','Manufacturing','Magic Industry','Mercantile','Feudal Tribute','Slave Economy','Tourism','Military Contracts','Pastoral','Mixed','Custom'],
+  clothingStyles: ['Practical / Functional','Elaborate / Ornate','Minimal','Robes','Armour','Religious Vestments','Merchant Dress','Noble Finery','Peasant Cloth','Military Uniform','Tribal','Runic Embroidered','Seasonal','Gender-Coded','Custom'],
+  foodCulture: ['Meat-heavy','Vegetarian','Seafood','Grain-based','Foraging & Wild','Fermented / Preserved','Spiced / Exotic','Communal Feasting','Ritual Meals','Fasting Culture','Nomadic','Agricultural Surplus','Luxury Imports','Custom'],
 };
 
 // ── Seed data ────────────────────────────────────────────────────────────────
@@ -4005,8 +4012,10 @@ const cultureFields = [
   { key: 'values', label: 'Core Values', type: 'text' },
   { key: 'customs', label: 'Customs', type: 'chip', opts: { bank: 'cultureCustoms' } },
   { key: 'taboos', label: 'Taboos', type: 'chip', opts: { bank: 'cultureTaboos' } },
-  { key: 'clothing', label: 'Clothing / Appearance', type: 'textarea' },
-  { key: 'food', label: 'Food & Drink', type: 'textarea' },
+  { key: 'clothing', label: 'Clothing / Appearance', type: 'chip', opts: { bank: 'clothingStyles' } },
+  { key: 'clothingNotes', label: 'Clothing Notes', type: 'textarea' },
+  { key: 'food', label: 'Food & Drink', type: 'chip', opts: { bank: 'foodCulture' } },
+  { key: 'foodNotes', label: 'Food Notes', type: 'textarea' },
   { key: 'socialStructure', label: 'Social Structure', type: 'chip', opts: { bank: 'socialStructure' } },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
@@ -4014,7 +4023,11 @@ const langFields = [
   { key: 'name', label: 'Language Name', type: 'text' },
   { key: 'script', label: 'Script', type: 'text' },
   { key: 'speakers', label: 'Spoken By', type: 'text' },
-  { key: 'origin', label: 'Origin', type: 'text' },
+  { key: 'origin', label: 'Origin (legacy text)', type: 'text' },
+  { key: 'originText', label: 'Origin / Etymology', type: 'text' },
+  { key: 'originCultureId', label: 'Origin Culture (linked)', type: 'entityRef', entityType: 'cultures' },
+  { key: 'originRegionId', label: 'Origin Region (linked)', type: 'entityRef', entityType: 'regions' },
+  { key: 'originNationId', label: 'Origin Nation (linked)', type: 'entityRef', entityType: 'nations' },
   { key: 'summary', label: 'Notes / Sample Words', type: 'textarea' },
 ];
 
@@ -4967,10 +4980,13 @@ const adventureFields = [
   { key: 'arcType', label: 'Arc Type', type: 'select', options: ['Main Story','Side Story','Character Arc','Faction Arc','Dungeon Delve','Investigation','Political','Other'] },
   { key: 'status', label: 'Status', type: 'select', options: ['Draft','Active','Completed','Abandoned'] },
   { key: 'premise', label: 'Premise', type: 'textarea' },
-  { key: 'acts', label: 'Acts / Chapters', type: 'textarea' },
-  { key: 'linkedNPCs', label: 'Linked NPCs (chip)', type: 'chip' },
-  { key: 'secrets', label: 'Secrets', type: 'textarea' },
-  { key: 'treasure', label: 'Treasure / Rewards', type: 'textarea' },
+  { key: 'questIds', label: 'Quests / Scenes', type: 'entityMultiRef', entityType: 'quests' },
+  { key: 'acts', label: 'Quests / Scenes (legacy text)', type: 'textarea' },
+  { key: 'linkedNpcIds', label: 'Linked NPCs', type: 'entityMultiRef', entityType: 'npcs' },
+  { key: 'linkedNPCs', label: 'Linked NPCs (legacy chip)', type: 'chip' },
+  { key: 'secrets', label: 'Secrets (DM notes)', type: 'textarea' },
+  { key: 'lootIds', label: 'Treasure / Loot', type: 'entityMultiRef', entityType: 'loot' },
+  { key: 'treasure', label: 'Treasure Notes (legacy text)', type: 'textarea' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
@@ -5341,7 +5357,8 @@ const handoutFields = [
   { key: 'type', label: 'Type', type: 'select', options: ['Letter','Map','Clue','Image','Document','Item Description','Rumour','Other'] },
   { key: 'content', label: 'Content', type: 'textarea' },
   { key: 'visibility', label: 'Visibility', type: 'select', options: ['dm-only','player-visible','secret'] },
-  { key: 'linkedSession', label: 'Linked Session', type: 'text' },
+  { key: 'linkedSessionId', label: 'Linked Session', type: 'entityRef', entityType: 'sessions' },
+  { key: 'linkedSession', label: 'Linked Session (legacy text)', type: 'text' },
   { key: 'summary', label: 'Notes', type: 'textarea' },
 ];
 
@@ -7166,7 +7183,7 @@ const nationFields = [
   { key: 'government', label: 'Government', type: 'chip', opts: { bank: 'governmentTypes' } },
   { key: 'population', label: 'Population', type: 'text' },
   { key: 'military', label: 'Military Strength', type: 'text' },
-  { key: 'economy', label: 'Economy', type: 'text' },
+  { key: 'economy', label: 'Economy', type: 'chip', opts: { bank: 'economyTypes' } },
   { key: 'allyIds', label: 'Allies', type: 'entityMultiRef', entityType: 'factions' },
   { key: 'allies', label: 'Allies (legacy text)', type: 'chip' },
   { key: 'enemyIds', label: 'Enemies', type: 'entityMultiRef', entityType: 'factions' },
@@ -7182,10 +7199,12 @@ const religionFields = [
   { key: 'alignment', label: 'Alignment', type: 'select', options: ALIGNMENTS },
   { key: 'domainId', label: 'Domain (linked)', type: 'entityRef', entityType: 'domains' },
   { key: 'domain', label: 'Domain / Aspect (legacy text)', type: 'text' },
-  { key: 'practices', label: 'Practices & Rituals', type: 'textarea' },
+  { key: 'practices', label: 'Practices & Rituals', type: 'chip', opts: { bank: 'religionPractices' } },
+  { key: 'practicesNotes', label: 'Practices Notes', type: 'textarea' },
   { key: 'symbols', label: 'Symbols (chip)', type: 'chip' },
   { key: 'holyDays', label: 'Holy Days', type: 'chip' },
-  { key: 'clergy', label: 'Clergy / Hierarchy', type: 'text' },
+  { key: 'clergy', label: 'Clergy / Hierarchy', type: 'chip', opts: { bank: 'clergyTypes' } },
+  { key: 'clergyNotes', label: 'Clergy Notes', type: 'text' },
   { key: 'templeIds', label: 'Temples / Holy Sites', type: 'entityMultiRef', entityType: 'locations' },
   { key: 'temples', label: 'Temples (legacy text)', type: 'chip' },
   { key: 'restrictions', label: 'Taboos & Restrictions', type: 'chip', opts: { bank: 'religiousTaboos' } },
@@ -7196,7 +7215,7 @@ const districtFields = [
   { key: 'settlementId', label: 'Settlement', type: 'entityRef', entityType: 'settlements' },
   { key: 'type', label: 'Type', type: 'select', options: ['Market','Residential','Noble Quarter','Docks','Temple District','Slums','Military','Industrial','Foreign Quarter','Ruined','Underground','Other'] },
   { key: 'population', label: 'Population', type: 'text' },
-  { key: 'atmosphere', label: 'Atmosphere', type: 'text' },
+  { key: 'atmosphere', label: 'Atmosphere', type: 'chip', opts: { bank: 'districtAtmosphere' } },
   { key: 'notableLocationIds', label: 'Notable Locations', type: 'entityMultiRef', entityType: 'locations' },
   { key: 'notableLocations', label: 'Notable Locations (legacy text)', type: 'chip' },
   { key: 'factionIds', label: 'Active Factions', type: 'entityMultiRef', entityType: 'factions' },
@@ -8296,7 +8315,7 @@ class QuestModal extends Modal {
       giver: '', giverNpcId: '', location: '', locationId: '', locationType: '', campaignId: '',
       relatedNPCs: [], relatedNpcIds: [], relatedFactions: [], relatedFactionIds: [],
       objectives: '', stages: '', hooks: [], complications: [],
-      rewards: '', consequences: '', secrets: '', playerSummary: '', dmNotes: '',
+      rewards: '', rewardLootIds: [], consequences: '', secrets: '', playerSummary: '', dmNotes: '',
       linkedEncounters: [], linkedEncounterIds: [], visibility: 'dm-only',
     }, this.item);
   }
@@ -8324,7 +8343,8 @@ class QuestModal extends Modal {
     addField(contentEl, 'Stages / Steps', this.values.stages, v => this.values.stages = v, 'textarea');
     chipField(contentEl, 'Hooks', this.values.hooks, v => this.values.hooks = v);
     chipField(contentEl, 'Complications', this.values.complications, v => this.values.complications = v);
-    addField(contentEl, 'Rewards', this.values.rewards, v => this.values.rewards = v, 'textarea');
+    addEntityMultiPicker(contentEl, 'Rewards / Loot (linked)', safeArr(this.values.rewardLootIds), this.plugin, 'loot', v => this.values.rewardLootIds = v);
+    addField(contentEl, 'Rewards (notes)', this.values.rewards, v => this.values.rewards = v, 'textarea');
     addField(contentEl, 'Consequences (failure)', this.values.consequences, v => this.values.consequences = v, 'textarea');
     addField(contentEl, 'Player-Visible Summary', this.values.playerSummary, v => this.values.playerSummary = v, 'textarea');
     addField(contentEl, 'DM Notes (hidden from players)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
@@ -8350,8 +8370,8 @@ class EncounterModal extends Modal {
       id: uid('encounter'), name: '', type: 'Combat', location: '', locationId: '', locationType: '',
       adventureId: '', questId: '',
       participants: [], participantPcIds: [], participantNpcIds: [], enemyTemplateIds: [], creatureIds: [], enemyGroups: '', difficulty: 'Medium',
-      terrain: '', tactics: '', objectives: '',
-      victoryConditions: '', failureConditions: '', rewards: '',
+      terrain: [], tactics: [], objectives: '',
+      victoryConditions: '', failureConditions: '', rewards: '', rewardLootIds: [],
       linkedQuest: '', linkedQuestId: '', linkedSessionId: '', linkedMapId: '', campaignId: '',
       notes: '', visibility: 'dm-only',
     }, this.item);
@@ -8374,13 +8394,14 @@ class EncounterModal extends Modal {
     addEntityMultiPicker(contentEl, 'NPC Participants', this.values.participantNpcIds, this.plugin, 'npcs', v => this.values.participantNpcIds = v);
     addEntityMultiPicker(contentEl, 'Enemy Templates', this.values.enemyTemplateIds, this.plugin, 'enemyTemplates', v => this.values.enemyTemplateIds = v);
     addEntityMultiPicker(contentEl, 'Creatures', this.values.creatureIds, this.plugin, 'creatures', v => this.values.creatureIds = v);
-    addField(contentEl, 'Enemy Groups', this.values.enemyGroups, v => this.values.enemyGroups = v, 'textarea');
-    addField(contentEl, 'Terrain', this.values.terrain, v => this.values.terrain = v);
-    addField(contentEl, 'Tactics', this.values.tactics, v => this.values.tactics = v, 'textarea');
+    addField(contentEl, 'Enemy Groups (description)', this.values.enemyGroups, v => this.values.enemyGroups = v, 'textarea');
+    chipField(contentEl, 'Terrain', safeArr(this.values.terrain), v => this.values.terrain = v, { bank: 'encounterTerrain' });
+    chipField(contentEl, 'Tactics', safeArr(this.values.tactics), v => this.values.tactics = v, { bank: 'tactics' });
     addField(contentEl, 'Objectives', this.values.objectives, v => this.values.objectives = v, 'textarea');
     addField(contentEl, 'Victory Conditions', this.values.victoryConditions, v => this.values.victoryConditions = v, 'textarea');
     addField(contentEl, 'Failure Conditions', this.values.failureConditions, v => this.values.failureConditions = v, 'textarea');
-    addField(contentEl, 'Rewards / Loot', this.values.rewards, v => this.values.rewards = v, 'textarea');
+    addEntityMultiPicker(contentEl, 'Rewards / Loot (linked)', safeArr(this.values.rewardLootIds), this.plugin, 'loot', v => this.values.rewardLootIds = v);
+    addField(contentEl, 'Rewards / Loot (notes)', this.values.rewards, v => this.values.rewards = v, 'textarea');
     addEntityPicker(contentEl, 'Linked Quest', this.values.linkedQuestId, this.plugin, 'quests', v => this.values.linkedQuestId = v);
     addEntityPicker(contentEl, 'Linked Session', this.values.linkedSessionId || '', this.plugin, 'sessions', v => this.values.linkedSessionId = v);
     addEntityPicker(contentEl, 'Linked Map', this.values.linkedMapId || '', this.plugin, 'maps', v => this.values.linkedMapId = v);
