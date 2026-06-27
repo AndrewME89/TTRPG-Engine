@@ -83,11 +83,11 @@ test('DeityModal exists and has Save as Homebrew action', () => {
   ok(deityModalBlock.includes('Save as Homebrew') && deityModalBlock.includes('promoteDeityToHomebrew'),
     'DeityModal missing Save as Homebrew action');
 });
-test('Create Homebrew entry point exists', () => {
-  ok(src.includes('class HomebrewTypeChooserModal') && src.includes('Create Homebrew'),
-    'Create Homebrew entry point missing');
+test('Homebrew page has direct creation buttons', () => {
+  ['+ Race / Ancestry', '+ Class', '+ Subclass', '+ Background', '+ Feat', '+ Spell', '+ Item / Magic Item', '+ Weapon', '+ Armour', '+ Creature / Monster / Beast', '+ Rule / House Rule', '+ Plane', '+ Mechanic', '+ Rollable Table']
+    .forEach(label => ok(src.includes(label), `missing direct homebrew button ${label}`));
 });
-test('Homebrew type chooser includes the requested category groups', () => {
+test('Homebrew page groups direct creation buttons by category', () => {
   ['Character Options', 'Rules & Mechanics', 'Items & Equipment', 'Monsters & Statblocks', 'Worlds & Planes', 'Rollable Tables']
     .forEach(label => ok(src.includes(label), `missing category group ${label}`));
 });

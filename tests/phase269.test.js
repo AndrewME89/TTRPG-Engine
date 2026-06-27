@@ -105,6 +105,9 @@ test('dmNavGroups contains compendium-library nav item', () => {
   const allIds = navGroups ? navGroups.flatMap(g => g.items) : [];
   ok(allIds.includes('compendium-library'), 'Missing compendium-library');
 });
+test('dmNavGroups labels compendium-library as Library & Homebrew', () => {
+  ok(src.includes("label: 'Library & Homebrew'"), 'Library & Homebrew sidebar label missing');
+});
 
 test('dmNavGroups contains generators nav item', () => {
   const allIds = navGroups ? navGroups.flatMap(g => g.items) : [];

@@ -2800,7 +2800,7 @@ function renderLocalCompendiumDetail(el, result) {
 
 // ── Compendium section ────────────────────────────────────────────────────────
 async function renderReference(main, plugin, tabs) {
-  pageHead(main, plugin, 'Compendium', 'Searchable rules reference and promoted library records.', [
+  pageHead(main, plugin, 'Library & Homebrew', 'Browse the Compendium and promoted library records.', [
     { label: '📥 Import', onClick: () => new ImportModal(plugin.app, plugin).open() },
     { label: '💾 Export', onClick: () => exportBackup(plugin) },
   ], tabs);
@@ -2957,7 +2957,7 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('create-encounter', 'Create encounter', () => new EncounterModal(this.app, this).open());
       cmd('create-quest', 'Create quest', () => new QuestModal(this.app, this).open());
       cmd('create-session', 'Create session log', () => new SessionModal(this.app, this).open());
-      cmd('create-homebrew', 'Create Homebrew', () => new HomebrewTypeChooserModal(this.app, this).open());
+      cmd('create-homebrew', 'Open homebrew builders', async () => { this.state.activeSection = 'compendium-library'; this.state.activeSubSection = 'homebrew'; await this.saveState(); this.activateView(); });
       cmd('tile-map', 'Open tile map builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
       cmd('repair', 'Repair / reindex data', async () => {
         migrateState(this.state);
@@ -3155,7 +3155,7 @@ class TTRPGMainView extends ItemView {
         { id: 'secrets-handouts',   icon: '🔒', label: 'Secrets & Handouts' },
       ]},
       { label: 'Library', items: [
-        { id: 'compendium-library', icon: '📚', label: 'Compendium & Library' },
+        { id: 'compendium-library', icon: '📚', label: 'Library & Homebrew' },
         { id: 'generators',         icon: '🎲', label: 'Generators' },
       ]},
       { label: 'Tools', items: [
@@ -3609,12 +3609,13 @@ function renderCompendiumLibrary(main, plugin) {
   const state = plugin.state;
   const tabs = [
     { id: 'compendium', label: '📚 Compendium' },
+    { id: 'homebrew', label: '🧪 Homebrew' },
   ];
-  // Redirect legacy compendium sub-sections to the merged compendium browser.
-  if (['my-content', 'reference', 'homebrew'].includes(state.activeSubSection)) state.activeSubSection = 'compendium';
+  // Redirect removed legacy compendium sub-sections to their canonical tabs.
+  if (state.activeSubSection === 'my-content' || state.activeSubSection === 'reference') state.activeSubSection = 'compendium';
   const sub = state.activeSubSection || 'compendium';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'compendium') renderReference(wrap, plugin, tabs);
+  if (sub === 'homebrew') renderHomebrew(wrap, plugin, tabs);
   else renderReference(wrap, plugin, tabs);
 }
 
@@ -5706,6 +5707,7 @@ function normalizeHomebrewRecord(item, overrides) {
   record.visibility = record.visibility || (record.playerVisible ? 'player-visible' : '') || (overrides && overrides.visibility) || 'dm-only';
   if (!HOMEBREW_VISIBILITY_OPTIONS.includes(record.visibility)) record.visibility = 'dm-only';
   record.tags = normalizeListField(record.tags);
+  record.includeInCompendium = !!record.includeInCompendium;
   record.balanceNotes = record.balanceNotes || '';
   if (!record.sourceEntityType && record.sourceHybridId) record.sourceEntityType = 'hybridAncestries';
   if (!record.sourceEntityId && record.sourceHybridId) record.sourceEntityId = record.sourceHybridId;
@@ -5914,6 +5916,25 @@ const HOMEBREW_RULE_CATEGORIES = ['Core','Combat','Exploration','Social','Downti
 const HOMEBREW_MECHANIC_CATEGORIES = ['Combat','Exploration','Social','Resource','Encounter','Crafting','Faction','Magic','Custom'];
 const HOMEBREW_PLANE_COSMOLOGIES = ['Great Wheel','World Tree','Material Plane + Echo Planes','Elemental Cosmology','Planar Sea','Dream Cosmology','Mythic Underworld','Custom'];
 const HOMEBREW_MOVEMENT_SUGGESTIONS = ['30 ft', '40 ft', '60 ft', 'Fly 30 ft', 'Swim 30 ft', 'Climb 30 ft', 'Burrow 20 ft', 'Hover', 'Custom'];
+const HOMEBREW_UI_PLACEHOLDERS = new Set([
+  'select common options',
+  'select existing',
+  'make noted changes',
+  'confirm what this connects to',
+]);
+
+function scrubHomebrewPlaceholderText(value) {
+  const v = String(value || '').trim();
+  return HOMEBREW_UI_PLACEHOLDERS.has(v.toLowerCase()) ? '' : v;
+}
+function sanitizeHomebrewDraftValue(value) {
+  if (Array.isArray(value)) return value.map(sanitizeHomebrewDraftValue).filter(v => v !== '' && v != null);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeHomebrewDraftValue(v)]));
+  }
+  if (typeof value === 'string') return scrubHomebrewPlaceholderText(value);
+  return value;
+}
 
 function canonicalHomebrewBuilderType(type) {
   const raw = String(type || '').trim();
@@ -6758,10 +6779,71 @@ const HOMEBREW_BUILDER_GROUPS = [
   },
 ];
 
+const HOMEBREW_DIRECT_CREATE_GROUPS = [
+  {
+    title: 'Character Options',
+    buttons: [
+      { label: '+ Race / Ancestry', open: (app, plugin) => openHomebrewAncestryModal(app, plugin) },
+      { label: '+ Class', open: (app, plugin) => openHomebrewClassModal(app, plugin) },
+      { label: '+ Subclass', open: (app, plugin) => openHomebrewSubclassModal(app, plugin) },
+      { label: '+ Background', open: (app, plugin) => openHomebrewBackgroundModal(app, plugin) },
+      { label: '+ Feat', open: (app, plugin) => openHomebrewFeatModal(app, plugin) },
+    ],
+  },
+  {
+    title: 'Items & Equipment',
+    buttons: [
+      { label: '+ Item / Magic Item', open: (app, plugin) => openHomebrewItemModal(app, plugin) },
+      { label: '+ Weapon', open: (app, plugin) => openHomebrewWeaponModal(app, plugin) },
+      { label: '+ Armour', open: (app, plugin) => openHomebrewArmourModal(app, plugin) },
+    ],
+  },
+  {
+    title: 'Creatures & Encounters',
+    buttons: [
+      { label: '+ Creature / Monster / Beast', open: (app, plugin) => openHomebrewCreatureModal(app, plugin) },
+    ],
+  },
+  {
+    title: 'Rules & Systems',
+    buttons: [
+      { label: '+ Spell', open: (app, plugin) => openHomebrewSpellModal(app, plugin) },
+      { label: '+ Rule / House Rule', open: (app, plugin) => openHomebrewRuleModal(app, plugin) },
+      { label: '+ Mechanic', open: (app, plugin) => openHomebrewMechanicModal(app, plugin) },
+    ],
+  },
+  {
+    title: 'Worldbuilding',
+    buttons: [
+      { label: '+ Plane', open: (app, plugin) => openHomebrewPlaneModal(app, plugin) },
+    ],
+  },
+  {
+    title: 'Tables',
+    buttons: [
+      { label: '+ Rollable Table', open: (app, plugin) => openHomebrewRollableTableModal(app, plugin) },
+    ],
+  },
+];
+
 function openHomebrewBuilder(app, plugin, type, item) {
   if (type === 'Rollable Table') { new RollableTableModal(app, plugin, item).open(); return; }
   new TypedHomebrewModal(app, plugin, type, item).open();
 }
+function openHomebrewSpellModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Spell', Object.assign({ modalLabel: 'Homebrew Spell' }, item || {})); }
+function openHomebrewFeatModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Feat', Object.assign({ modalLabel: 'Homebrew Feat' }, item || {})); }
+function openHomebrewBackgroundModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Background', Object.assign({ modalLabel: 'Homebrew Background' }, item || {})); }
+function openHomebrewAncestryModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Ancestry', Object.assign({ modalLabel: 'Homebrew Race / Ancestry' }, item || {})); }
+function openHomebrewClassModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Class', Object.assign({ modalLabel: 'Homebrew Class' }, item || {})); }
+function openHomebrewSubclassModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Subclass', Object.assign({ modalLabel: 'Homebrew Subclass' }, item || {})); }
+function openHomebrewItemModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Item', Object.assign({ modalLabel: 'Homebrew Item / Magic Item', itemType: 'Magic Item' }, item || {})); }
+function openHomebrewWeaponModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Item', Object.assign({ modalLabel: 'Homebrew Weapon', itemType: 'Weapon', type: 'Weapon', homebrewType: 'Item' }, item || {})); }
+function openHomebrewArmourModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Item', Object.assign({ modalLabel: 'Homebrew Armour', itemType: 'Armour', type: 'Armour', homebrewType: 'Item' }, item || {})); }
+function openHomebrewCreatureModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Creature', Object.assign({ modalLabel: 'Homebrew Creature / Monster / Beast' }, item || {})); }
+function openHomebrewRuleModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Rule', Object.assign({ modalLabel: 'Homebrew Rule / House Rule' }, item || {})); }
+function openHomebrewPlaneModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Plane', Object.assign({ modalLabel: 'Homebrew Plane' }, item || {})); }
+function openHomebrewMechanicModal(app, plugin, item) { openHomebrewBuilder(app, plugin, 'Mechanic', Object.assign({ modalLabel: 'Homebrew Mechanic' }, item || {})); }
+function openHomebrewRollableTableModal(app, plugin, item) { new RollableTableModal(app, plugin, item).open(); }
 function openHomebrewEditor(app, plugin, item) {
   const h = normalizeHomebrewRecord(item || {});
   const builderType = canonicalHomebrewBuilderType(h.homebrewType || h.type);
@@ -6769,6 +6851,12 @@ function openHomebrewEditor(app, plugin, item) {
     const seed = Object.assign({}, h);
     if (builderType === 'Item' && !seed.itemType && ['Weapon', 'Armour', 'Armor', 'Magic Item'].includes(h.homebrewType || h.type)) seed.itemType = h.homebrewType === 'Armor' ? 'Armour' : (h.homebrewType || h.type);
     if (builderType === 'Creature' && !seed.creatureKind && ['Monster', 'Creature', 'Beast'].includes(h.homebrewType || h.type)) seed.creatureKind = h.homebrewType || h.type;
+    if (builderType === 'Item' && seed.itemType === 'Weapon') seed.modalLabel = 'Homebrew Weapon';
+    else if (builderType === 'Item' && seed.itemType === 'Armour') seed.modalLabel = 'Homebrew Armour';
+    else if (builderType === 'Item') seed.modalLabel = 'Homebrew Item / Magic Item';
+    else if (builderType === 'Creature') seed.modalLabel = 'Homebrew Creature / Monster / Beast';
+    else if (builderType === 'Ancestry') seed.modalLabel = 'Homebrew Race / Ancestry';
+    else seed.modalLabel = `Homebrew ${builderType}`;
     openHomebrewBuilder(app, plugin, builderType, seed);
     return;
   }
@@ -6816,9 +6904,24 @@ const compendiumFields = [
 // ── HOMEBREW ──────────────────────────────────────────────────────────────────
 function renderHomebrew(main, plugin, tabs) {
   const state = plugin.state;
-  pageHead(main, plugin, 'Homebrew', 'Create and manage homebrew content for your campaign.', [
-    { label: 'Create Homebrew', primary: true, onClick: () => new HomebrewTypeChooserModal(plugin.app, plugin).open() },
-  ], tabs);
+  pageHead(main, plugin, 'Library & Homebrew', 'Create and manage homebrew content for your campaign.', [], tabs);
+
+  sectionHead(main, 'Creation Buttons');
+  HOMEBREW_DIRECT_CREATE_GROUPS.forEach(group => {
+    const card = ce(main, 'div', 'te-card');
+    card.style.marginBottom = '12px';
+    const head = ce(card, 'div', 'te-card-head');
+    ce(head, 'h3', 'te-card-title', group.title);
+    const grid = ce(card, 'div', 'te-grid');
+    grid.style.marginTop = '8px';
+    safeArr(group.buttons).forEach(buttonDef => {
+      const tile = ce(grid, 'div', 'te-card');
+      tile.style.minHeight = 'unset';
+      ce(tile, 'h4', 'te-card-title', buttonDef.label);
+      const acts = ce(tile, 'div', 'te-card-actions');
+      btn(acts, buttonDef.label, 'te-btn is-sm is-primary', () => buttonDef.open(plugin.app, plugin));
+    });
+  });
 
   // Local filter state
   const hbFilter = { search: '', status: '', visibility: '', type: '' };
@@ -6871,13 +6974,13 @@ function renderHomebrew(main, plugin, tabs) {
       return true;
     });
     const all = safeArr(state.entities.homebrew).length;
-    sectionHead(contentArea, `Homebrew Entries${items.length !== all ? ` (${items.length} of ${all})` : ''}`);
+    sectionHead(contentArea, `Existing Homebrew${items.length !== all ? ` (${items.length} of ${all})` : ''}`);
     if (!items.length) {
       ce(contentArea, 'p', 'te-muted-text', 'No homebrew entries match the current filters.');
     } else {
       itemCards(contentArea, plugin, 'homebrew', {
         items,
-        meta: ['homebrewType', 'category', 'status', 'visibility'],
+        meta: ['homebrewType', 'category', 'status', 'visibility', 'scope'],
         onEdit: (plugin, key, item) => openHomebrewEditor(plugin.app, plugin, item),
       });
     }
@@ -10519,6 +10622,7 @@ class TypedHomebrewModal extends Modal {
     this.homebrewType = homebrewType;
     this.definition = HOMEBREW_BUILDERS[homebrewType];
     this.item = item || {};
+    this.modalLabel = this.item.modalLabel || `Homebrew ${this.definition ? this.definition.label : homebrewType}`;
     const base = normalizeHomebrewRecord(Object.assign({
       id: uid('homebrew'),
       homebrewType,
@@ -10530,15 +10634,17 @@ class TypedHomebrewModal extends Modal {
       campaignId: plugin.state.activeCampaignId || '',
       sourceCampaignId: plugin.state.activeCampaignId || '',
       tags: [],
+      includeInCompendium: false,
       balanceNotes: '',
       dmNotes: '',
     }, this.item));
     const hybridDefaults = homebrewType === 'Ancestry' && base.sourceHybridId ? hybridAncestryToBuilderValues(base) : {};
     this.values = Object.assign({}, this.definition ? this.definition.defaults : {}, hybridDefaults, flattenHomebrewPayload(base));
     this.values.homebrewType = homebrewType;
-    this.values.type = homebrewType;
+    this.values.type = this.item.type || base.type || homebrewType;
     this.values.category = this.definition ? this.definition.category : base.category;
     this.values.tags = normalizeListField(this.values.tags);
+    this.values.includeInCompendium = !!base.includeInCompendium;
     if (homebrewType === 'Item' && !this.values.itemType && ['Weapon', 'Armour', 'Armor', 'Magic Item'].includes(base.homebrewType || base.type)) {
       this.values.itemType = base.homebrewType === 'Armor' ? 'Armour' : (base.homebrewType || base.type);
     }
@@ -10550,13 +10656,14 @@ class TypedHomebrewModal extends Modal {
     const { contentEl } = this;
     clear(contentEl);
     contentEl.addClass('te-modal');
-    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} ${this.definition.label}` });
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} ${this.modalLabel}` });
     const meta = ce(contentEl, 'div', 'te-modal-section');
     meta.createEl('h3', { text: 'Homebrew Metadata' });
     addField(meta, 'Name *', this.values.name || '', v => this.values.name = v);
     addSelect(meta, 'Status', this.values.status || 'Draft', HOMEBREW_STATUS_OPTIONS, v => this.values.status = v);
     addSelect(meta, 'Visibility', this.values.visibility || 'dm-only', HOMEBREW_VISIBILITY_OPTIONS, v => this.values.visibility = v);
     addSelect(meta, 'Scope', this.values.scope || 'global', ['campaign', 'global'], v => this.values.scope = v);
+    addToggle(meta, 'Include in Compendium', !!this.values.includeInCompendium, v => this.values.includeInCompendium = v);
     chipField(meta, 'Tags', safeArr(this.values.tags), v => this.values.tags = v);
     addField(meta, 'Balance Notes', this.values.balanceNotes || '', v => this.values.balanceNotes = v, 'textarea');
     addField(meta, 'DM Notes', this.values.dmNotes || '', v => this.values.dmNotes = v, 'textarea');
@@ -10575,24 +10682,29 @@ class TypedHomebrewModal extends Modal {
       } else {
         this.values.campaignId = '';
       }
-      const payload = this.definition.toPayload(this.values, this.plugin);
-      const content = this.definition.toMarkdown(payload, this.values);
+      const cleanedValues = sanitizeHomebrewDraftValue(this.values);
+      const payload = sanitizeHomebrewDraftValue(this.definition.toPayload(cleanedValues, this.plugin));
+      const content = this.definition.toMarkdown(payload, cleanedValues);
       const now = new Date().toISOString();
+      const savedType = this.homebrewType === 'Item'
+        ? (cleanedValues.itemType || this.item.type || this.homebrewType)
+        : (this.homebrewType === 'Creature' ? (cleanedValues.creatureKind || this.item.type || this.homebrewType) : (this.item.type || this.homebrewType));
       const record = normalizeHomebrewRecord({
         ...this.item,
-        ...this.values,
+        ...cleanedValues,
         homebrewType: this.homebrewType,
-        type: this.homebrewType,
+        type: savedType,
         category: this.definition.category,
         payload,
         content,
-        summary: homebrewSummaryFromValues(this.definition, this.values),
-        description: this.values.description || this.values.flavor || this.values.fullText || this.values.notes || this.item.description || '',
-        sourceCampaignId: this.values.sourceCampaignId || this.values.campaignId || '',
-        balanceNotes: this.values.balanceNotes || '',
-        dmNotes: this.values.dmNotes || '',
+        summary: homebrewSummaryFromValues(this.definition, cleanedValues),
+        description: cleanedValues.description || cleanedValues.flavor || cleanedValues.fullText || cleanedValues.notes || this.item.description || '',
+        sourceCampaignId: cleanedValues.sourceCampaignId || cleanedValues.campaignId || '',
+        includeInCompendium: !!cleanedValues.includeInCompendium,
+        balanceNotes: cleanedValues.balanceNotes || '',
+        dmNotes: cleanedValues.dmNotes || '',
         updatedAt: now,
-        createdAt: this.values.createdAt || now,
+        createdAt: cleanedValues.createdAt || now,
       });
       upsert(this.plugin.state, 'homebrew', record);
       await this.plugin.saveState();
@@ -10621,7 +10733,7 @@ class HomebrewTypeChooserModal extends Modal {
     const { contentEl } = this;
     clear(contentEl);
     contentEl.addClass('te-modal');
-    contentEl.createEl('h2', { text: 'Create Homebrew' });
+    contentEl.createEl('h2', { text: 'Homebrew Builder Index' });
     ce(contentEl, 'p', 'te-muted-text', 'Choose a type-specific builder. Promotion keeps the original campaign record and creates a linked reusable Homebrew record.');
     HOMEBREW_BUILDER_GROUPS.forEach(group => {
       const sec = ce(contentEl, 'div', 'te-modal-section');

@@ -73,24 +73,45 @@ test('homebrew edit routing uses openHomebrewEditor', () => {
   ok(src.includes("homebrew:         (p, i) => openHomebrewEditor") && src.includes('onEdit: (plugin, key, item) => openHomebrewEditor'),
     'homebrew edit routing missing');
 });
-
-console.log('\n  Section 4: Chooser UX');
-
-test('chooser uses grouped builder cards', () => {
-  ok(src.includes('const HOMEBREW_BUILDER_GROUPS = [') && chooserBlock.includes('HOMEBREW_BUILDER_GROUPS.forEach'),
-    'grouped builder chooser missing');
+test('+ Spell opens a dedicated Homebrew Spell modal directly', () => {
+  ok(src.includes('+ Spell') && src.includes('openHomebrewSpellModal'), 'Direct Spell button/modal wiring missing');
 });
-test('chooser includes managed builder groups', () => {
-  ['Character Options','Rules & Mechanics','Items & Equipment','Monsters & Statblocks','Worlds & Planes','Rollable Tables']
+test('+ Creature opens a dedicated Homebrew Creature modal directly', () => {
+  ok(src.includes('+ Creature / Monster / Beast') && src.includes('openHomebrewCreatureModal'), 'Direct Creature button/modal wiring missing');
+});
+test('+ Weapon opens a dedicated Homebrew Weapon modal directly', () => {
+  ok(src.includes('+ Weapon') && src.includes('openHomebrewWeaponModal'), 'Direct Weapon button/modal wiring missing');
+});
+test('+ Armour opens a dedicated Homebrew Armour modal directly', () => {
+  ok(src.includes('+ Armour') && src.includes('openHomebrewArmourModal'), 'Direct Armour button/modal wiring missing');
+});
+test('+ Item / Magic Item opens a dedicated Homebrew Item modal directly', () => {
+  ok(src.includes('+ Item / Magic Item') && src.includes('openHomebrewItemModal'), 'Direct Item button/modal wiring missing');
+});
+['Spell','Creature','Weapon','Armour','Item','Ancestry','Class','Subclass','Background','Feat','Rule','Plane','Mechanic'].forEach(type => {
+  test(`direct open helper exists: ${type}`, () => {
+    ok(src.includes(`openHomebrew${type}Modal`) || (type === 'Item' && src.includes('openHomebrewItemModal')),
+      `${type} direct homebrew opener missing`);
+  });
+});
+
+console.log('\n  Section 4: Direct page UX');
+
+test('Homebrew page uses grouped direct creation buttons', () => {
+  ok(src.includes('const HOMEBREW_DIRECT_CREATE_GROUPS = [') && src.includes('HOMEBREW_DIRECT_CREATE_GROUPS.forEach'),
+    'grouped direct creation buttons missing');
+});
+test('direct page includes managed builder groups', () => {
+  ['Character Options','Items & Equipment','Creatures & Encounters','Rules & Systems','Worldbuilding','Tables']
     .forEach(label => ok(src.includes(label), `missing chooser group ${label}`));
 });
-test('chooser routes rollable tables to RollableTableModal', () => {
-  ok(chooserBlock.includes('RollableTableModal') && chooserBlock.includes("card.special === 'table'"),
-    'chooser missing rollable table routing');
+test('direct page routes rollable tables to RollableTableModal', () => {
+  ok(src.includes('openHomebrewRollableTableModal') && src.includes('RollableTableModal'),
+    'direct rollable table routing missing');
 });
-test('chooser preserves Hybrid Ancestry entry point separately', () => {
-  ok(chooserBlock.includes('Hybrid Ancestry') && chooserBlock.includes('HybridAncestryModal'),
-    'Hybrid Ancestry chooser bridge missing');
+test('chooser is not the primary Homebrew page flow', () => {
+  notOk(src.includes("pageHead(main, plugin, 'Homebrew', 'Create and manage homebrew content for your campaign.', [\n    { label: 'Create Homebrew'"),
+    'Homebrew page still launches generic chooser as primary flow');
 });
 test('generic + Entry is not reintroduced for Homebrew', () => {
   notOk(src.includes("'+ Entry'") && src.includes('Homebrew'), 'generic + Entry reintroduced');
@@ -133,6 +154,14 @@ test('renderHomebrew has homebrew type filter', () => {
   ok(src.includes('const typeSel = ce(filterRow, \'select\')') && src.includes('hbFilter.type'),
     'Homebrew type filter missing');
 });
+test('typed modal exposes includeInCompendium field', () => {
+  ok(typedModalBlock.includes('Include in Compendium') && src.includes('record.includeInCompendium'),
+    'includeInCompendium field missing from structured homebrew flow');
+});
+test('typed modal sanitizes UI placeholder text before save', () => {
+  ok(src.includes('scrubHomebrewPlaceholderText') && src.includes('sanitizeHomebrewDraftValue') && typedModalBlock.includes('cleanedValues'),
+    'placeholder sanitization missing from dedicated modal save path');
+});
 
 console.log('\n  Section 7: Functional shape checks');
 
@@ -156,6 +185,10 @@ test('functional: item builder can represent weapon subtype without changing hom
   const hb = normalizeLite({ name: 'Storm Pike', homebrewType: 'Item', payload: { itemType: 'Weapon' } });
   eq(hb.homebrewType, 'Item');
   eq(hb.payload.itemType, 'Weapon');
+});
+test('functional: includeInCompendium flag can persist on structured record', () => {
+  const hb = normalizeLite({ name: 'Sunblade Variant', homebrewType: 'Item', includeInCompendium: true });
+  eq(hb.includeInCompendium, true);
 });
 test('functional: ancestry builder can represent hybrid ancestry records compatibly', () => {
   const hb = normalizeLite({ name: 'Drow-Human', homebrewType: 'Ancestry', type: 'Hybrid Ancestry', sourceHybridId: 'hy-1' });

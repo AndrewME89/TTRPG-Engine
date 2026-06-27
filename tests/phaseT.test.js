@@ -73,20 +73,27 @@ test('renderCompendiumLibrary has Compendium tab', () => {
 test('renderCompendiumLibrary does not have separate 5e Reference tab', () => {
   notOk(compLibBlock.includes("id: 'reference'"), '5e Reference tab should have been merged');
 });
-test('renderCompendiumLibrary does not have separate Homebrew tab', () => {
-  notOk(compLibBlock.includes("id: 'homebrew'"), 'Homebrew tab should not remain in Compendium');
+test('renderCompendiumLibrary has visible Homebrew tab', () => {
+  ok(compLibBlock.includes("id: 'homebrew'"), 'Homebrew tab missing from Library & Homebrew');
 });
-test('renderCompendiumLibrary redirects legacy my-content/reference/homebrew routes', () => {
-  ok(compLibBlock.includes("'my-content'") && compLibBlock.includes("'reference'") && compLibBlock.includes("'homebrew'"),
-    'Legacy compendium routes should redirect to compendium');
+test('renderCompendiumLibrary redirects legacy my-content/reference routes only', () => {
+  ok(compLibBlock.includes("'my-content'") && compLibBlock.includes("'reference'"),
+    'Legacy my-content/reference redirects missing');
+  notOk(compLibBlock.includes("['my-content', 'reference', 'homebrew']"),
+    'Homebrew should not be redirected away from its visible tab');
 });
-test('renderCompendiumLibrary routes to renderReference', () => {
+test('renderCompendiumLibrary routes to renderReference and renderHomebrew', () => {
   ok(compLibBlock.includes('renderReference'), 'Compendium should render through renderReference');
+  ok(compLibBlock.includes('renderHomebrew'), 'Homebrew should render through renderHomebrew');
+});
+test('renderCompendiumLibrary defaults empty sub-section to Compendium', () => {
+  ok(compLibBlock.includes("const sub = state.activeSubSection || 'compendium'"),
+    'Library & Homebrew should default to Compendium');
 });
 
 console.log('\n  Section 3: renderReference — Compendium actions');
-test('renderReference page title is Compendium', () => {
-  ok(refFnBlock.includes("'Compendium'"), 'renderReference should title the page Compendium');
+test('renderReference page title is Library & Homebrew', () => {
+  ok(refFnBlock.includes("'Library & Homebrew'"), 'renderReference should title the page Library & Homebrew');
 });
 test('renderReference has Import button', () => {
   ok(refFnBlock.includes('Import') && refFnBlock.includes('ImportModal'),
@@ -99,6 +106,10 @@ test('renderReference has Export button', () => {
 test('renderReference does not expose creation buttons', () => {
   notOk(refFnBlock.includes('Create Homebrew') || refFnBlock.includes('RollableTableModal') || refFnBlock.includes('+ Spell') || refFnBlock.includes('+ Monster') || refFnBlock.includes('+ Item'),
     'Compendium should not expose creation buttons');
+});
+test('renderHomebrew page title is Library & Homebrew', () => {
+  ok(src.includes("pageHead(main, plugin, 'Library & Homebrew', 'Create and manage homebrew content for your campaign.'"),
+    'renderHomebrew should title the page Library & Homebrew');
 });
 
 console.log('\n  Section 4: renderReference — search and filters');
