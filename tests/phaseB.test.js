@@ -89,10 +89,10 @@ test('Dice Roller in right column', () => {
   const rcIdx = fn.indexOf('te-run-right');
   ok(rcIdx !== -1 && fn.indexOf('Dice Roller', rcIdx) !== -1, 'Dice Roller not in right column');
 });
-test('Quick Generators in right column', () => {
+test('Calendar widget in right column', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));
   const rcIdx = fn.indexOf('te-run-right');
-  ok(rcIdx !== -1 && fn.indexOf('Quick Generators', rcIdx) !== -1, 'Quick Generators not in right column');
+  ok(rcIdx !== -1 && fn.indexOf('CalendarModal', rcIdx) !== -1, 'Calendar widget not in right column');
 });
 test('Combat Tracker in right column', () => {
   const fn = src.slice(src.indexOf('function renderRunSession'), src.indexOf('\n// ── WAR MACHINE'));

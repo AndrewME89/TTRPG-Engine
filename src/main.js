@@ -2387,26 +2387,24 @@ const SPELL_SCHOOLS = {
   I:'Illusion', N:'Necromancy', T:'Transmutation', V:'Evocation',
 };
 const REF_TABS = [
-  { key:'spells',      label:'Spells',      icon:'✨' },
-  { key:'feats',       label:'Feats',       icon:'⭐' },
-  { key:'equipment',   label:'Equipment',   icon:'🗡️' },
-  { key:'backgrounds', label:'Backgrounds', icon:'📜' },
-  { key:'races',       label:'Races',       icon:'👥' },
-  { key:'skills',      label:'Skills',      icon:'🎯' },
-  { key:'languages',   label:'Languages',   icon:'💬' },
-  { key:'conditions',  label:'Conditions',  icon:'🩺' },
-  { key:'deities',     label:'Deities',     icon:'⚡' },
   { key:'actions',     label:'Actions',     icon:'⚔️' },
-  { key:'rewards',     label:'Rewards',     icon:'🏆' },
-  { key:'traps',       label:'Traps',       icon:'⚠️' },
-  { key:'vehicles',    label:'Vehicles',    icon:'🚢' },
-  { key:'objects',     label:'Objects',     icon:'📦' },
-  { key:'senses',      label:'Senses',      icon:'👁️' },
+  { key:'backgrounds', label:'Backgrounds', icon:'📜' },
   { key:'bestiary',    label:'Bestiary',    icon:'🐉' },
   { key:'classes',     label:'Classes',     icon:'⚔️' },
+  { key:'conditions',  label:'Conditions',  icon:'🩺' },
+  { key:'deities',     label:'Deities',     icon:'⚡' },
+  { key:'equipment',   label:'Equipment',   icon:'🗡️' },
+  { key:'feats',       label:'Feats',       icon:'⭐' },
+  { key:'languages',   label:'Languages',   icon:'💬' },
+  { key:'objects',     label:'Objects',     icon:'📦' },
+  { key:'races',       label:'Races',       icon:'👥' },
+  { key:'rewards',     label:'Rewards',     icon:'🏆' },
+  { key:'senses',      label:'Senses',      icon:'👁️' },
+  { key:'skills',      label:'Skills',      icon:'🎯' },
+  { key:'spells',      label:'Spells',      icon:'✨' },
   { key:'subclasses',  label:'Subclasses',  icon:'🎓' },
-  { key:'adventures',  label:'Adventures',  icon:'📖' },
-  { key:'books',       label:'Books',       icon:'📚' },
+  { key:'traps',       label:'Traps',       icon:'⚠️' },
+  { key:'vehicles',    label:'Vehicles',    icon:'🚢' },
 ];
 class ReferenceDataService {
   constructor(plugin) { this.plugin = plugin; this._cache = {}; this._rawCache = {}; }
@@ -3362,14 +3360,13 @@ function renderCompendiumLibrary(main, plugin) {
     { id: 'compendium', label: '📚 Compendium' },
     { id: 'reference',  label: '📖 5e Reference' },
     { id: 'homebrew',   label: '🧪 Homebrew' },
-    { id: 'my-content', label: '📊 My Content / Saved Items' },
   ];
+  // Redirect legacy my-content sub-section to compendium
+  if (state.activeSubSection === 'my-content') state.activeSubSection = 'compendium';
   const sub = state.activeSubSection || 'compendium';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'compendium')      renderLibrary(wrap, plugin, tabs);
-  else if (sub === 'reference')  renderReference(wrap, plugin, tabs);
-  else if (sub === 'homebrew')   renderHomebrew(wrap, plugin, tabs);
-  else if (sub === 'my-content') renderMyContent(wrap, plugin, tabs);
+  if (sub === 'reference') renderReference(wrap, plugin, tabs);
+  else if (sub === 'homebrew') renderHomebrew(wrap, plugin, tabs);
   else renderLibrary(wrap, plugin, tabs);
 }
 
@@ -5387,14 +5384,15 @@ function normalizeStorageMetadata(item, overrides) {
 
 function renderLibrary(main, plugin, tabs) {
   const state = plugin.state;
-  pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries. Import JSON or export backups.', [
-    { label: '+ Entry', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'compendium', null, compendiumFields).open() },
-    { label: '📥 Import JSON', onClick: () => new ImportModal(plugin.app, plugin).open() },
-    { label: '💾 Export Backup', onClick: () => exportBackup(plugin) },
+  pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries, rollable tables, homebrew, and 5e reference data.', [
+    { label: '🧪 + Homebrew', primary: true, onClick: () => new HomebrewModal(plugin.app, plugin).open() },
+    { label: '🎲 + Rollable Table', onClick: () => new RollableTableModal(plugin.app, plugin).open() },
+    { label: '📥 Import', onClick: () => new ImportModal(plugin.app, plugin).open() },
+    { label: '💾 Export', onClick: () => exportBackup(plugin) },
   ], tabs);
 
   // Local filter state — does not write to plugin.state.search
-  const libFilter = { search: '', source: '', category: '', visibility: '', campaign: '' };
+  const libFilter = { search: '', source: '', category: '', status: '', visibility: '', campaign: '' };
 
   // Filter bar
   const filterCard = ce(main, 'div', 'te-card');
@@ -5406,36 +5404,38 @@ function renderLibrary(main, plugin, tabs) {
   searchIn.type = 'text'; searchIn.placeholder = 'Search name or tag…';
   searchIn.style.cssText = 'flex:1;min-width:140px;padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
 
-  const sourceSel = ce(filterRow, 'select');
-  sourceSel.style.cssText = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-  [['', 'All Sources'], ['campaign', 'Campaign'], ['homebrew', 'Homebrew'], ['imported', 'Imported'], ['generated', 'Generated'], ['saved', 'Saved']].forEach(([v, l]) => {
+  const selStyle = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+
+  const sourceSel = ce(filterRow, 'select'); sourceSel.style.cssText = selStyle;
+  [['', 'All Sources'], ['5e-reference', '5e Reference'], ['campaign', 'Campaign'], ['generated', 'Generated'], ['homebrew', 'Homebrew'], ['imported', 'Imported'], ['saved', 'Saved']].forEach(([v, l]) => {
     const o = ce(sourceSel, 'option', '', l); o.value = v;
   });
 
-  const catSel = ce(filterRow, 'select');
-  catSel.style.cssText = sourceSel.style.cssText;
+  const statusSel = ce(filterRow, 'select'); statusSel.style.cssText = selStyle;
+  [['', 'All Status'], ['Draft', 'Draft'], ['Approved', 'Approved'], ['Retired', 'Retired'], ['Needs Review', 'Needs Review']].forEach(([v, l]) => {
+    const o = ce(statusSel, 'option', '', l); o.value = v;
+  });
+
+  const catSel = ce(filterRow, 'select'); catSel.style.cssText = selStyle;
   const allTypes = [...new Set(safeArr(state.entities.compendium).map(c => c.type).filter(Boolean))];
   [['', 'All Types'], ...allTypes.map(t => [t, t])].forEach(([v, l]) => {
     const o = ce(catSel, 'option', '', l); o.value = v;
   });
 
-  const visSel = ce(filterRow, 'select');
-  visSel.style.cssText = sourceSel.style.cssText;
-  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible']].forEach(([v, l]) => {
+  const visSel = ce(filterRow, 'select'); visSel.style.cssText = selStyle;
+  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible'], ['secret', 'Secret'], ['revealed', 'Revealed']].forEach(([v, l]) => {
     const o = ce(visSel, 'option', '', l); o.value = v;
   });
 
-  const campSel = ce(filterRow, 'select');
-  campSel.style.cssText = sourceSel.style.cssText;
+  const campSel = ce(filterRow, 'select'); campSel.style.cssText = selStyle;
   const campaigns = safeArr(state.entities.campaigns);
-  const campOpts = [['', 'All Campaigns'], ...campaigns.map(c => [c.id, c.name])];
-  campOpts.forEach(([v, l]) => { const o = ce(campSel, 'option', '', l); o.value = v; });
+  [['', 'All Campaigns'], ...campaigns.map(c => [c.id, c.name])].forEach(([v, l]) => { const o = ce(campSel, 'option', '', l); o.value = v; });
   if (state.activeCampaignId) campSel.value = state.activeCampaignId;
   libFilter.campaign = campSel.value;
 
   btn(filterRow, '× Clear', 'te-btn is-sm', () => {
-    searchIn.value = ''; sourceSel.value = ''; catSel.value = ''; visSel.value = ''; campSel.value = '';
-    Object.assign(libFilter, { search: '', source: '', category: '', visibility: '', campaign: '' });
+    searchIn.value = ''; sourceSel.value = ''; statusSel.value = ''; catSel.value = ''; visSel.value = ''; campSel.value = '';
+    Object.assign(libFilter, { search: '', source: '', category: '', status: '', visibility: '', campaign: '' });
     rebuild();
   });
 
@@ -5443,18 +5443,32 @@ function renderLibrary(main, plugin, tabs) {
 
   const rebuild = () => {
     clear(contentArea);
+
+    // When source='5e-reference', show reference browser prompt
+    if (libFilter.source === '5e-reference') {
+      const refPanel = ce(contentArea, 'div', 'te-card'); refPanel.style.padding = '16px';
+      ce(refPanel, 'p', '', '5e Reference data (spells, bestiary, equipment, feats, etc.) lives in the dedicated Reference browser.');
+      const rbRow = ce(refPanel, 'div', 'te-card-actions'); rbRow.style.marginTop = '8px';
+      btn(rbRow, '📖 Open 5e Reference Browser', 'te-btn is-primary', async () => {
+        state.activeSubSection = 'reference'; await saveStateQuiet(plugin);
+      });
+      return;
+    }
+
     const q = libFilter.search.toLowerCase();
     const compItems = safeArr(state.entities.compendium).filter(item => {
       if (q && !(item.name || '').toLowerCase().includes(q) && !safeArr(item.tags).some(t => t.toLowerCase().includes(q))) return false;
       if (libFilter.source && classifySourceBucket(item, 'compendium') !== libFilter.source) return false;
+      if (libFilter.status && (item.status || '') !== libFilter.status) return false;
       if (libFilter.category && item.type !== libFilter.category) return false;
       if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
       if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
       return true;
     });
     const tableItems = safeArr(state.entities.tables).filter(item => {
-      if (q && !(item.name || '').toLowerCase().includes(q)) return false;
+      if (q && !(item.name || '').toLowerCase().includes(q) && !safeArr(item.tags).some(t => t.toLowerCase().includes(q))) return false;
       if (libFilter.source && classifySourceBucket(item, 'tables') !== libFilter.source) return false;
+      if (libFilter.status && (item.status || '') !== libFilter.status) return false;
       if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
       if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
       return true;
@@ -5469,15 +5483,17 @@ function renderLibrary(main, plugin, tabs) {
 
     sectionHead(contentArea, `Rollable Tables${tableItems.length !== safeArr(state.entities.tables).length ? ` (${tableItems.length} of ${safeArr(state.entities.tables).length})` : ''}`);
     if (!tableItems.length) {
-      ce(contentArea, 'p', 'te-muted-text', 'No tables match the current filters.');
+      ce(contentArea, 'p', 'te-muted-text', 'No rollable tables match the current filters. Create one with + Rollable Table.');
     } else {
       itemCards(contentArea, plugin, 'tables', {
         items: tableItems,
-        meta: ['type'],
+        meta: ['category', 'diceFormula', 'status'],
         onExtra: (acts, item) => {
-          btn(acts, 'Roll', 'te-btn is-sm is-primary', () => {
-            const result = rollTable(item.summary || item.rows || '');
-            new Notice(`Roll result: ${result}`, 6000);
+          btn(acts, '🎲 Roll', 'te-btn is-sm is-primary', () => {
+            const result = (Array.isArray(item.rows) && item.rows.length)
+              ? rollStructuredTable(item.diceFormula || '1d6', item.rows)
+              : rollTable(item.summary || item.rows || '');
+            new Notice(`[${item.name}] Roll result: ${result}`, 8000);
           });
         },
       });
@@ -5487,6 +5503,7 @@ function renderLibrary(main, plugin, tabs) {
   const onChange = () => {
     libFilter.search = searchIn.value;
     libFilter.source = sourceSel.value;
+    libFilter.status = statusSel.value;
     libFilter.category = catSel.value;
     libFilter.visibility = visSel.value;
     libFilter.campaign = campSel.value;
@@ -5494,6 +5511,7 @@ function renderLibrary(main, plugin, tabs) {
   };
   searchIn.addEventListener('input', onChange);
   sourceSel.addEventListener('change', onChange);
+  statusSel.addEventListener('change', onChange);
   catSel.addEventListener('change', onChange);
   visSel.addEventListener('change', onChange);
   campSel.addEventListener('change', onChange);
@@ -5509,6 +5527,20 @@ function rollTable(rows) {
   let r = Math.floor(Math.random() * total) + 1;
   for (const e of entries) { r -= e.weight; if (r <= 0) return e.result; }
   return entries[entries.length - 1].result;
+}
+
+function rollStructuredTable(formula, rows) {
+  const structured = (Array.isArray(rows) ? rows : []).filter(r => r.result);
+  if (!structured.length) return 'No rows defined.';
+  const m = String(formula || '1d6').match(/^(\d+)d(\d+)$/i);
+  const count = m ? Math.max(1, parseInt(m[1])) : 1;
+  const sides = m ? Math.max(1, parseInt(m[2])) : 6;
+  let total = 0;
+  for (let i = 0; i < count; i++) total += Math.floor(Math.random() * sides) + 1;
+  const matched = structured.find(r => total >= (Number(r.min) || 1) && total <= (Number(r.max) || Number(r.min) || sides));
+  return matched
+    ? `${total}: ${matched.result}${matched.notes ? ` — ${matched.notes}` : ''}`
+    : `${total}: No matching row.`;
 }
 
 const compendiumFields = [
@@ -8863,6 +8895,103 @@ class ProjectModal extends Modal {
       upsert(this.plugin.state, 'projects', this.values);
       await this.plugin.saveState();
       new Notice(`Project "${this.values.name}" saved.`);
+      this.close();
+    });
+  }
+}
+
+// RollableTableModal
+class RollableTableModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    const now = new Date().toISOString();
+    this.values = Object.assign({
+      id: uid('table'), name: '', category: '', diceFormula: '1d6', rows: [],
+      visibility: 'dm-only', tags: [], source: '', status: 'Draft',
+      campaignId: '', createdAt: now, updatedAt: now,
+    }, this.item);
+    if (!Array.isArray(this.values.rows)) this.values.rows = [];
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Rollable Table` });
+
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    addField(contentEl, 'Table Name *', this.values.name, v => this.values.name = v);
+    addField(contentEl, 'Category', this.values.category, v => this.values.category = v);
+    addField(contentEl, 'Dice Formula (e.g. 1d6, 2d10)', this.values.diceFormula, v => this.values.diceFormula = v);
+    addSelect(contentEl, 'Status', this.values.status, ['Draft','Approved','Retired','Needs Review'], v => this.values.status = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility, ['dm-only','player-visible','secret','revealed'], v => this.values.visibility = v);
+    addField(contentEl, 'Source', this.values.source, v => this.values.source = v);
+    chipField(contentEl, 'Tags', this.values.tags, v => this.values.tags = v);
+
+    // Rows editor
+    const rowsHead = contentEl.createEl('div'); rowsHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin:12px 0 6px';
+    rowsHead.createEl('h3', { text: 'Table Rows (Min / Max / Result)' }).style.margin = '0';
+    const rowsWrap = contentEl.createEl('div');
+
+    const rebuildRows = () => {
+      clear(rowsWrap);
+      safeArr(this.values.rows).forEach((row, i) => {
+        const rowDiv = ce(rowsWrap, 'div', '');
+        rowDiv.style.cssText = 'display:grid;grid-template-columns:52px 52px 1fr auto;gap:6px;margin-bottom:6px;align-items:center';
+        const minIn = ce(rowDiv, 'input'); minIn.type = 'number'; minIn.placeholder = 'Min'; minIn.value = row.min ?? '';
+        minIn.style.cssText = 'padding:4px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        minIn.addEventListener('change', () => { this.values.rows[i].min = parseInt(minIn.value) || 1; });
+        const maxIn = ce(rowDiv, 'input'); maxIn.type = 'number'; maxIn.placeholder = 'Max'; maxIn.value = row.max ?? '';
+        maxIn.style.cssText = minIn.style.cssText;
+        maxIn.addEventListener('change', () => { this.values.rows[i].max = parseInt(maxIn.value) || parseInt(minIn.value) || 1; });
+        const resultIn = ce(rowDiv, 'input'); resultIn.type = 'text'; resultIn.placeholder = 'Result text…'; resultIn.value = row.result || '';
+        resultIn.style.cssText = 'padding:4px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+        resultIn.addEventListener('input', () => { this.values.rows[i].result = resultIn.value; });
+        btn(rowDiv, '×', 'te-btn is-sm is-danger', () => { this.values.rows.splice(i, 1); rebuildRows(); });
+      });
+      const addRow = ce(rowsWrap, 'div', 'te-card-actions'); addRow.style.marginTop = '4px';
+      btn(addRow, '+ Add Row', 'te-btn is-sm', () => {
+        const last = this.values.rows[this.values.rows.length - 1];
+        const nextMin = last ? ((Number(last.max) || Number(last.min) || 0) + 1) : 1;
+        this.values.rows.push({ min: nextMin, max: nextMin, result: '', notes: '' });
+        rebuildRows();
+      });
+    };
+    rebuildRows();
+
+    // Roll preview
+    const rollSec = contentEl.createEl('div'); rollSec.style.cssText = 'margin-top:12px;padding:12px;border:1px solid var(--te-border);border-radius:var(--te-r-md)';
+    rollSec.createEl('div', { cls: 'te-stat-label', text: 'Test Roll' });
+    const rollResult = ce(rollSec, 'div', 'te-result-box', 'Press Roll to test the table.');
+    rollResult.style.cssText = 'padding:8px 12px;margin:8px 0;border:1px solid var(--te-border);border-radius:var(--te-r-sm);min-height:32px;font-size:.9rem';
+    const rollBtnRow = ce(rollSec, 'div', 'te-card-actions');
+    btn(rollBtnRow, '🎲 Roll', 'te-btn is-primary is-sm', () => {
+      const result = rollStructuredTable(this.values.diceFormula || '1d6', this.values.rows);
+      rollResult.textContent = result;
+      const activeSess = this.plugin.state.activeSessionId
+        ? safeArr(this.plugin.state.entities.sessions).find(s => s.id === this.plugin.state.activeSessionId)
+        : null;
+      if (activeSess) {
+        const existingLog = rollBtnRow.querySelector('.te-log-btn');
+        if (!existingLog) {
+          const logB = btn(rollBtnRow, 'Log to Session', 'te-btn is-sm te-log-btn', async () => {
+            logSessionEvent(this.plugin, 'Table Rolled', `[${this.values.name || 'Table'}] ${result}`);
+            await saveStateQuiet(this.plugin);
+            new Notice('Logged to session.');
+          });
+        }
+      }
+    });
+
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Table name is required.'); return; }
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = this.values.updatedAt;
+      if (!this.values.campaignId) this.values.campaignId = this.plugin.state.activeCampaignId || '';
+      upsert(this.plugin.state, 'tables', this.values);
+      await this.plugin.saveState();
+      new Notice(`Table "${this.values.name}" saved.`);
       this.close();
     });
   }

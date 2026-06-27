@@ -224,8 +224,11 @@ test('logGeneratorHistory stamps source as generated', () => {
 // ── Section 7: My Content / Saved Items label ────────────────────────────────
 console.log('\n  Section 7: My Content / Saved Items explicit label');
 
-test('my-content tab label is My Content / Saved Items', () => {
-  ok(src.includes("'📊 My Content / Saved Items'"), 'my-content tab label not updated to explicit My Content / Saved Items');
+test('my-content tab removed from renderCompendiumLibrary (Phase T)', () => {
+  const compLibIdx = src.indexOf('function renderCompendiumLibrary(');
+  const compLibEnd = src.indexOf('\nfunction renderMyContent(', compLibIdx);
+  const compLibBlock = src.slice(compLibIdx, compLibEnd);
+  ok(!compLibBlock.includes("{ id: 'my-content'"), 'my-content tab should be removed from renderCompendiumLibrary per Phase T');
 });
 
 test('renderMyContent page title is My Content / Saved Items', () => {
