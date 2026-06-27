@@ -115,9 +115,9 @@ test('renderLibrary does not have generic + Entry button', () => {
   notOk(libBlock.includes("'+ Entry'") || libBlock.includes("label: '+ Entry'"),
     'Generic + Entry button still in renderLibrary');
 });
-test('renderLibrary has + Homebrew Entry button', () => {
-  ok(libBlock.includes('HomebrewModal') && (libBlock.includes('Homebrew') || libBlock.includes('homebrew')),
-    'renderLibrary missing + Homebrew Entry button opening HomebrewModal');
+test('renderLibrary has Create Homebrew entry point', () => {
+  ok(libBlock.includes('Create Homebrew') && libBlock.includes('HomebrewTypeChooserModal'),
+    'renderLibrary missing Create Homebrew entry point opening HomebrewTypeChooserModal');
 });
 test('renderLibrary has + Rollable Table button', () => {
   ok(libBlock.includes('RollableTableModal') && libBlock.includes('Rollable Table'),
@@ -299,6 +299,9 @@ test('renderHomebrew still exists', () => {
 });
 test('HomebrewModal still exists', () => {
   ok(src.includes('class HomebrewModal'), 'HomebrewModal class missing');
+});
+test('HomebrewTypeChooserModal exists', () => {
+  ok(src.includes('class HomebrewTypeChooserModal'), 'HomebrewTypeChooserModal class missing');
 });
 test('ImportModal still exists', () => {
   ok(src.includes('class ImportModal'), 'ImportModal class missing');

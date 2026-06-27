@@ -1372,12 +1372,22 @@ const ENTITY_MD_TEMPLATES = {
     return b;
   },
   homebrew: item => {
-    let b = `# ${item.name || 'Homebrew Entry'}\n\n`;
-    b += `> **Type:** ${item.type || '—'}  |  **Status:** ${item.status || 'Draft'}\n\n`;
-    if (item.description) b += `## Description\n\n${item.description}\n\n`;
-    if (item.mechanics) b += `## Mechanics\n\n${item.mechanics}\n\n`;
-    if (item.balance) b += `**Balance Notes:** ${item.balance}\n\n`;
-    b += `## DM Notes\n\n${item.dmNotes || item.notes || '_No notes._'}\n`;
+    const h = normalizeHomebrewRecord(item);
+    let b = `# ${h.name || 'Homebrew Entry'}\n\n`;
+    b += `> **Category:** ${h.category || '—'}  |  **Type:** ${h.type || '—'}  |  **Status:** ${h.status || 'Draft'}  |  **Visibility:** ${h.visibility || 'dm-only'}\n\n`;
+    if (h.sourceEntityType || h.sourceCampaignId) {
+      b += `## Source Links\n\n`;
+      if (h.sourceEntityType) b += `- Source Entity Type: ${h.sourceEntityType}\n`;
+      if (h.sourceEntityId) b += `- Source Entity ID: ${h.sourceEntityId}\n`;
+      if (h.sourceCampaignId) b += `- Source Campaign ID: ${h.sourceCampaignId}\n`;
+      b += '\n';
+    }
+    if (h.description) b += `## Description\n\n${h.description}\n\n`;
+    if (h.mechanics || h.mechanicsText) b += `## Mechanics\n\n${h.mechanics || h.mechanicsText}\n\n`;
+    const rendered = renderHomebrewContent(h);
+    if (rendered) b += `${rendered}\n\n`;
+    if (h.balance) b += `**Balance Notes:** ${h.balance}\n\n`;
+    b += `## DM Notes\n\n${h.dmNotes || h.notes || '_No notes._'}\n`;
     return b;
   },
 };
@@ -2300,6 +2310,7 @@ function itemCards(parent, plugin, key, opts) {
 const RICH_EDIT_MAP = {
   npcs:             (p, i) => new NPCModal(p.app, p, i).open(),
   creatures:        (p, i) => new CreatureModal(p.app, p, i).open(),
+  deities:          (p, i) => new DeityModal(p.app, p, i).open(),
   bbegs:            (p, i) => new BBEGModal(p.app, p, i).open(),
   factions:         (p, i) => new FactionModal(p.app, p, i).open(),
   quests:           (p, i) => new QuestModal(p.app, p, i).open(),
@@ -2706,7 +2717,7 @@ class TTRPGEnginePlugin extends Plugin {
       cmd('create-encounter', 'Create encounter', () => new EncounterModal(this.app, this).open());
       cmd('create-quest', 'Create quest', () => new QuestModal(this.app, this).open());
       cmd('create-session', 'Create session log', () => new SessionModal(this.app, this).open());
-      cmd('create-homebrew', 'Create homebrew entry', () => new HomebrewModal(this.app, this).open());
+      cmd('create-homebrew', 'Create Homebrew', () => new HomebrewTypeChooserModal(this.app, this).open());
       cmd('tile-map', 'Open tile map builder', async () => { this.state.activeSection = 'geography'; await this.saveState(); this.activateView(); });
       cmd('repair', 'Repair / reindex data', async () => {
         migrateState(this.state);
@@ -3925,7 +3936,7 @@ function renderWorld(main, plugin, tabs) {
     { label: '+ World', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'worlds', null, worldFields).open() },
     { label: '+ Cosmology', onClick: () => new GenericModal(plugin.app, plugin, 'cosmologies', null, cosmologyFields).open() },
     { label: '+ Realm', onClick: () => new GenericModal(plugin.app, plugin, 'realms', null, realmFields).open() },
-    { label: '+ Deity', onClick: () => new GenericModal(plugin.app, plugin, 'deities', null, deityFields).open() },
+    { label: '+ Deity', onClick: () => new DeityModal(plugin.app, plugin).open() },
     { label: '+ Culture', onClick: () => new GenericModal(plugin.app, plugin, 'cultures', null, cultureFields).open() },
     { label: '+ Language', onClick: () => new GenericModal(plugin.app, plugin, 'languages', null, langFields).open() },
     { label: '+ Nation', onClick: () => new GenericModal(plugin.app, plugin, 'nations', null, nationFields).open() },
@@ -3940,7 +3951,15 @@ function renderWorld(main, plugin, tabs) {
   sectionHead(main, 'Realms & Planes');
   itemCards(main, plugin, 'realms', { meta: ['type', 'parentPlane'] });
   sectionHead(main, 'Deities & Pantheons');
-  itemCards(main, plugin, 'deities', { meta: ['domain', 'pantheon', 'alignment'] });
+  itemCards(main, plugin, 'deities', {
+    meta: ['domain', 'pantheon', 'alignment'],
+    onEdit: (p, key, item) => new DeityModal(p.app, p, item).open(),
+    onExtra: (acts, item) => btn(acts, 'Save as Homebrew', 'te-btn is-sm', async () => {
+      const hb = promoteDeityToHomebrew(plugin, item);
+      await plugin.saveState();
+      new Notice(`Homebrew "${hb.name}" saved.`);
+    }),
+  });
   sectionHead(main, 'Cultures');
   itemCards(main, plugin, 'cultures', { meta: ['language', 'values'] });
   sectionHead(main, 'Languages');
@@ -4792,7 +4811,14 @@ function renderNpcs(main, plugin, tabs) {
   sectionHead(main, 'NPCs');
   itemCards(main, plugin, 'npcs', { meta: ['race', 'role', 'status', 'faction', 'location', 'pronouns', 'occupation'] });
   sectionHead(main, 'Creatures');
-  itemCards(main, plugin, 'creatures', { meta: ['creatureType', 'size', 'cr', 'alignment', 'ac', 'hp', 'factionIds'] });
+  itemCards(main, plugin, 'creatures', {
+    meta: ['creatureType', 'size', 'cr', 'alignment', 'ac', 'hp', 'factionIds'],
+    onExtra: (acts, item) => btn(acts, 'Save as Homebrew', 'te-btn is-sm', async () => {
+      const hb = promoteCreatureToHomebrew(plugin, item);
+      await plugin.saveState();
+      new Notice(`Homebrew "${hb.name}" saved.`);
+    }),
+  });
   sectionHead(main, 'BBEGs');
   itemCards(main, plugin, 'bbegs', { meta: ['title', 'status'] });
 
@@ -5382,10 +5408,260 @@ function normalizeStorageMetadata(item, overrides) {
   return item;
 }
 
+const HOMEBREW_STATUS_OPTIONS = ['Draft', 'Approved', 'Retired', 'Needs Review'];
+const HOMEBREW_VISIBILITY_OPTIONS = ['dm-only', 'player-visible', 'secret', 'revealed'];
+
+function normalizeListField(value) {
+  if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(',').map(v => v.trim()).filter(Boolean);
+  return [];
+}
+function homebrewStatusValue(status) {
+  const raw = String(status || '').trim().toLowerCase();
+  if (!raw) return 'Draft';
+  if (raw === 'approved' || raw === 'final' || raw === 'playtested' || raw === 'active') return 'Approved';
+  if (raw === 'retired' || raw === 'deprecated' || raw === 'archived') return 'Retired';
+  if (raw === 'needs review' || raw === 'needs-review' || raw === 'pending review' || raw === 'pending-review') return 'Needs Review';
+  if (raw === 'draft') return 'Draft';
+  return status;
+}
+function homebrewCategoryForType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  if (!t) return 'Rules & Mechanics';
+  if (['ancestry','race / ancestry','race','hybrid ancestry','class','subclass','background','feat','character option'].includes(t)) return 'Character Options';
+  if (['rule','mechanic','optional rule','table','rollable table'].includes(t)) return 'Rules & Mechanics';
+  if (['item','weapon','armour','armor','magic item','equipment'].includes(t)) return 'Items & Equipment';
+  if (['monster','creature','npc template','statblock'].includes(t)) return 'Monsters & Statblocks';
+  if (['deity','plane','world lore','realm','pantheon'].includes(t)) return 'Worlds & Planes';
+  return 'Rules & Mechanics';
+}
+function summarizeMarkdownText(markdown) {
+  return String(markdown || '')
+    .replace(/^#+\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/[_`>-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+}
+function getHomebrewSummary(item) {
+  return item.summary || item.description || item.payload?.summary || summarizeMarkdownText(item.content);
+}
+function inferHomebrewType(item) {
+  if (item.homebrewType) return item.homebrewType;
+  if (item.type) return item.type;
+  if (item.category === 'Race / Ancestry' || item.sourceHybridId) return 'Hybrid Ancestry';
+  if (item.payload?.kind) return item.payload.kind;
+  return 'Other';
+}
+function normalizeHomebrewRecord(item, overrides) {
+  const record = Object.assign({}, item || {});
+  const now = new Date().toISOString();
+  record.id = record.id || (overrides && overrides.id) || uid('homebrew');
+  record.homebrewId = record.homebrewId || record.id;
+  record.name = record.name || record.title || 'Untitled Homebrew';
+  record.homebrewType = (overrides && overrides.homebrewType) || inferHomebrewType(record);
+  record.type = (overrides && overrides.type) || record.type || record.homebrewType;
+  record.category = record.category || homebrewCategoryForType(record.type);
+  record.source = 'homebrew';
+  record.status = homebrewStatusValue(record.status || (overrides && overrides.status));
+  record.visibility = record.visibility || (record.playerVisible ? 'player-visible' : '') || (overrides && overrides.visibility) || 'dm-only';
+  if (!HOMEBREW_VISIBILITY_OPTIONS.includes(record.visibility)) record.visibility = 'dm-only';
+  record.tags = normalizeListField(record.tags);
+  record.balanceNotes = record.balanceNotes || '';
+  if (!record.sourceEntityType && record.sourceHybridId) record.sourceEntityType = 'hybridAncestries';
+  if (!record.sourceEntityId && record.sourceHybridId) record.sourceEntityId = record.sourceHybridId;
+  if (!record.promotedFromEntityType && record.sourceEntityType) record.promotedFromEntityType = record.sourceEntityType;
+  if (!record.promotedFromEntityId && record.sourceEntityId) record.promotedFromEntityId = record.sourceEntityId;
+  if (!record.sourceCampaignId) record.sourceCampaignId = record.campaignId || '';
+  record.scope = record.scope || ((record.sourceCampaignId || record.campaignId) ? 'campaign' : 'global');
+  record.summary = getHomebrewSummary(record);
+  record.createdAt = record.createdAt || now;
+  record.updatedAt = record.updatedAt || record.createdAt;
+  return record;
+}
+function renderHomebrewContent(item) {
+  const h = normalizeHomebrewRecord(item);
+  const builder = (typeof HOMEBREW_BUILDERS !== 'undefined' && HOMEBREW_BUILDERS[h.homebrewType]) ? HOMEBREW_BUILDERS[h.homebrewType] : null;
+  if ((!h.content || !String(h.content).trim()) && builder && typeof builder.toMarkdown === 'function' && h.payload) {
+    return builder.toMarkdown(h.payload, h).trim();
+  }
+  if (h.content) return h.content;
+  if (h.payload?.kind === 'Creature') {
+    const p = h.payload;
+    let md = `## Statblock\n\n`;
+    md += `**Size:** ${p.size || 'Medium'} | **Type:** ${p.creatureType || '—'} | **Alignment:** ${p.alignment || '—'} | **CR:** ${p.cr || '—'}\n\n`;
+    md += `| AC | HP | Speed |\n|---|---|---|\n| ${p.ac || '—'} | ${p.hp || '—'} | ${p.speed || '—'} |\n\n`;
+    md += `| STR | DEX | CON | INT | WIS | CHA |\n|---|---|---|---|---|---|\n| ${p.abilities?.str ?? p.str ?? 10} | ${p.abilities?.dex ?? p.dex ?? 10} | ${p.abilities?.con ?? p.con ?? 10} | ${p.abilities?.int ?? p.int ?? 10} | ${p.abilities?.wis ?? p.wis ?? 10} | ${p.abilities?.cha ?? p.cha ?? 10} |\n\n`;
+    if (normalizeListField(p.senses).length) md += `**Senses:** ${normalizeListField(p.senses).join(', ')}\n\n`;
+    if (normalizeListField(p.languages).length) md += `**Languages:** ${normalizeListField(p.languages).join(', ')}\n\n`;
+    [['Traits', p.traits], ['Actions', p.actions], ['Reactions', p.reactions], ['Legendary Actions', p.legendaryActions], ['Lair Actions', p.lairActions]]
+      .forEach(([label, values]) => {
+        const list = normalizeListField(values);
+        if (!list.length) return;
+        md += `## ${label}\n\n${list.map(v => `- ${v}`).join('\n')}\n\n`;
+      });
+    if (p.lore) md += `## Lore\n\n${p.lore}\n\n`;
+    if (p.habitat) md += `**Habitat:** ${p.habitat}\n\n`;
+    if (p.loot) md += `## Loot\n\n${p.loot}\n\n`;
+    if (p.notes) md += `## Notes\n\n${p.notes}\n\n`;
+    return md.trim();
+  }
+  if (h.payload?.kind === 'Deity') {
+    const p = h.payload;
+    let md = '';
+    if (p.titles) md += `**Titles:** ${p.titles}\n\n`;
+    if (normalizeListField(p.domains || p.domain).length) md += `**Domains:** ${normalizeListField(p.domains || p.domain).join(', ')}\n\n`;
+    if (p.symbols) md += `**Symbols:** ${p.symbols}\n\n`;
+    if (p.worshippers) md += `**Worshippers:** ${p.worshippers}\n\n`;
+    if (p.clergy) md += `## Clergy\n\n${p.clergy}\n\n`;
+    if (p.summary) md += `## Summary\n\n${p.summary}\n\n`;
+    if (p.notes) md += `## Notes\n\n${p.notes}\n\n`;
+    return md.trim();
+  }
+  return '';
+}
+function createOrUpdatePromotedHomebrew(plugin, entityKey, entity, recordFactory) {
+  const existing = safeArr(plugin.state.entities.homebrew).find(h => {
+    const n = normalizeHomebrewRecord(h);
+    return n.sourceEntityType === entityKey && n.sourceEntityId === entity.id;
+  });
+  const record = normalizeHomebrewRecord(recordFactory(existing));
+  upsert(plugin.state, 'homebrew', record);
+  const linked = Object.assign({}, entity, {
+    homebrewId: record.id,
+    homebrewIds: [...new Set([...normalizeListField(entity.homebrewIds), record.id])],
+    promotedHomebrewId: record.id,
+    promotedHomebrewIds: [...new Set([...normalizeListField(entity.promotedHomebrewIds), record.id])],
+    updatedAt: new Date().toISOString(),
+  });
+  upsert(plugin.state, entityKey, linked);
+  return record;
+}
+function promoteCreatureToHomebrew(plugin, creature) {
+  const now = new Date().toISOString();
+  return createOrUpdatePromotedHomebrew(plugin, 'creatures', creature, existing => ({
+    ...(existing || {}),
+    id: existing?.id || uid('homebrew'),
+    name: creature.name,
+    type: 'Creature',
+    category: 'Monsters & Statblocks',
+    payload: {
+      kind: 'Creature',
+      name: creature.name,
+      size: creature.size,
+      creatureType: creature.creatureType,
+      alignment: creature.alignment,
+      ac: creature.ac,
+      hp: creature.hp,
+      speed: creature.speed,
+      abilities: { str: creature.str, dex: creature.dex, con: creature.con, int: creature.int, wis: creature.wis, cha: creature.cha },
+      senses: normalizeListField(creature.senses),
+      languages: normalizeListField(creature.languages),
+      cr: creature.cr,
+      traits: normalizeListField(creature.traits),
+      actions: normalizeListField(creature.actions),
+      reactions: normalizeListField(creature.reactions),
+      legendaryActions: normalizeListField(creature.legendaryActions),
+      lairActions: normalizeListField(creature.lairActions),
+      lore: creature.lore || '',
+      habitat: creature.habitat || '',
+      loot: creature.loot || '',
+      notes: creature.notes || '',
+      visibility: creature.visibility || 'dm-only',
+      tags: normalizeListField(creature.tags),
+      sourceCampaignId: creature.campaignId || '',
+    },
+    content: renderHomebrewContent({
+      type: 'Creature',
+      payload: {
+        kind: 'Creature',
+        size: creature.size, creatureType: creature.creatureType, alignment: creature.alignment, cr: creature.cr,
+        ac: creature.ac, hp: creature.hp, speed: creature.speed,
+        abilities: { str: creature.str, dex: creature.dex, con: creature.con, int: creature.int, wis: creature.wis, cha: creature.cha },
+        senses: normalizeListField(creature.senses), languages: normalizeListField(creature.languages),
+        traits: normalizeListField(creature.traits), actions: normalizeListField(creature.actions), reactions: normalizeListField(creature.reactions),
+        legendaryActions: normalizeListField(creature.legendaryActions), lairActions: normalizeListField(creature.lairActions),
+        lore: creature.lore || '', habitat: creature.habitat || '', loot: creature.loot || '', notes: creature.notes || '',
+      },
+    }),
+    summary: creature.lore || `Promoted from campaign creature${creature.creatureType ? ` (${creature.creatureType})` : ''}.`,
+    description: creature.lore || '',
+    dmNotes: creature.notes || '',
+    status: existing?.status || 'Draft',
+    visibility: creature.visibility || existing?.visibility || 'dm-only',
+    tags: [...new Set([...(existing?.tags || []), ...normalizeListField(creature.tags), 'promoted', 'creature'])],
+    campaignId: creature.campaignId || '',
+    sourceCampaignId: creature.campaignId || '',
+    sourceEntityType: 'creatures',
+    sourceEntityId: creature.id,
+    promotedFromEntityType: 'creatures',
+    promotedFromEntityId: creature.id,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  }));
+}
+function promoteDeityToHomebrew(plugin, deity) {
+  const now = new Date().toISOString();
+  const domains = normalizeListField(deity.domain || deity.domains);
+  return createOrUpdatePromotedHomebrew(plugin, 'deities', deity, existing => ({
+    ...(existing || {}),
+    id: existing?.id || uid('homebrew'),
+    name: deity.name,
+    type: 'Deity',
+    category: 'Worlds & Planes',
+    payload: {
+      kind: 'Deity',
+      name: deity.name,
+      titles: deity.titles || '',
+      domain: domains,
+      domains,
+      symbols: deity.symbols || '',
+      worshippers: deity.worshippers || '',
+      clergy: deity.clergy || '',
+      summary: deity.summary || '',
+      notes: deity.notes || '',
+      pantheon: deity.pantheon || '',
+      pantheonId: deity.pantheonId || '',
+      alignment: deity.alignment || '',
+      sourceCampaignId: deity.campaignId || '',
+      visibility: deity.visibility || 'dm-only',
+      tags: normalizeListField(deity.tags),
+    },
+    content: renderHomebrewContent({
+      type: 'Deity',
+      payload: {
+        kind: 'Deity',
+        titles: deity.titles || '',
+        domains,
+        symbols: deity.symbols || '',
+        worshippers: deity.worshippers || '',
+        clergy: deity.clergy || '',
+        summary: deity.summary || '',
+        notes: deity.notes || '',
+      },
+    }),
+    summary: deity.summary || `Promoted from campaign deity${domains.length ? ` (${domains.join(', ')})` : ''}.`,
+    description: deity.summary || '',
+    dmNotes: deity.notes || '',
+    status: existing?.status || 'Draft',
+    visibility: deity.visibility || existing?.visibility || 'dm-only',
+    tags: [...new Set([...(existing?.tags || []), ...normalizeListField(deity.tags), 'promoted', 'deity'])],
+    campaignId: deity.campaignId || '',
+    sourceCampaignId: deity.campaignId || '',
+    sourceEntityType: 'deities',
+    sourceEntityId: deity.id,
+    promotedFromEntityType: 'deities',
+    promotedFromEntityId: deity.id,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  }));
+}
+
 function renderLibrary(main, plugin, tabs) {
   const state = plugin.state;
   pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries, rollable tables, homebrew, and 5e reference data.', [
-    { label: '🧪 + Homebrew', primary: true, onClick: () => new HomebrewModal(plugin.app, plugin).open() },
+    { label: '🧪 Create Homebrew', primary: true, onClick: () => new HomebrewTypeChooserModal(plugin.app, plugin).open() },
     { label: '🎲 + Rollable Table', onClick: () => new RollableTableModal(plugin.app, plugin).open() },
     { label: '📥 Import', onClick: () => new ImportModal(plugin.app, plugin).open() },
     { label: '💾 Export', onClick: () => exportBackup(plugin) },
@@ -5557,7 +5833,7 @@ const compendiumFields = [
 function renderHomebrew(main, plugin, tabs) {
   const state = plugin.state;
   pageHead(main, plugin, 'Homebrew', 'Create and manage homebrew content for your campaign.', [
-    { label: '+ Homebrew Entry', primary: true, onClick: () => new HomebrewModal(plugin.app, plugin).open() },
+    { label: 'Create Homebrew', primary: true, onClick: () => new HomebrewTypeChooserModal(plugin.app, plugin).open() },
   ], tabs);
 
   // Local filter state
@@ -5574,13 +5850,13 @@ function renderHomebrew(main, plugin, tabs) {
 
   const statusSel = ce(filterRow, 'select');
   statusSel.style.cssText = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-  [['', 'All Status'], ['active', 'Active'], ['draft', 'Draft'], ['archived', 'Archived']].forEach(([v, l]) => {
+  [['', 'All Status'], ...HOMEBREW_STATUS_OPTIONS.map(v => [v, v])].forEach(([v, l]) => {
     const o = ce(statusSel, 'option', '', l); o.value = v;
   });
 
   const visSel = ce(filterRow, 'select');
   visSel.style.cssText = statusSel.style.cssText;
-  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible']].forEach(([v, l]) => {
+  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible'], ['secret', 'Secret'], ['revealed', 'Revealed']].forEach(([v, l]) => {
     const o = ce(visSel, 'option', '', l); o.value = v;
   });
 
@@ -5595,10 +5871,11 @@ function renderHomebrew(main, plugin, tabs) {
   const rebuildHb = () => {
     clear(contentArea);
     const q = hbFilter.search.toLowerCase();
-    const items = safeArr(state.entities.homebrew).filter(item => {
-      if (q && !(item.name || '').toLowerCase().includes(q) && !(item.type || '').toLowerCase().includes(q)) return false;
-      if (hbFilter.status && item.status && item.status.toLowerCase() !== hbFilter.status) return false;
-      if (hbFilter.visibility && item.visibility && item.visibility !== hbFilter.visibility) return false;
+    const items = safeArr(state.entities.homebrew).map(item => normalizeHomebrewRecord(item)).filter(item => {
+      const searchText = [item.name, item.type, item.category, item.summary, safeArr(item.tags).join(' ')].join(' ').toLowerCase();
+      if (q && !searchText.includes(q)) return false;
+      if (hbFilter.status && item.status !== hbFilter.status) return false;
+      if (hbFilter.visibility && item.visibility !== hbFilter.visibility) return false;
       return true;
     });
     const all = safeArr(state.entities.homebrew).length;
@@ -8002,6 +8279,52 @@ class GenericModal extends Modal {
   }
 }
 
+class DeityModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({ id: uid('deities'), visibility: 'dm-only', tags: [] }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Deity` });
+    deityFields.forEach(f => {
+      if (f.type === 'text') addField(contentEl, f.label, this.values[f.key] || '', v => this.values[f.key] = v);
+      else if (f.type === 'textarea') addField(contentEl, f.label, this.values[f.key] || '', v => this.values[f.key] = v, 'textarea');
+      else if (f.type === 'select') addSelect(contentEl, f.label, this.values[f.key] || (f.options && f.options[0]) || '', f.options || [], v => this.values[f.key] = v);
+      else if (f.type === 'chip') chipField(contentEl, f.label, this.values[f.key] || [], v => this.values[f.key] = v, f.opts || {});
+      else if (f.type === 'entityRef') addEntityPicker(contentEl, f.label, this.values[f.key] || '', this.plugin, f.entityType || '', v => this.values[f.key] = v);
+      else if (f.type === 'entityMultiRef') addEntityMultiPicker(contentEl, f.label, this.values[f.key] || [], this.plugin, f.entityType || '', v => this.values[f.key] = v);
+    });
+    if (!this.values.tags) this.values.tags = [];
+    chipField(contentEl, 'Tags', this.values.tags, v => this.values.tags = v);
+    addField(contentEl, 'Notes', this.values.notes || '', v => this.values.notes = v, 'textarea');
+    addSelect(contentEl, 'Visibility', this.values.visibility, HOMEBREW_VISIBILITY_OPTIONS, v => this.values.visibility = v);
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, 'Save', 'te-btn is-primary', async () => {
+      if (!this.values.name) { new Notice('Name is required.'); return; }
+      this.values.updatedAt = new Date().toISOString();
+      upsert(this.plugin.state, 'deities', this.values);
+      await this.plugin.saveState();
+      new Notice('Deity saved.');
+      this.close();
+    });
+    btn(actRow, 'Save as Homebrew', 'te-btn', async () => {
+      if (!this.values.name) { new Notice('Name is required.'); return; }
+      this.values.updatedAt = new Date().toISOString();
+      upsert(this.plugin.state, 'deities', this.values);
+      const hb = promoteDeityToHomebrew(this.plugin, this.values);
+      await this.plugin.saveState();
+      new Notice(`Homebrew "${hb.name}" saved.`);
+      this.close();
+    });
+    btn(actRow, 'Cancel', 'te-btn', () => this.close());
+  }
+}
+
 // CampaignModal
 class CampaignModal extends Modal {
   constructor(app, plugin, item) {
@@ -8267,13 +8590,25 @@ class CreatureModal extends Modal {
     addField(loreSec, 'Loot / Salvage', this.values.loot, v => this.values.loot = v, 'textarea');
     addEntityMultiPicker(contentEl, 'Linked Factions', safeArr(this.values.factionIds), this.plugin, 'factions', v => this.values.factionIds = v);
 
-    modalButtons(contentEl, this, async () => {
+    const actRow = ce(contentEl, 'div', 'te-modal-actions');
+    btn(actRow, 'Save', 'te-btn is-primary', async () => {
       if (!this.values.name.trim()) { new Notice('Creature name is required.'); return; }
+      this.values.updatedAt = new Date().toISOString();
       upsert(this.plugin.state, 'creatures', this.values);
       await this.plugin.saveState();
       new Notice(`Creature "${this.values.name}" saved.`);
       this.close();
     });
+    btn(actRow, 'Save as Homebrew', 'te-btn', async () => {
+      if (!this.values.name.trim()) { new Notice('Creature name is required.'); return; }
+      this.values.updatedAt = new Date().toISOString();
+      upsert(this.plugin.state, 'creatures', this.values);
+      const hb = promoteCreatureToHomebrew(this.plugin, this.values);
+      await this.plugin.saveState();
+      new Notice(`Homebrew "${hb.name}" saved.`);
+      this.close();
+    });
+    btn(actRow, 'Cancel', 'te-btn', () => this.close());
   }
 }
 
@@ -8997,16 +9332,96 @@ class RollableTableModal extends Modal {
   }
 }
 
+class HomebrewTypeChooserModal extends Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl);
+    contentEl.addClass('te-modal');
+    contentEl.createEl('h2', { text: 'Create Homebrew' });
+    ce(contentEl, 'p', 'te-muted-text', 'Choose a starting point. Promotion keeps the original campaign record and creates a linked Homebrew entry.');
+    const categories = [
+      {
+        title: 'Character Options',
+        actions: [
+          { label: 'Hybrid Ancestry', desc: 'Open the existing hybrid ancestry builder.', run: () => new HybridAncestryModal(this.app, this.plugin).open() },
+        ],
+      },
+      {
+        title: 'Rules & Mechanics',
+        actions: [
+          { label: 'Rule / Mechanic', desc: 'Create a generic homebrew rules entry.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Rules & Mechanics', type: 'Rule', status: 'Draft' }).open() },
+        ],
+      },
+      {
+        title: 'Items & Equipment',
+        actions: [
+          { label: 'Item Concept', desc: 'Create a lightweight item or equipment shell.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Items & Equipment', type: 'Item', status: 'Draft' }).open() },
+        ],
+      },
+      {
+        title: 'Monsters & Statblocks',
+        actions: [
+          { label: 'Creature Entry', desc: 'Create a blank creature homebrew shell or promote from a Creature record.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Monsters & Statblocks', type: 'Creature', status: 'Draft' }).open() },
+        ],
+      },
+      {
+        title: 'Worlds & Planes',
+        actions: [
+          { label: 'Deity / Lore Entry', desc: 'Create deity or world-lore homebrew, or promote from a Deity record.', run: () => new HomebrewModal(this.app, this.plugin, { category: 'Worlds & Planes', type: 'Deity', status: 'Draft' }).open() },
+        ],
+      },
+      {
+        title: 'Rollable Tables',
+        actions: [
+          { label: 'Rollable Table', desc: 'Open the rollable table builder.', run: () => new RollableTableModal(this.app, this.plugin).open() },
+        ],
+      },
+    ];
+    categories.forEach(group => {
+      const sec = ce(contentEl, 'div', 'te-modal-section');
+      sec.createEl('h3', { text: group.title });
+      group.actions.forEach(action => {
+        const row = ce(sec, 'div', 'te-card');
+        const head = ce(row, 'div', 'te-card-head');
+        ce(head, 'h4', 'te-card-title', action.label);
+        ce(row, 'p', 'te-card-body', action.desc);
+        const acts = ce(row, 'div', 'te-card-actions');
+        btn(acts, action.label, 'te-btn is-sm is-primary', () => {
+          this.close();
+          action.run();
+        });
+      });
+    });
+  }
+}
+
 // HomebrewModal
 class HomebrewModal extends Modal {
   constructor(app, plugin, item) {
     super(app);
     this.plugin = plugin;
     this.item = item || {};
-    this.values = Object.assign({
-      id: uid('homebrew'), name: '', type: 'Spell', status: 'Draft',
-      playerVisible: false, summary: '', description: '', mechanicsText: '', dmNotes: '', tags: [],
-    }, this.item);
+    this.values = normalizeHomebrewRecord(Object.assign({
+      id: uid('homebrew'),
+      name: '',
+      category: 'Rules & Mechanics',
+      type: 'Rule',
+      status: 'Draft',
+      visibility: 'dm-only',
+      scope: plugin.state.activeCampaignId ? 'campaign' : 'global',
+      campaignId: plugin.state.activeCampaignId || '',
+      sourceCampaignId: plugin.state.activeCampaignId || '',
+      summary: '',
+      description: '',
+      mechanicsText: '',
+      dmNotes: '',
+      tags: [],
+      content: '',
+    }, this.item));
   }
   onOpen() {
     const { contentEl } = this;
@@ -9014,16 +9429,28 @@ class HomebrewModal extends Modal {
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: `${this.item.id ? 'Edit' : 'New'} Homebrew Entry` });
     addField(contentEl, 'Name *', this.values.name, v => this.values.name = v);
-    addSelect(contentEl, 'Type', this.values.type, ['Ancestry','Class','Subclass','Background','Feat','Spell','Item','Weapon','Armour','Monster','NPC Template','Rule','Faction','Deity','Plane','Mechanic','Other'], v => this.values.type = v);
-    addSelect(contentEl, 'Status', this.values.status, ['Draft','Playtested','Final','Deprecated'], v => this.values.status = v);
-    addToggle(contentEl, 'Player-Visible', this.values.playerVisible, v => this.values.playerVisible = v);
+    addSelect(contentEl, 'Category', this.values.category, ['Character Options','Rules & Mechanics','Items & Equipment','Monsters & Statblocks','Worlds & Planes','Rollable Tables'], v => this.values.category = v);
+    addSelect(contentEl, 'Type', this.values.type, ['Ancestry','Hybrid Ancestry','Class','Subclass','Background','Feat','Spell','Item','Weapon','Armour','Monster','Creature','NPC Template','Rule','Faction','Deity','Plane','World Lore','Mechanic','Rollable Table','Other'], v => this.values.type = v);
+    addSelect(contentEl, 'Status', this.values.status, HOMEBREW_STATUS_OPTIONS, v => this.values.status = v);
+    addSelect(contentEl, 'Visibility', this.values.visibility, HOMEBREW_VISIBILITY_OPTIONS, v => this.values.visibility = v);
+    addSelect(contentEl, 'Scope', this.values.scope, ['campaign','global'], v => this.values.scope = v);
     addField(contentEl, 'Summary', this.values.summary, v => this.values.summary = v, 'textarea');
     addField(contentEl, 'Full Description', this.values.description, v => this.values.description = v, 'textarea');
     addField(contentEl, 'Mechanics Text', this.values.mechanicsText, v => this.values.mechanicsText = v, 'textarea');
+    addField(contentEl, 'Content Payload / Markdown', this.values.content, v => this.values.content = v, 'textarea');
     addField(contentEl, 'DM Notes (hidden)', this.values.dmNotes, v => this.values.dmNotes = v, 'textarea');
     chipField(contentEl, 'Tags', this.values.tags, v => this.values.tags = v);
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Name is required.'); return; }
+      if (this.values.scope === 'campaign') {
+        this.values.campaignId = this.plugin.state.activeCampaignId || this.values.campaignId || '';
+        this.values.sourceCampaignId = this.values.sourceCampaignId || this.values.campaignId || '';
+      } else {
+        this.values.campaignId = '';
+      }
+      this.values.updatedAt = new Date().toISOString();
+      if (!this.values.createdAt) this.values.createdAt = this.values.updatedAt;
+      this.values = normalizeHomebrewRecord(this.values);
       upsert(this.plugin.state, 'homebrew', this.values);
       await this.plugin.saveState();
       new Notice(`Homebrew entry "${this.values.name}" saved.`);
@@ -10195,9 +10622,36 @@ class HybridAncestryModal extends Modal {
     btn(actRow, 'Save as Homebrew', 'te-btn is-sm', async () => {
       if (!this.values.name.trim()) { new Notice('Name required first.'); return; }
       const existingHb = safeArr(this.plugin.state.entities.homebrew).find(h => h.sourceHybridId === this.values.id || h.name === this.values.name);
-      const hb = existingHb
-        ? { ...existingHb, content: this._toMarkdown(), updatedAt: new Date().toISOString(), visibility: this.values.visibility }
-        : { id: uid('homebrew'), sourceHybridId: this.values.id, name: this.values.name, category: 'Race / Ancestry', content: this._toMarkdown(), tags: ['hybrid','ancestry'], visibility: this.values.visibility, createdAt: new Date().toISOString() };
+      const hb = normalizeHomebrewRecord(existingHb
+        ? {
+          ...existingHb,
+          type: 'Hybrid Ancestry',
+          category: 'Character Options',
+          content: this._toMarkdown(),
+          summary: this.values.summary || existingHb.summary || '',
+          updatedAt: new Date().toISOString(),
+          visibility: this.values.visibility,
+        }
+        : {
+          id: uid('homebrew'),
+          sourceHybridId: this.values.id,
+          sourceEntityType: 'hybridAncestries',
+          sourceEntityId: this.values.id,
+          promotedFromEntityType: 'hybridAncestries',
+          promotedFromEntityId: this.values.id,
+          homebrewId: '',
+          name: this.values.name,
+          type: 'Hybrid Ancestry',
+          category: 'Character Options',
+          content: this._toMarkdown(),
+          summary: this.values.summary || '',
+          tags: ['hybrid', 'ancestry'],
+          visibility: this.values.visibility,
+          sourceCampaignId: this.plugin.state.activeCampaignId || '',
+          campaignId: this.plugin.state.activeCampaignId || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
       upsert(this.plugin.state, 'homebrew', hb);
       await this.plugin.saveState();
       new Notice(existingHb ? `Homebrew "${hb.name}" updated.` : `Homebrew entry "${hb.name}" created.`);
