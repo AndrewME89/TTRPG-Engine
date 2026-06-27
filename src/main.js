@@ -1449,47 +1449,100 @@ async function exportBackup(plugin) {
   new Notice(`Backup saved to ${path} (${total} entities)`);
 }
 
+// ── Backup / restore helpers ───────────────────────────────────────────────────
+function isBackupWrapper(obj) {
+  return obj !== null && typeof obj === 'object' && typeof obj.state === 'object' && obj.state !== null &&
+    typeof obj.state.entities === 'object' && obj.state.entities !== null;
+}
+function isRawPluginState(obj) {
+  return obj !== null && typeof obj === 'object' && typeof obj.entities === 'object' && obj.entities !== null && !obj.state;
+}
+function buildBackupWrapperFromRawState(state) {
+  const counts = {};
+  const ents = state.entities || {};
+  for (const [k, arr] of Object.entries(ents)) counts[k] = Array.isArray(arr) ? arr.length : 0;
+  return { version: state.version || PLUGIN_VERSION, timestamp: state.updatedAt || null, entityCounts: counts, state };
+}
+function parseTtrpgBackupJson(rawJson) {
+  let obj;
+  try { obj = JSON.parse(rawJson); } catch (e) { throw new Error(`Invalid JSON: ${e.message}`); }
+  if (isBackupWrapper(obj)) {
+    if (!obj.entityCounts) {
+      const ents = obj.state.entities || {};
+      obj.entityCounts = {};
+      for (const [k, arr] of Object.entries(ents)) obj.entityCounts[k] = Array.isArray(arr) ? arr.length : 0;
+    }
+    return obj;
+  }
+  if (isRawPluginState(obj)) return buildBackupWrapperFromRawState(obj);
+  throw new Error('File does not appear to be a TTRPG Engine backup or plugin state file (no entities found).');
+}
+
+function _previewBackupInto(el, bk) {
+  clear(el);
+  ce(el, 'p', '', `Version: ${bk.version || 'unknown'}`);
+  ce(el, 'p', '', `Timestamp: ${bk.timestamp ? new Date(bk.timestamp).toLocaleString() : 'Unknown'}`);
+  const counts = bk.entityCounts || {};
+  const total = Object.values(counts).reduce((s, v) => s + v, 0);
+  ce(el, 'p', '', `Total entities: ${total}`);
+  const top = Object.entries(counts).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([k, v]) => `${ENTITY_LABELS[k] || k}: ${v}`).join(', ');
+  if (top) ce(el, 'p', 'te-muted-text', top);
+  if (bk.state && bk.state.activeCampaignId) {
+    const camp = (safeArr((bk.state.entities || {}).campaigns)).find(c => c.id === bk.state.activeCampaignId);
+    if (camp) ce(el, 'p', '', `Active campaign: ${camp.name}`);
+  }
+}
+
 class RestoreBackupModal extends Modal {
-  constructor(app, plugin) { super(app); this.plugin = plugin; }
+  constructor(app, plugin, preloadedBackup = null) {
+    super(app);
+    this.plugin = plugin;
+    this._pendingBackup = preloadedBackup;
+  }
   onOpen() {
     const { contentEl } = this;
     clear(contentEl);
     contentEl.addClass('te-modal');
     contentEl.createEl('h2', { text: '📥 Restore from Backup' });
-    ce(contentEl, 'p', 'te-page-subtitle', 'Enter the vault path to a backup JSON file (e.g. My Campaign/Backups/backup-2025-01-01.json). This will replace all plugin data — backup first!');
-    const pathWrap = ce(contentEl, 'div', 'te-modal-section');
-    let backupPath = '';
-    new Setting(pathWrap).setName('Backup file path (in vault)').addText(t => { t.setPlaceholder('Campaign/Backups/backup-….json'); t.onChange(v => backupPath = v.trim()); });
+    ce(contentEl, 'p', 'te-page-subtitle', 'Restores full plugin state — all campaigns, entities, settings, and relationships. A safety backup is saved first.');
+
     const preview = ce(contentEl, 'div', 'te-card'); preview.style.cssText = 'display:none;padding:12px;margin-top:8px';
     const previewBody = ce(preview, 'div', '');
-    btn(contentEl, 'Preview Backup', 'te-btn', async () => {
-      if (!backupPath) { new Notice('Enter a file path first.'); return; }
-      try {
-        const raw = await adapterRead(this.plugin.app, backupPath);
-        const bk = JSON.parse(raw);
-        if (!bk.state || !bk.version) { new Notice('Invalid backup file — missing state or version.'); return; }
-        clear(previewBody);
-        ce(previewBody, 'p', '', `Version: ${bk.version}`);
-        ce(previewBody, 'p', '', `Timestamp: ${bk.timestamp ? new Date(bk.timestamp).toLocaleString() : 'Unknown'}`);
-        const counts = bk.entityCounts || {};
-        const total = Object.values(counts).reduce((s, v) => s + v, 0);
-        ce(previewBody, 'p', '', `Total entities: ${total}`);
-        const top = Object.entries(counts).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]).slice(0, 8).map(([k,v]) => `${ENTITY_LABELS[k]||k}: ${v}`).join(', ');
-        ce(previewBody, 'p', 'te-muted-text', top);
-        preview.style.display = '';
-        this._pendingBackup = bk;
-      } catch (e) { new Notice(`Could not read backup: ${e.message}`); }
-    });
+
+    const showPreview = (bk) => {
+      _previewBackupInto(previewBody, bk);
+      preview.style.display = '';
+      this._pendingBackup = bk;
+    };
+
+    if (this._pendingBackup) {
+      showPreview(this._pendingBackup);
+    } else {
+      const pathWrap = ce(contentEl, 'div', 'te-modal-section');
+      let backupPath = '';
+      new Setting(pathWrap).setName('Backup file path (in vault)').setDesc('e.g. Campaigns/Exports/backup-2025-01-01.json').addText(t => { t.setPlaceholder('path/to/backup.json'); t.onChange(v => backupPath = v.trim()); });
+      btn(contentEl, 'Preview Backup', 'te-btn', async () => {
+        if (!backupPath) { new Notice('Enter a file path first.'); return; }
+        try {
+          const raw = await adapterRead(this.plugin.app, backupPath);
+          showPreview(parseTtrpgBackupJson(raw));
+        } catch (e) { new Notice(`Could not read backup: ${e.message}`); }
+      });
+    }
+
     const actRow = ce(contentEl, 'div', 'te-modal-actions');
     btn(actRow, '⚠️ Restore (Replace All Data)', 'te-btn is-danger', async () => {
       if (!this._pendingBackup) { new Notice('Preview the backup first.'); return; }
-      await exportBackup(this.plugin);
-      Object.assign(this.plugin.state, this._pendingBackup.state);
-      migrateState(this.plugin.state);
-      await this.plugin.saveState();
-      new Notice('Backup restored. Previous data backed up first.');
-      this.close();
-      this.plugin.refreshViews();
+      try {
+        await exportBackup(this.plugin);
+        Object.assign(this.plugin.state, this._pendingBackup.state);
+        migrateState(this.plugin.state);
+        await this.plugin.saveState();
+        new Notice('Backup restored. Previous data was backed up first.');
+        this.close();
+        this.plugin.refreshViews();
+      } catch (e) { new Notice(`Restore failed: ${e.message}`); }
     });
     btn(actRow, 'Cancel', 'te-btn', () => this.close());
   }
@@ -3426,11 +3479,39 @@ function renderBackupPanel(main, plugin) {
 }
 
 function renderImportPanel(main, plugin) {
-  pageHead(main, plugin, 'Import', 'Import campaign data from a JSON backup.');
+  pageHead(main, plugin, 'Import', 'Import or restore campaign data from a JSON file.');
+
+  sectionHead(main, 'Restore or Merge from File');
+  ce(main, 'p', 'te-muted-text', 'Select a .json file — either a plugin backup wrapper or a raw data.json from the plugin folder. The file will be inspected before any data is changed.');
+
   const file = ce(main, 'input', '');
   file.type = 'file';
   file.accept = '.json';
-  btn(main, '📥 Import File', 'te-btn is-primary', () => file.click());
+  file.style.display = 'none';
+
+  file.addEventListener('change', () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      file.value = '';
+      try {
+        const parsed = parseTtrpgBackupJson(ev.target.result);
+        new RestoreBackupModal(plugin.app, plugin, parsed).open();
+      } catch (e) {
+        new Notice(`Could not parse file: ${e.message}`);
+      }
+    };
+    reader.readAsText(f);
+  });
+
+  const actRow = ce(main, 'div', 'te-modal-actions');
+  btn(actRow, '📂 Open File…', 'te-btn is-primary', () => file.click());
+  btn(actRow, '📋 Paste / Merge Entities', 'te-btn', () => new ImportModal(plugin.app, plugin).open());
+
+  sectionHead(main, 'Vault Path Restore');
+  ce(main, 'p', 'te-muted-text', 'If your backup is already in the vault, use the full restore modal to load it by path.');
+  btn(main, '📥 Restore from Vault Path…', 'te-btn', () => new RestoreBackupModal(plugin.app, plugin).open());
 }
 
 function renderSettingsPanel(main, plugin) {
@@ -8640,56 +8721,60 @@ class ImportModal extends Modal {
     s1.createEl('h3', { text: 'Import Type' });
     const typeRow = ce(s1, 'div', 'te-modal-actions');
     const setType = (t) => { this._importType = t; this.onOpen(); };
-    btn(typeRow, 'Entity Array', 'te-btn' + (this._importType === 'entities' ? ' is-primary' : ''), () => setType('entities'));
-    btn(typeRow, 'Full Backup', 'te-btn' + (this._importType === 'backup' ? ' is-primary' : ''), () => setType('backup'));
+    btn(typeRow, 'Merge Entity Data', 'te-btn' + (this._importType === 'entities' ? ' is-primary' : ''), () => setType('entities'));
+    btn(typeRow, 'Restore Full Backup', 'te-btn' + (this._importType === 'backup' ? ' is-primary' : ''), () => setType('backup'));
 
     if (this._importType === 'entities') {
       addSelect(s1, 'Target Entity Type', this.key, Object.keys(ENTITY_LABELS), v => this.key = v);
+      ce(s1, 'p', 'te-muted-text', 'Merges a JSON array of items into the selected entity type. Does not modify settings, relationships, or campaign state.');
+    } else {
+      ce(s1, 'p', 'te-muted-text', 'Replaces ALL plugin data — entities, settings, relationships, activeCampaignId. A safety backup is saved first. To load a file directly, use the Import panel.');
     }
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Paste JSON' });
     const ta = ce(s2, 'textarea');
-    ta.placeholder = this._importType === 'backup' ? 'Paste full backup JSON…' : 'Paste JSON array of entities…';
+    ta.placeholder = this._importType === 'backup' ? 'Paste full backup or raw plugin state JSON…' : 'Paste JSON array of entities…';
     ta.rows = 8; ta.style.cssText = 'width:100%;resize:vertical;padding:8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
     if (this.payload) ta.value = this.payload;
     ta.addEventListener('input', () => { this.payload = ta.value; this._parsed = null; });
 
     const previewBox = ce(contentEl, 'div', 'te-result-box');
-    previewBox.style.cssText = 'margin:8px 0;padding:10px;background:var(--te-bg-alt);border-radius:var(--te-r-md);font-size:.82rem;white-space:pre-wrap;max-height:120px;overflow-y:auto';
+    previewBox.style.cssText = 'margin:8px 0;padding:10px;background:var(--te-bg-alt);border-radius:var(--te-r-md);font-size:.82rem;white-space:pre-wrap;max-height:140px;overflow-y:auto';
     previewBox.textContent = 'Paste JSON above, then click Preview.';
 
     btn(s2, '🔍 Preview', 'te-btn', () => {
       try {
-        const raw = JSON.parse(this.payload);
         if (this._importType === 'backup') {
-          const state = raw.state || raw;
-          const counts = Object.entries(state.entities || {}).filter(([, v]) => Array.isArray(v) && v.length).map(([k, v]) => `${k}: ${v.length}`);
-          previewBox.textContent = `Backup v${raw.version || '?'}, ${raw.timestamp || '?'}\n\nEntities:\n${counts.join('\n')}`;
-          this._parsed = raw;
+          const bk = parseTtrpgBackupJson(this.payload);
+          const ents = bk.state.entities || {};
+          const counts = Object.entries(ents).filter(([, v]) => Array.isArray(v) && v.length).map(([k, v]) => `${k}: ${v.length}`);
+          previewBox.textContent = `Backup v${bk.version || '?'} — ${bk.timestamp ? new Date(bk.timestamp).toLocaleString() : 'no timestamp'}\n\nEntities:\n${counts.join('\n')}`;
+          this._parsed = bk;
         } else {
+          const raw = JSON.parse(this.payload);
           const arr = Array.isArray(raw) ? raw : [raw];
-          previewBox.textContent = `${arr.length} item(s) → ${this.key}\n\nFirst item: ${arr[0]?.name || arr[0]?.title || JSON.stringify(arr[0]).slice(0, 80)}`;
+          const first = arr[0];
+          previewBox.textContent = `${arr.length} item(s) → ${this.key}\n\nFirst item: ${first ? (first.name || first.title || JSON.stringify(first).slice(0, 100)) : '(empty)'}`;
           this._parsed = arr;
         }
-      } catch (e) { previewBox.textContent = `JSON parse error: ${e.message}`; this._parsed = null; }
+      } catch (e) { previewBox.textContent = `Parse error: ${e.message}`; this._parsed = null; }
     });
 
     const btnRow = ce(contentEl, 'div', 'te-modal-buttons');
     btn(btnRow, 'Cancel', 'te-btn', () => this.close());
     btn(btnRow, '✅ Import', 'te-btn is-primary', async () => {
       if (!this._parsed) { new Notice('Click Preview first to validate the JSON.'); return; }
-      // Safety backup before import
       await exportBackup(this.plugin);
       if (this._importType === 'backup') {
-        const src = this._parsed.state || this._parsed;
-        if (!src.entities) { new Notice('Invalid backup format — no entities found.'); return; }
-        let imported = 0;
-        for (const [k, arr] of Object.entries(src.entities)) {
-          if (Array.isArray(arr)) { arr.forEach(x => { upsert(this.plugin.state, k, x); imported++; }); }
-        }
-        await this.plugin.saveState();
-        new Notice(`Imported ${imported} entities from backup. A safety backup was saved first.`);
+        try {
+          Object.assign(this.plugin.state, this._parsed.state);
+          migrateState(this.plugin.state);
+          await this.plugin.saveState();
+          new Notice('Full backup restored. Previous data was backed up first.');
+          this.close();
+          this.plugin.refreshViews();
+        } catch (e) { new Notice(`Restore failed: ${e.message}`); }
       } else {
         const campId = this.plugin.state.activeCampaignId || '';
         this._parsed.forEach(x => {
@@ -8698,9 +8783,9 @@ class ImportModal extends Modal {
           upsert(this.plugin.state, this.key, item);
         });
         await this.plugin.saveState();
-        new Notice(`Imported ${this._parsed.length} item(s) into ${this.key}. A safety backup was saved first.`);
+        new Notice(`Merged ${this._parsed.length} item(s) into ${this.key}. A safety backup was saved first.`);
+        this.close();
       }
-      this.close();
     });
   }
 }
