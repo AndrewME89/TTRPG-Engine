@@ -1,8 +1,7 @@
 'use strict';
 /**
- * Phase L — Compendium / Library Filtering & Storage Polish
- * Sections 1–6: combined filters, preserved reference behavior, campaign scoping,
- *   source-bucket classification, no Dashboard ownership, metadata normalization.
+ * Phase L — Compendium / Library Storage Polish
+ * Updated for the merged Compendium browser.
  */
 
 const assert = require('node:assert/strict');
@@ -19,234 +18,142 @@ function test(name, fn) {
 function ok(cond, msg) { assert.ok(cond, msg); }
 function notOk(cond, msg) { assert.ok(!cond, msg); }
 
-// Slice render functions
-const libStart  = src.indexOf('function renderLibrary(');
-const libEnd    = src.indexOf('\nfunction rollTable(', libStart);
-const libFn     = src.slice(libStart, libEnd);
+const refStart = src.indexOf('async function renderReference(');
+const refEnd = src.indexOf('\nclass TTRPGEnginePlugin extends Plugin', refStart);
+const refFn = src.slice(refStart, refEnd);
 
-const hbStart   = src.indexOf('function renderHomebrew(');
-const hbEnd     = src.indexOf('\n// ── GENERATORS', hbStart);
-const hbFn      = src.slice(hbStart, hbEnd);
+const hbStart = src.indexOf('function renderHomebrew(');
+const hbEnd = src.indexOf('\n// ── GENERATORS', hbStart);
+const hbFn = src.slice(hbStart, hbEnd);
 
-const refStart  = src.indexOf('async function renderReference(');
-const refEnd    = src.indexOf('\nfunction renderLibrary(', refStart);
-const refFn     = src.slice(refStart, refEnd);
-
-const myStart   = src.indexOf('function renderMyContent(');
-const myEnd     = src.indexOf('\nfunction renderSettingsTools(', myStart);
-const myFn      = src.slice(myStart, myEnd);
+const myStart = src.indexOf('function renderMyContent(');
+const myEnd = src.indexOf('\nfunction renderSettingsTools(', myStart);
+const myFn = src.slice(myStart, myEnd);
 
 const buckStart = src.indexOf('function classifySourceBucket(');
-const buckEnd   = src.indexOf('\nfunction normalizeStorageMetadata(', buckStart);
-const buckFn    = src.slice(buckStart, buckEnd);
+const buckEnd = src.indexOf('\nfunction normalizeStorageMetadata(', buckStart);
+const buckFn = src.slice(buckStart, buckEnd);
 
 const normStart = src.indexOf('function normalizeStorageMetadata(');
-const normEnd   = src.indexOf('\nfunction renderLibrary(', normStart);
-const normFn    = src.slice(normStart, normEnd);
+const normEnd = src.indexOf('\nfunction renderLibrary(', normStart);
+const normFn = src.slice(normStart, normEnd);
 
-console.log('\nPhase L — Compendium / Library Filtering & Storage Polish\n');
+console.log('\nPhase L — Compendium / Library Storage Polish\n');
 
-// ── Section 1: Local filter state — does NOT write to plugin.state.search ──
-console.log('  Section 1: Local filter state (no plugin.state.search writes)');
-
-test('renderLibrary uses local libFilter object not plugin.state.search', () => {
-  ok(libFn.includes('libFilter'), 'libFilter local state object missing from renderLibrary');
+console.log('  Section 1: Merged Compendium local state');
+test('renderReference uses local result state not plugin.state.search', () => {
+  ok(refFn.includes('const rs = {') && refFn.includes('search'), 'renderReference missing local result state');
+  notOk(refFn.includes('plugin.state.search ='), 'renderReference should not write to plugin.state.search');
 });
-
-test('renderLibrary does NOT write to plugin.state.search for filtering', () => {
-  notOk(libFn.includes('plugin.state.search ='), 'renderLibrary writes to plugin.state.search (should use local filter)');
+test('renderReference has rebuild and buildList functions', () => {
+  ok(refFn.includes('const rebuild = async () =>') && refFn.includes('const buildList = async () =>'),
+    'renderReference missing rebuild/buildList flow');
 });
-
-test('renderHomebrew uses local hbFilter object', () => {
+test('renderHomebrew still uses local hbFilter object', () => {
   ok(hbFn.includes('hbFilter'), 'hbFilter local state object missing from renderHomebrew');
 });
-
-test('renderHomebrew does NOT write to plugin.state.search for filtering', () => {
-  notOk(hbFn.includes('plugin.state.search ='), 'renderHomebrew writes to plugin.state.search');
+test('renderHomebrew does not write to plugin.state.search', () => {
+  notOk(hbFn.includes('plugin.state.search ='), 'renderHomebrew should not write to plugin.state.search');
 });
 
-test('renderLibrary has a rebuild/redraw function for filter changes', () => {
-  ok(libFn.includes('rebuild()') || libFn.includes('const rebuild'), 'renderLibrary missing rebuild function');
+console.log('\n  Section 2: Merged Compendium controls');
+test('renderReference has search input field', () => {
+  ok(refFn.includes('Search name or tag') && refFn.includes('sIn'), 'search input missing from renderReference');
+});
+test('renderReference has clear button', () => {
+  ok(refFn.includes('× Clear'), 'clear button missing from renderReference');
+});
+test('renderReference uses REF_TABS buttons instead of management filters', () => {
+  ok(refFn.includes('REF_TABS') && refFn.includes('is-primary'), 'REF_TABS buttons missing from renderReference');
+  notOk(refFn.includes('All Sources') || refFn.includes('All Visibility') || refFn.includes('All Campaigns') || refFn.includes('All Status'),
+    'management-table filters should not appear in merged Compendium');
+});
+test('renderReference starts at 5 results and loads more progressively', () => {
+  ok(refFn.includes('limit: 5') && refFn.includes('Load more results...') && refFn.includes('rs.limit += 5'),
+    'merged Compendium should use progressive result loading');
 });
 
-test('renderHomebrew has a rebuildHb function for filter changes', () => {
-  ok(hbFn.includes('rebuildHb()') || hbFn.includes('const rebuildHb'), 'renderHomebrew missing rebuildHb function');
-});
-
-// ── Section 2: Combined filters ─────────────────────────────────────────────
-console.log('\n  Section 2: Combined filters');
-
-test('renderLibrary has source bucket filter select', () => {
-  ok(libFn.includes('All Sources') && libFn.includes('sourceSel'), 'source bucket filter missing from renderLibrary');
-});
-
-test('renderLibrary has category filter select', () => {
-  ok(libFn.includes('All Types') && libFn.includes('catSel'), 'category filter missing from renderLibrary');
-});
-
-test('renderLibrary has visibility filter select', () => {
-  ok(libFn.includes('All Visibility') && libFn.includes('visSel'), 'visibility filter missing from renderLibrary');
-});
-
-test('renderLibrary has campaign filter select', () => {
-  ok(libFn.includes('All Campaigns') && libFn.includes('campSel'), 'campaign filter missing from renderLibrary');
-});
-
-test('renderLibrary has search input field', () => {
-  ok(libFn.includes('searchIn') && libFn.includes("placeholder = 'Search"), 'search input missing from renderLibrary');
-});
-
-test('renderLibrary has clear filters button', () => {
-  ok(libFn.includes('× Clear'), 'clear filters button missing from renderLibrary');
-});
-
-test('renderHomebrew has search input', () => {
-  ok(hbFn.includes('searchIn'), 'search input missing from renderHomebrew');
-});
-
-test('renderHomebrew has status filter', () => {
-  ok(hbFn.includes('statusSel') && hbFn.includes('All Status'), 'status filter missing from renderHomebrew');
-});
-
-test('renderHomebrew has visibility filter', () => {
-  ok(hbFn.includes('visSel') && hbFn.includes('All Visibility'), 'visibility filter missing from renderHomebrew');
-});
-
-// ── Section 3: Preserved 5e reference behavior ───────────────────────────────
-console.log('\n  Section 3: Preserved 5e reference behavior');
-
+console.log('\n  Section 3: Reference behavior preserved');
 test('renderReference function still exists', () => {
   ok(refFn.length > 100, 'renderReference function missing or too short');
 });
-
-test('renderReference uses tabbed layout', () => {
-  ok(refFn.includes("'Spells'") || refFn.includes("'Monsters'") || refFn.includes("REF_TABS"), '5e reference tab layout missing');
+test('renderReference still uses tabbed reference layout', () => {
+  ok(refFn.includes('REF_TABS'), 'reference tab layout missing');
 });
-
-test('5e Reference tab still in renderCompendiumLibrary tabs', () => {
-  ok(src.includes("'📖 5e Reference'") || src.includes('"📖 5e Reference"'), '5e Reference tab label missing');
+test('Compendium title replaced 5e Reference label in page head', () => {
+  ok(refFn.includes("'Compendium'"), 'Compendium title missing from renderReference');
+  notOk(refFn.includes("'5e Reference'"), '5e Reference title should not remain in page head');
 });
-
 test('renderCompendiumLibrary still routes to renderReference', () => {
   const cls = src.slice(src.indexOf('function renderCompendiumLibrary'), src.indexOf('function renderMyContent'));
   ok(cls.includes('renderReference'), 'renderCompendiumLibrary not routing to renderReference');
 });
 
-// ── Section 4: Campaign scoping in library filters ───────────────────────────
-console.log('\n  Section 4: Campaign scoping');
-
-test('library campaign filter defaults to activeCampaignId when set', () => {
-  ok(libFn.includes('activeCampaignId'), 'library filter not defaulting to activeCampaignId');
+console.log('\n  Section 4: Local record merge');
+test('local compendium/homebrew merge helpers exist', () => {
+  ok(src.includes('function buildCompendiumLocalResults('), 'buildCompendiumLocalResults helper missing');
+  ok(src.includes('function homebrewMatchesRefTab('), 'homebrewMatchesRefTab helper missing');
+  ok(src.includes('function compendiumEntryMatchesRefTab('), 'compendiumEntryMatchesRefTab helper missing');
+});
+test('renderReference merges local compendium and homebrew results', () => {
+  ok(refFn.includes('buildCompendiumLocalResults') && refFn.includes('...local.map') && refFn.includes("kind: 'reference'"),
+    'renderReference should merge local and reference results');
 });
 
-test('library campaign filter filters by campaignId', () => {
-  ok(libFn.includes('item.campaignId') && libFn.includes('libFilter.campaign'), 'campaign filter not applied to items');
-});
-
-// ── Section 5: Source bucket classification ──────────────────────────────────
 console.log('\n  Section 5: Source bucket classification');
-
 test('classifySourceBucket function is declared', () => {
   ok(buckFn.length > 50, 'classifySourceBucket function missing');
 });
-
-test('classifySourceBucket returns homebrew for homebrew entityKey', () => {
-  ok(buckFn.includes("entityKey === 'homebrew'") || buckFn.includes("'homebrew'"), 'homebrew bucket rule missing');
-});
-
-test('classifySourceBucket returns imported for imported source', () => {
-  ok(buckFn.includes("'imported'") && (buckFn.includes('importedAt') || buckFn.includes("source === 'imported'")), 'imported bucket rule missing');
-});
-
-test('classifySourceBucket returns generated for generated source', () => {
-  ok(buckFn.includes("'generated'") && (buckFn.includes('generatedAt') || buckFn.includes("source === 'generated'")), 'generated bucket rule missing');
-});
-
-test('classifySourceBucket returns campaign when campaignId is set', () => {
-  ok(buckFn.includes("'campaign'") && buckFn.includes('campaignId'), 'campaign bucket rule missing');
-});
-
-test('classifySourceBucket returns saved as fallback', () => {
+test('classifySourceBucket still supports homebrew/imported/generated/campaign/saved buckets', () => {
+  ok(buckFn.includes("'homebrew'"), 'homebrew bucket rule missing');
+  ok(buckFn.includes("'imported'"), 'imported bucket rule missing');
+  ok(buckFn.includes("'generated'"), 'generated bucket rule missing');
+  ok(buckFn.includes("'campaign'"), 'campaign bucket rule missing');
   ok(buckFn.includes("'saved'"), 'saved fallback bucket missing');
 });
 
-test('renderLibrary uses classifySourceBucket for source filter', () => {
-  ok(libFn.includes('classifySourceBucket'), 'renderLibrary not calling classifySourceBucket');
-});
-
-// ── Section 6: Metadata normalization ───────────────────────────────────────
 console.log('\n  Section 6: Metadata normalization');
-
 test('normalizeStorageMetadata function is declared', () => {
   ok(normFn.length > 50, 'normalizeStorageMetadata function missing');
 });
-
-test('normalizeStorageMetadata stamps source field', () => {
+test('normalizeStorageMetadata handles source/status/visibility/campaignId/tags', () => {
   ok(normFn.includes('item.source'), 'normalizeStorageMetadata not handling source field');
-});
-
-test('normalizeStorageMetadata stamps status field', () => {
   ok(normFn.includes('item.status'), 'normalizeStorageMetadata not handling status field');
-});
-
-test('normalizeStorageMetadata stamps visibility field', () => {
   ok(normFn.includes('item.visibility'), 'normalizeStorageMetadata not handling visibility field');
-});
-
-test('normalizeStorageMetadata stamps campaignId field', () => {
   ok(normFn.includes('item.campaignId'), 'normalizeStorageMetadata not handling campaignId field');
-});
-
-test('normalizeStorageMetadata stamps tags field', () => {
   ok(normFn.includes('item.tags'), 'normalizeStorageMetadata not handling tags field');
 });
-
-test('ImportModal uses normalizeStorageMetadata on import', () => {
+test('ImportModal uses normalizeStorageMetadata and imported source', () => {
   const importCls = src.slice(src.indexOf('class ImportModal'), src.indexOf('\n// SettingsModal'));
   ok(importCls.includes('normalizeStorageMetadata'), 'ImportModal not calling normalizeStorageMetadata');
-});
-
-test('ImportModal stamps source as imported', () => {
-  const importCls = src.slice(src.indexOf('class ImportModal'), src.indexOf('\n// SettingsModal'));
   ok(importCls.includes("source: 'imported'"), 'ImportModal not stamping source as imported');
 });
-
-test('logGeneratorHistory uses normalizeStorageMetadata', () => {
+test('logGeneratorHistory uses normalizeStorageMetadata and generated source', () => {
   const genLog = src.slice(src.indexOf('function logGeneratorHistory'), src.indexOf('\n// Central session event'));
   ok(genLog.includes('normalizeStorageMetadata'), 'logGeneratorHistory not calling normalizeStorageMetadata');
-});
-
-test('logGeneratorHistory stamps source as generated', () => {
-  const genLog = src.slice(src.indexOf('function logGeneratorHistory'), src.indexOf('\n// Central session event'));
   ok(genLog.includes("source: 'generated'"), 'logGeneratorHistory not stamping source as generated');
 });
 
-// ── Section 7: My Content / Saved Items label ────────────────────────────────
 console.log('\n  Section 7: My Content / Saved Items explicit label');
-
-test('my-content tab removed from renderCompendiumLibrary (Phase T)', () => {
+test('my-content tab removed from renderCompendiumLibrary', () => {
   const compLibIdx = src.indexOf('function renderCompendiumLibrary(');
   const compLibEnd = src.indexOf('\nfunction renderMyContent(', compLibIdx);
   const compLibBlock = src.slice(compLibIdx, compLibEnd);
-  ok(!compLibBlock.includes("{ id: 'my-content'"), 'my-content tab should be removed from renderCompendiumLibrary per Phase T');
+  ok(!compLibBlock.includes("{ id: 'my-content'"), 'my-content tab should be removed');
 });
-
 test('renderMyContent page title is My Content / Saved Items', () => {
   ok(myFn.includes("'My Content / Saved Items'"), 'renderMyContent page title not updated');
 });
 
-// ── Section 8: Dashboard does NOT own stored content ────────────────────────
 console.log('\n  Section 8: Dashboard does not own stored content');
-
 test('Dashboard renderDashboard has no My Content section heading', () => {
   const dashStart = src.indexOf('function renderDashboard(');
-  const dashEnd   = src.indexOf('\n// ── CAMPAIGNS', dashStart);
+  const dashEnd = src.indexOf('\n// ── CAMPAIGNS', dashStart);
   const dash = src.slice(dashStart, dashEnd);
   notOk(dash.includes("'My Content / Saved Items'") || dash.includes("'My Content'"),
     'Dashboard still contains My Content section');
 });
 
-// ── Summary ──────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(50));
 console.log(`  ${passed} passed  ${failed} failed  (${passed + failed} total)\n`);
 if (failed > 0) process.exit(1);

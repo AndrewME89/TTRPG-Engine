@@ -715,6 +715,13 @@ function activeCampaign(state) {
     || safeArr(state.entities.campaigns).find(c => c.status !== 'Archived')
     || null;
 }
+function isInActiveCampaignScope(state, entityKey, item) {
+  if (!item) return false;
+  const campId = state.activeCampaignId || '';
+  if (!campId) return true;
+  if (!CAMPAIGN_SCOPED_ENTITIES.includes(entityKey)) return true;
+  return !item.campaignId || item.campaignId === campId;
+}
 function toTitleCase(s) {
   return String(s || '').replace(/[\\/:*?"<>|#^[\]]+/g, '').trim()
     .replace(/\b\w/g, c => c.toUpperCase()).slice(0, 100) || 'Untitled';
@@ -937,7 +944,14 @@ async function runDiagnostics(plugin) {
 
 // ── Entity picker helpers ─────────────────────────────────────────────────────
 function addEntityPicker(el, label, value, plugin, entityKey, onChange) {
+  const campId = plugin.state.activeCampaignId || '';
   const items = safeArr(plugin.state.entities[entityKey])
+    .filter(item => {
+      if (!item) return false;
+      if (!campId) return true;
+      if (!CAMPAIGN_SCOPED_ENTITIES.includes(entityKey)) return true;
+      return !item.campaignId || item.campaignId === campId;
+    })
     .slice().sort((a, b) => (a.name || a.title || '').localeCompare(b.name || b.title || ''));
   const opts = items.map(x => x.name || x.title || x.id);
   const vals = items.map(x => x.id);
@@ -954,7 +968,14 @@ function addCampaignPicker(el, label, value, plugin, onChange) {
   return addEntityPicker(el, label, value, plugin, 'campaigns', onChange);
 }
 function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) {
+  const campId = plugin.state.activeCampaignId || '';
   const items = safeArr(plugin.state.entities[entityKey])
+    .filter(item => {
+      if (!item) return false;
+      if (!campId) return true;
+      if (!CAMPAIGN_SCOPED_ENTITIES.includes(entityKey)) return true;
+      return !item.campaignId || item.campaignId === campId;
+    })
     .slice().sort((a, b) => (a.name || a.title || '').localeCompare(b.name || b.title || ''));
   const selected = new Set(safeArr(valueIds));
   const wrap = ce(el, 'div', 'te-field-row'); wrap.style.alignItems = 'flex-start';
@@ -980,6 +1001,102 @@ function addEntityMultiPicker(el, label, valueIds, plugin, entityKey, onChange) 
   items.forEach(it => { const o = ce(sel, 'option', '', it.name || it.title || it.id); o.value = it.id; });
   sel.addEventListener('change', () => {
     if (sel.value) { selected.add(sel.value); renderChips(); onChange([...selected]); sel.value = ''; }
+  });
+  renderChips();
+}
+const LOCATION_LIKE_ENTITY_TYPES = [
+  { key: 'locations', label: 'Location' },
+  { key: 'settlements', label: 'Settlement' },
+  { key: 'regions', label: 'Region' },
+  { key: 'dungeons', label: 'Dungeon' },
+  { key: 'rooms', label: 'Room' },
+  { key: 'pois', label: 'POI' },
+  { key: 'domains', label: 'Domain' },
+  { key: 'realms', label: 'Realm / Plane' },
+];
+const THREAT_LINK_ENTITY_TYPES = [
+  { key: 'factions', label: 'Faction' },
+  { key: 'quests', label: 'Quest' },
+  { key: 'bbegs', label: 'BBEG' },
+  { key: 'warFronts', label: 'War Front' },
+  { key: 'incursions', label: 'Incursion' },
+  { key: 'sessions', label: 'Session' },
+  ...LOCATION_LIKE_ENTITY_TYPES,
+];
+const BBEG_LIEUTENANT_ENTITY_TYPES = [
+  { key: 'npcs', label: 'NPC' },
+  { key: 'creatures', label: 'Creature' },
+  { key: 'bbegs', label: 'BBEG' },
+  { key: 'characters', label: 'PC / Character' },
+];
+const PROJECT_ASSIGNEE_ENTITY_TYPES = [
+  { key: 'characters', label: 'PC / Character' },
+  { key: 'npcs', label: 'NPC' },
+  { key: 'factions', label: 'Faction' },
+];
+const INCURSION_ORIGIN_ENTITY_TYPES = [
+  { key: 'realms', label: 'Realm' },
+  { key: 'domains', label: 'Domain' },
+  { key: 'factions', label: 'Faction' },
+  { key: 'bbegs', label: 'BBEG' },
+  { key: 'locations', label: 'Location' },
+  { key: 'regions', label: 'Region' },
+];
+const PLACEHOLDER_TEXT_VALUES = new Set([
+  'select existing', 'select faction', 'select location', 'select settlement', 'select campaign',
+  'select owner', 'select assignee', 'select session', 'select quest', 'select timer',
+  'select source', 'select origin', 'none', 'n/a', 'na', 'tbd', 'other', 'custom',
+]);
+function isPlaceholderLike(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return !v || PLACEHOLDER_TEXT_VALUES.has(v) || v.startsWith('select ') || v === '— none —' || v === '— select —';
+}
+function scrubLegacyPlaceholderText(value) {
+  return isPlaceholderLike(value) ? '' : String(value || '').trim();
+}
+function scrubLegacyPlaceholderArray(values) {
+  return normalizeListField(values).filter(v => !isPlaceholderLike(v));
+}
+function typedEntityRefDisplay(ref, state) {
+  if (!ref || !ref.entityType || !ref.id) return '';
+  return resolveEntityDisplay(ref.entityType, ref.id, state);
+}
+function addTypedEntityMultiPicker(el, label, refs, plugin, entityTypes, onChange) {
+  const selected = safeArr(refs).map(ref => ref && ref.entityType && ref.id ? { entityType: ref.entityType, id: ref.id } : null).filter(Boolean);
+  const wrap = ce(el, 'div', 'te-field-row'); wrap.style.alignItems = 'flex-start';
+  ce(wrap, 'label', 'te-field-label', label);
+  const right = ce(wrap, 'div', ''); right.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:4px';
+  const chipRow = ce(right, 'div', 'te-chip-input'); chipRow.style.cssText = 'flex-wrap:wrap;gap:4px;min-height:28px;padding:2px 0';
+  const renderChips = () => {
+    clear(chipRow);
+    selected.forEach((ref, idx) => {
+      const chip = ce(chipRow, 'span', 'te-chip');
+      chip.textContent = `${entityTypes.find(t => t.key === ref.entityType)?.label || ref.entityType}: ${typedEntityRefDisplay(ref, plugin.state) || ref.id}`;
+      const rm = ce(chip, 'span', ''); rm.textContent = ' ×'; rm.style.cssText = 'cursor:pointer;margin-left:4px;opacity:.7';
+      rm.addEventListener('click', () => { selected.splice(idx, 1); renderChips(); onChange(selected.map(v => ({ ...v }))); });
+    });
+  };
+  const row = ce(right, 'div', ''); row.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+  const typeSel = ce(row, 'select', 'te-field-select'); typeSel.style.cssText = 'padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
+  entityTypes.forEach(t => { const o = ce(typeSel, 'option', '', t.label); o.value = t.key; });
+  const entityWrap = ce(row, 'div', ''); entityWrap.style.flex = '1';
+  let currentSel = null;
+  const buildSel = () => {
+    clear(entityWrap);
+    currentSel = addEntityPicker(entityWrap, '', '', plugin, typeSel.value, v => currentSel.value = v);
+    currentSel.style.width = '100%';
+  };
+  typeSel.addEventListener('change', buildSel);
+  buildSel();
+  btn(row, '+ Add', 'te-btn te-btn-xs is-sm', () => {
+    const id = currentSel && currentSel.value;
+    if (!id) return;
+    if (!selected.some(ref => ref.entityType === typeSel.value && ref.id === id)) {
+      selected.push({ entityType: typeSel.value, id });
+      renderChips();
+      onChange(selected.map(v => ({ ...v })));
+    }
+    currentSel.value = '';
   });
   renderChips();
 }
@@ -2322,6 +2439,13 @@ const RICH_EDIT_MAP = {
   characters:       (p, i) => new CharacterModal(p.app, p, i).open(),
   hybridAncestries: (p, i) => new HybridAncestryModal(p.app, p, i).open(),
   nobleFamilies:    (p, i) => new NobleFamilyModal(p.app, p, i).open(),
+  downtime:         (p, i) => new DowntimeModal(p.app, p, i).open(),
+  projects:         (p, i) => new ProjectModal(p.app, p, i).open(),
+  bastions:         (p, i) => new BastionModal(p.app, p, i).open(),
+  timers:           (p, i) => new TimerModal(p.app, p, i).open(),
+  enemyTemplates:   (p, i) => new EnemyTemplateModal(p.app, p, i).open(),
+  warFronts:        (p, i) => new WarFrontModal(p.app, p, i).open(),
+  incursions:       (p, i) => new IncursionModal(p.app, p, i).open(),
 };
 function defaultEdit(plugin, key, item) {
   if (RICH_EDIT_MAP[key]) { RICH_EDIT_MAP[key](plugin, item); return; }
@@ -2603,58 +2727,174 @@ function refItemDetail(el, type, item) {
   renderEntries(el, item.entries);
 }
 
-// ── 5e Reference section ──────────────────────────────────────────────────────
+const COMPENDIUM_LOCAL_TYPE_MAP = {
+  actions: ['Rule', 'Mechanic'],
+  backgrounds: ['Background'],
+  bestiary: ['Monster', 'Creature', 'Beast'],
+  classes: ['Class'],
+  conditions: ['Rule', 'Mechanic'],
+  deities: ['Deity'],
+  equipment: ['Item', 'Weapon', 'Armour', 'Armor', 'Magic Item'],
+  feats: ['Feat'],
+  languages: ['Language'],
+  races: ['Ancestry', 'Race'],
+  spells: ['Spell'],
+  subclasses: ['Subclass'],
+};
+
+function homebrewMatchesRefTab(item, tab) {
+  const types = COMPENDIUM_LOCAL_TYPE_MAP[tab] || [];
+  const normalized = normalizeHomebrewRecord(item);
+  return types.includes(normalized.homebrewType) || types.includes(normalized.type);
+}
+
+function compendiumEntryMatchesRefTab(item, tab) {
+  const types = COMPENDIUM_LOCAL_TYPE_MAP[tab] || [];
+  return types.includes(item.homebrewType) || types.includes(item.type);
+}
+
+function localCompendiumSearchMatch(item, search) {
+  const q = String(search || '').trim().toLowerCase();
+  if (!q) return true;
+  const text = [
+    item.name,
+    item.type,
+    item.homebrewType,
+    item.category,
+    item.summary,
+    item.description,
+    item.notes,
+    item.source,
+    safeArr(item.tags).join(' '),
+  ].join(' ').toLowerCase();
+  return text.includes(q);
+}
+
+function buildCompendiumLocalResults(state, tab, search) {
+  const homebrew = safeArr(state.entities.homebrew)
+    .map(item => normalizeHomebrewRecord(item))
+    .filter(item => homebrewMatchesRefTab(item, tab))
+    .filter(item => localCompendiumSearchMatch(item, search))
+    .map(item => ({ kind: 'homebrew', id: `homebrew:${item.id}`, item }));
+  const compendium = safeArr(state.entities.compendium)
+    .filter(item => compendiumEntryMatchesRefTab(item, tab))
+    .filter(item => localCompendiumSearchMatch(item, search))
+    .map(item => ({ kind: 'compendium', id: `compendium:${item.id}`, item }));
+  return [...homebrew, ...compendium]
+    .sort((a, b) => String(a.item.name || '').localeCompare(String(b.item.name || '')));
+}
+
+function renderLocalCompendiumDetail(el, result) {
+  const item = result.item || {};
+  const summary = item.summary || item.description || item.notes || '';
+  if (summary) ce(el, 'p', '', summary);
+  const meta = [];
+  if (result.kind === 'homebrew') meta.push(`Homebrew Type: ${item.homebrewType}`);
+  if (item.category) meta.push(`Category: ${item.category}`);
+  if (item.status) meta.push(`Status: ${item.status}`);
+  if (item.visibility) meta.push(`Visibility: ${item.visibility}`);
+  if (item.sourceCampaignId) meta.push(`Source Campaign: ${item.sourceCampaignId}`);
+  if (safeArr(item.tags).length) meta.push(`Tags: ${safeArr(item.tags).join(', ')}`);
+  if (meta.length) ce(el, 'p', 'te-muted-text', meta.join(' · '));
+}
+
+// ── Compendium section ────────────────────────────────────────────────────────
 async function renderReference(main, plugin, tabs) {
-  pageHead(main, plugin, '5e Reference', 'Searchable rules reference — spells, feats, equipment, races, backgrounds, and more.', [], tabs);
+  pageHead(main, plugin, 'Compendium', 'Searchable rules reference and promoted library records.', [
+    { label: '📥 Import', onClick: () => new ImportModal(plugin.app, plugin).open() },
+    { label: '💾 Export', onClick: () => exportBackup(plugin) },
+  ], tabs);
   const dataPath = `${PLUGIN_DIR}/data`;
   const dataExists = await adapterExists(plugin.app, dataPath);
-  if (!dataExists) {
-    const warn = ce(main, 'div', 'te-card'); warn.style.cssText = 'border-color:var(--te-danger)';
-    ce(warn, 'p', 'te-card-body', `⚠️ Data folder not found at ${dataPath}/. Install the plugin's data folder to enable this section.`);
-    return;
-  }
-  const rs = { tab: 'spells', search: '', expanded: null };
+  const rs = { tab: 'spells', search: '', expanded: null, limit: 5 };
   const wrap = ce(main, 'div', '');
   const rebuild = async () => {
     clear(wrap);
-    // Tab row
-    const tabRow = ce(wrap, 'div', ''); tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px';
+    const sRow = ce(wrap, 'div', '');
+    sRow.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center';
+    const sIn = ce(sRow, 'input', '');
+    sIn.type = 'text';
+    sIn.placeholder = 'Search name or tag…';
+    sIn.value = rs.search;
+    sIn.style.cssText = 'flex:1;padding:7px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem';
+    btn(sRow, '× Clear', 'te-btn is-sm', () => {
+      rs.search = '';
+      rs.expanded = null;
+      rs.limit = 5;
+      rebuild();
+    });
+
+    const tabRow = ce(wrap, 'div', '');
+    tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px';
     REF_TABS.forEach(t => {
       btn(tabRow, `${t.icon} ${t.label}`, 'te-btn is-sm' + (rs.tab === t.key ? ' is-primary' : ''), () => {
-        rs.tab = t.key; rs.search = ''; rs.expanded = null; rebuild();
+        rs.tab = t.key;
+        rs.expanded = null;
+        rs.limit = 5;
+        rebuild();
       });
     });
-    // Search
-    const sRow = ce(wrap, 'div', ''); sRow.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center';
-    const sIn = ce(sRow, 'input', '');
-    sIn.type = 'text'; sIn.placeholder = `Search ${rs.tab}…`; sIn.value = rs.search;
-    sIn.style.cssText = 'flex:1;padding:7px 10px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm);font-size:.9rem';
+
     const listEl = ce(wrap, 'div', '');
     const buildList = async () => {
       clear(listEl);
-      const all = await plugin.refData.get(rs.tab);
-      if (!all.length) { ce(listEl, 'p', 'te-empty-state', `No data for "${rs.tab}". Check that data/${REF_DATA_FILES[rs.tab]} is present.`); return; }
-      const filtered = plugin.refData.search(all, rs.search);
-      const shown = filtered.slice(0, 120);
-      shown.forEach(item => {
+      const all = dataExists ? await plugin.refData.get(rs.tab) : [];
+      const filtered = dataExists ? plugin.refData.search(all, rs.search) : [];
+      const local = buildCompendiumLocalResults(plugin.state, rs.tab, rs.search);
+      const merged = [
+        ...local.map(result => ({ kind: result.kind, id: result.id, item: result.item })),
+        ...filtered.map(item => ({ kind: 'reference', id: `reference:${rs.tab}:${item.id || item.name}`, item })),
+      ];
+      const shown = merged.slice(0, rs.limit);
+
+      if (!dataExists) {
+        const warn = ce(listEl, 'div', 'te-card');
+        warn.style.cssText = 'border-color:var(--te-danger);margin-bottom:12px';
+        ce(warn, 'p', 'te-card-body', `⚠️ Data folder not found at ${dataPath}/. Reference entries are unavailable, but local promoted/homebrew results can still appear here.`);
+      }
+
+      shown.forEach(result => {
         const card = ce(listEl, 'div', 'te-card te-ref-card');
         const head = ce(card, 'div', 'te-card-head');
         head.style.cursor = 'pointer';
-        ce(head, 'h3', 'te-card-title', item.name);
-        const meta = refItemMeta(rs.tab, item);
-        if (meta) { const m = ce(head, 'span', 'te-card-meta-label', meta); m.style.marginLeft = '6px'; }
-        if (item.source) { const s = ce(head, 'span', 'te-ref-source', item.source); }
-        const isOpen = rs.expanded === item.id;
+        ce(head, 'h3', 'te-card-title', result.item.name || 'Untitled');
+        let meta = '';
+        if (result.kind === 'reference') meta = refItemMeta(rs.tab, result.item);
+        else if (result.kind === 'homebrew') meta = [result.item.homebrewType, result.item.category].filter(Boolean).join(' · ');
+        else meta = [result.item.type, result.item.source].filter(Boolean).join(' · ');
+        if (meta) {
+          const m = ce(head, 'span', 'te-card-meta-label', meta);
+          m.style.marginLeft = '6px';
+        }
+        if (result.kind === 'reference' && result.item.source) ce(head, 'span', 'te-ref-source', result.item.source);
+        if (result.kind !== 'reference') ce(head, 'span', 'te-ref-source', result.kind === 'homebrew' ? 'Homebrew' : 'Compendium');
+        const isOpen = rs.expanded === result.id;
         if (isOpen) {
           const body = ce(card, 'div', 'te-ref-detail');
-          refItemDetail(body, rs.tab, item);
+          if (result.kind === 'reference') refItemDetail(body, rs.tab, result.item);
+          else renderLocalCompendiumDetail(body, result);
         }
-        head.addEventListener('click', () => { rs.expanded = isOpen ? null : item.id; buildList(); });
+        head.addEventListener('click', () => {
+          rs.expanded = isOpen ? null : result.id;
+          buildList();
+        });
       });
-      if (filtered.length > 120) ce(listEl, 'p', 'te-empty-state', `Showing 120 of ${filtered.length} — refine your search to see more.`);
-      else if (!filtered.length) ce(listEl, 'p', 'te-empty-state', `No matches for "${rs.search}".`);
+
+      if (!merged.length) {
+        ce(listEl, 'p', 'te-empty-state', rs.search ? `No matches for "${rs.search}".` : `No entries found for "${rs.tab}".`);
+      } else if (merged.length > rs.limit) {
+        btn(listEl, 'Load more results...', 'te-btn is-sm', () => {
+          rs.limit += 5;
+          buildList();
+        });
+      }
     };
-    sIn.addEventListener('input', () => { rs.search = sIn.value; rs.expanded = null; buildList(); });
+    sIn.addEventListener('input', () => {
+      rs.search = sIn.value;
+      rs.expanded = null;
+      rs.limit = 5;
+      buildList();
+    });
     buildList();
   };
   rebuild();
@@ -3369,16 +3609,13 @@ function renderCompendiumLibrary(main, plugin) {
   const state = plugin.state;
   const tabs = [
     { id: 'compendium', label: '📚 Compendium' },
-    { id: 'reference',  label: '📖 5e Reference' },
-    { id: 'homebrew',   label: '🧪 Homebrew' },
   ];
-  // Redirect legacy my-content sub-section to compendium
-  if (state.activeSubSection === 'my-content') state.activeSubSection = 'compendium';
+  // Redirect legacy compendium sub-sections to the merged compendium browser.
+  if (['my-content', 'reference', 'homebrew'].includes(state.activeSubSection)) state.activeSubSection = 'compendium';
   const sub = state.activeSubSection || 'compendium';
   const wrap = ce(main, 'div', 'te-workspace-content');
-  if (sub === 'reference') renderReference(wrap, plugin, tabs);
-  else if (sub === 'homebrew') renderHomebrew(wrap, plugin, tabs);
-  else renderLibrary(wrap, plugin, tabs);
+  if (sub === 'compendium') renderReference(wrap, plugin, tabs);
+  else renderReference(wrap, plugin, tabs);
 }
 
 function renderMyContent(main, plugin, tabs) {
@@ -4820,7 +5057,7 @@ function renderNpcs(main, plugin, tabs) {
     }),
   });
   sectionHead(main, 'BBEGs');
-  itemCards(main, plugin, 'bbegs', { meta: ['title', 'status'] });
+  itemCards(main, plugin, 'bbegs', { meta: ['title', 'status', 'lairLocationId', 'timerIds', 'linkedFactionIds'] });
 
   // Relationship Tracker
   sectionHead(main, 'Relationship Tracker');
@@ -5252,19 +5489,20 @@ const ruleFields = [
 // ── DOWNTIME & BASES ──────────────────────────────────────────────────────────
 function renderDowntime(main, plugin, tabs) {
   pageHead(main, plugin, 'Downtime & Bases', 'Downtime activities, crafting projects, and bastions / strongholds.', [
-    { label: '+ Activity', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'downtime', null, downtimeFields).open() },
+    { label: '+ Activity', primary: true, onClick: () => new DowntimeModal(plugin.app, plugin).open() },
     { label: '+ Project', onClick: () => new ProjectModal(plugin.app, plugin).open() },
-    { label: '+ Bastion', onClick: () => new GenericModal(plugin.app, plugin, 'bastions', null, bastionFields).open() },
+    { label: '+ Bastion', onClick: () => new BastionModal(plugin.app, plugin).open() },
   ], tabs);
   sectionHead(main, 'Downtime Activities');
-  itemCards(main, plugin, 'downtime', { meta: ['activityType', 'timeRequired', 'cost'] });
+  itemCards(main, plugin, 'downtime', { items: safeArr(plugin.state.entities.downtime).filter(item => isInActiveCampaignScope(plugin.state, 'downtime', item)), meta: ['activityType', 'timeRequired', 'cost', 'assignedCharacterId', 'projectId'], onEdit: (plugin, key, item) => new DowntimeModal(plugin.app, plugin, item).open() });
   sectionHead(main, 'Projects & Crafting');
   itemCards(main, plugin, 'projects', {
-    meta: ['projectType', 'progress', 'assignedTo'],
+    items: safeArr(plugin.state.entities.projects).filter(item => isInActiveCampaignScope(plugin.state, 'projects', item)),
+    meta: ['projectType', 'progress', 'assignedToType', 'assignedToId', 'assignedTo'],
     onEdit: (plugin, key, item) => new ProjectModal(plugin.app, plugin, item).open(),
   });
   sectionHead(main, 'Bastions & Strongholds');
-  itemCards(main, plugin, 'bastions', { meta: ['location', 'income', 'maintenanceCost'] });
+  itemCards(main, plugin, 'bastions', { items: safeArr(plugin.state.entities.bastions).filter(item => isInActiveCampaignScope(plugin.state, 'bastions', item)), meta: ['locationType', 'locationId', 'linkedSettlementId', 'income', 'maintenanceCost'], onEdit: (plugin, key, item) => new BastionModal(plugin.app, plugin, item).open() });
 }
 
 const downtimeFields = [
@@ -6538,140 +6776,7 @@ function openHomebrewEditor(app, plugin, item) {
 }
 
 function renderLibrary(main, plugin, tabs) {
-  const state = plugin.state;
-  pageHead(main, plugin, 'Compendium & Library', 'Browse, search, and manage compendium entries, rollable tables, homebrew, and 5e reference data.', [
-    { label: '🧪 Create Homebrew', primary: true, onClick: () => new HomebrewTypeChooserModal(plugin.app, plugin).open() },
-    { label: '🎲 + Rollable Table', onClick: () => new RollableTableModal(plugin.app, plugin).open() },
-    { label: '📥 Import', onClick: () => new ImportModal(plugin.app, plugin).open() },
-    { label: '💾 Export', onClick: () => exportBackup(plugin) },
-  ], tabs);
-
-  // Local filter state — does not write to plugin.state.search
-  const libFilter = { search: '', source: '', category: '', status: '', visibility: '', campaign: '' };
-
-  // Filter bar
-  const filterCard = ce(main, 'div', 'te-card');
-  filterCard.style.marginBottom = '12px';
-  const filterRow = ce(filterCard, 'div', '');
-  filterRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center';
-
-  const searchIn = ce(filterRow, 'input');
-  searchIn.type = 'text'; searchIn.placeholder = 'Search name or tag…';
-  searchIn.style.cssText = 'flex:1;min-width:140px;padding:4px 8px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-
-  const selStyle = 'padding:4px 6px;background:var(--te-bg);color:var(--te-text);border:1px solid var(--te-border);border-radius:var(--te-r-sm)';
-
-  const sourceSel = ce(filterRow, 'select'); sourceSel.style.cssText = selStyle;
-  [['', 'All Sources'], ['5e-reference', '5e Reference'], ['campaign', 'Campaign'], ['generated', 'Generated'], ['homebrew', 'Homebrew'], ['imported', 'Imported'], ['saved', 'Saved']].forEach(([v, l]) => {
-    const o = ce(sourceSel, 'option', '', l); o.value = v;
-  });
-
-  const statusSel = ce(filterRow, 'select'); statusSel.style.cssText = selStyle;
-  [['', 'All Status'], ['Draft', 'Draft'], ['Approved', 'Approved'], ['Retired', 'Retired'], ['Needs Review', 'Needs Review']].forEach(([v, l]) => {
-    const o = ce(statusSel, 'option', '', l); o.value = v;
-  });
-
-  const catSel = ce(filterRow, 'select'); catSel.style.cssText = selStyle;
-  const allTypes = [...new Set(safeArr(state.entities.compendium).map(c => c.type).filter(Boolean))];
-  [['', 'All Types'], ...allTypes.map(t => [t, t])].forEach(([v, l]) => {
-    const o = ce(catSel, 'option', '', l); o.value = v;
-  });
-
-  const visSel = ce(filterRow, 'select'); visSel.style.cssText = selStyle;
-  [['', 'All Visibility'], ['dm-only', 'DM Only'], ['player-visible', 'Player Visible'], ['secret', 'Secret'], ['revealed', 'Revealed']].forEach(([v, l]) => {
-    const o = ce(visSel, 'option', '', l); o.value = v;
-  });
-
-  const campSel = ce(filterRow, 'select'); campSel.style.cssText = selStyle;
-  const campaigns = safeArr(state.entities.campaigns);
-  [['', 'All Campaigns'], ...campaigns.map(c => [c.id, c.name])].forEach(([v, l]) => { const o = ce(campSel, 'option', '', l); o.value = v; });
-  if (state.activeCampaignId) campSel.value = state.activeCampaignId;
-  libFilter.campaign = campSel.value;
-
-  btn(filterRow, '× Clear', 'te-btn is-sm', () => {
-    searchIn.value = ''; sourceSel.value = ''; statusSel.value = ''; catSel.value = ''; visSel.value = ''; campSel.value = '';
-    Object.assign(libFilter, { search: '', source: '', category: '', status: '', visibility: '', campaign: '' });
-    rebuild();
-  });
-
-  const contentArea = ce(main, 'div', '');
-
-  const rebuild = () => {
-    clear(contentArea);
-
-    // When source='5e-reference', show reference browser prompt
-    if (libFilter.source === '5e-reference') {
-      const refPanel = ce(contentArea, 'div', 'te-card'); refPanel.style.padding = '16px';
-      ce(refPanel, 'p', '', '5e Reference data (spells, bestiary, equipment, feats, etc.) lives in the dedicated Reference browser.');
-      const rbRow = ce(refPanel, 'div', 'te-card-actions'); rbRow.style.marginTop = '8px';
-      btn(rbRow, '📖 Open 5e Reference Browser', 'te-btn is-primary', async () => {
-        state.activeSubSection = 'reference'; await saveStateQuiet(plugin);
-      });
-      return;
-    }
-
-    const q = libFilter.search.toLowerCase();
-    const compItems = safeArr(state.entities.compendium).filter(item => {
-      if (q && !(item.name || '').toLowerCase().includes(q) && !safeArr(item.tags).some(t => t.toLowerCase().includes(q))) return false;
-      if (libFilter.source && classifySourceBucket(item, 'compendium') !== libFilter.source) return false;
-      if (libFilter.status && (item.status || '') !== libFilter.status) return false;
-      if (libFilter.category && item.type !== libFilter.category) return false;
-      if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
-      if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
-      return true;
-    });
-    const tableItems = safeArr(state.entities.tables).filter(item => {
-      if (q && !(item.name || '').toLowerCase().includes(q) && !safeArr(item.tags).some(t => t.toLowerCase().includes(q))) return false;
-      if (libFilter.source && classifySourceBucket(item, 'tables') !== libFilter.source) return false;
-      if (libFilter.status && (item.status || '') !== libFilter.status) return false;
-      if (libFilter.visibility && item.visibility && item.visibility !== libFilter.visibility) return false;
-      if (libFilter.campaign && item.campaignId && item.campaignId !== libFilter.campaign) return false;
-      return true;
-    });
-
-    sectionHead(contentArea, `Compendium Entries${compItems.length !== safeArr(state.entities.compendium).length ? ` (${compItems.length} of ${safeArr(state.entities.compendium).length})` : ''}`);
-    if (!compItems.length) {
-      ce(contentArea, 'p', 'te-muted-text', 'No compendium entries match the current filters.');
-    } else {
-      itemCards(contentArea, plugin, 'compendium', { items: compItems, meta: ['type', 'source', 'level'] });
-    }
-
-    sectionHead(contentArea, `Rollable Tables${tableItems.length !== safeArr(state.entities.tables).length ? ` (${tableItems.length} of ${safeArr(state.entities.tables).length})` : ''}`);
-    if (!tableItems.length) {
-      ce(contentArea, 'p', 'te-muted-text', 'No rollable tables match the current filters. Create one with + Rollable Table.');
-    } else {
-      itemCards(contentArea, plugin, 'tables', {
-        items: tableItems,
-        meta: ['category', 'diceFormula', 'status'],
-        onExtra: (acts, item) => {
-          btn(acts, '🎲 Roll', 'te-btn is-sm is-primary', () => {
-            const result = (Array.isArray(item.rows) && item.rows.length)
-              ? rollStructuredTable(item.diceFormula || '1d6', item.rows)
-              : rollTable(item.summary || item.rows || '');
-            new Notice(`[${item.name}] Roll result: ${result}`, 8000);
-          });
-        },
-      });
-    }
-  };
-
-  const onChange = () => {
-    libFilter.search = searchIn.value;
-    libFilter.source = sourceSel.value;
-    libFilter.status = statusSel.value;
-    libFilter.category = catSel.value;
-    libFilter.visibility = visSel.value;
-    libFilter.campaign = campSel.value;
-    rebuild();
-  };
-  searchIn.addEventListener('input', onChange);
-  sourceSel.addEventListener('change', onChange);
-  statusSel.addEventListener('change', onChange);
-  catSel.addEventListener('change', onChange);
-  visSel.addEventListener('change', onChange);
-  campSel.addEventListener('change', onChange);
-
-  rebuild();
+  return renderReference(main, plugin, tabs);
 }
 
 function rollTable(rows) {
@@ -8060,7 +8165,7 @@ function renderWarMachine(main, plugin, tabs) {
   ], tabs);
 
   sectionHead(main, 'Escalation Timers');
-  const timers = safeArr(plugin.state.entities.timers).filter(t => matchesSearch(t, plugin.state.search));
+  const timers = safeArr(plugin.state.entities.timers).filter(t => isInActiveCampaignScope(plugin.state, 'timers', t) && matchesSearch(t, plugin.state.search));
   if (timers.length) {
     const g = ce(main, 'div', 'te-grid');
     timers.forEach(t => {
@@ -8075,7 +8180,7 @@ function renderWarMachine(main, plugin, tabs) {
       const pf = ce(pb, 'div', 'te-progress-fill'); pf.style.width = pct + '%';
       ce(c, 'p', 'te-progress-label', `${curTicks} / ${maxTicks} ticks (${pct}%)`);
       const meta = ce(c, 'div', 'te-card-meta');
-      [['Status', t.status], ['Faction', t.faction], ['Consequence', t.consequence]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v).slice(0, 80)); });
+      [['Status', t.status], ['Faction', resolveEntityDisplay('factions', t.factionId || '', plugin.state) || scrubLegacyPlaceholderText(t.faction)], ['Quest', resolveEntityDisplay('quests', t.questId || '', plugin.state)], ['BBEG', resolveEntityDisplay('bbegs', t.bbegId || '', plugin.state)], ['Consequence', t.consequence]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v).slice(0, 80)); });
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, '+Tick', 'te-btn is-sm is-run', async () => { t.currentTick = Math.min(maxTicks, curTicks + 1); upsert(plugin.state, 'timers', t); await saveStateQuiet(plugin); });
       btn(a, 'Edit', 'te-btn is-sm', () => new TimerModal(plugin.app, plugin, t).open());
@@ -8085,7 +8190,7 @@ function renderWarMachine(main, plugin, tabs) {
   } else { emptyState(main, 'No timers yet.', 'Escalation timers track ticking threats and countdown events.'); }
 
   sectionHead(main, 'Enemy Templates');
-  const templates = safeArr(plugin.state.entities.enemyTemplates).filter(t => matchesSearch(t, plugin.state.search));
+  const templates = safeArr(plugin.state.entities.enemyTemplates).filter(t => isInActiveCampaignScope(plugin.state, 'enemyTemplates', t) && matchesSearch(t, plugin.state.search));
   if (templates.length) {
     const g = ce(main, 'div', 'te-grid');
     templates.forEach(t => {
@@ -8093,7 +8198,7 @@ function renderWarMachine(main, plugin, tabs) {
       const h = ce(c, 'div', 'te-card-head'); ce(h, 'span', 'te-card-icon', '⚔️'); ce(h, 'h3', 'te-card-title', t.name);
       if (t.summary) ce(c, 'p', 'te-card-body', (t.summary || '').slice(0, 100));
       const meta = ce(c, 'div', 'te-card-meta');
-      [['CR', t.cr], ['Type', t.type], ['Faction', t.faction], ['Role', t.role], ['AC', t.ac], ['HP', t.hp]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
+      [['CR', t.cr], ['Type', t.type], ['Faction', resolveEntityDisplay('factions', t.factionId || '', plugin.state) || scrubLegacyPlaceholderText(t.faction)], ['Role', t.role], ['AC', t.ac], ['HP', t.hp]].forEach(([k, v]) => { if (!v) return; const r = ce(meta, 'div', 'te-card-meta-row'); ce(r, 'span', 'te-card-meta-label', k); ce(r, 'span', '', String(v)); });
       const a = ce(c, 'div', 'te-card-actions');
       btn(a, 'Edit', 'te-btn is-sm', () => new EnemyTemplateModal(plugin.app, plugin, t).open());
       btn(a, 'Add to Encounter', 'te-btn is-sm is-primary', () => { plugin.state.activeSection = 'encounters'; plugin.saveState(); });
@@ -8203,16 +8308,16 @@ function renderRelationshipMatrix(main, plugin, tabs) {
 function renderEndgame(main, plugin, tabs) {
   const state = plugin.state;
   pageHead(main, plugin, 'Endgame & Realm Tracker', 'War fronts, realm incursions, broken cosmology reveals, and ending states.', [
-    { label: '+ War Front', onClick: () => new GenericModal(plugin.app, plugin, 'warFronts', null, warFrontFields).open() },
-    { label: '+ Incursion', onClick: () => new GenericModal(plugin.app, plugin, 'incursions', null, incursionFields).open() },
+    { label: '+ War Front', onClick: () => new WarFrontModal(plugin.app, plugin).open() },
+    { label: '+ Incursion', onClick: () => new IncursionModal(plugin.app, plugin).open() },
     { label: '+ Ending State', primary: true, onClick: () => new GenericModal(plugin.app, plugin, 'endgameStates', null, endgameStateFields).open() },
   ], tabs);
 
   sectionHead(main, 'War Fronts');
-  itemCards(main, plugin, 'warFronts', { meta: ['type', 'status', 'faction', 'location'], hint: 'Add war fronts to track active conflicts across your realm.' });
+  itemCards(main, plugin, 'warFronts', { items: safeArr(state.entities.warFronts).filter(item => isInActiveCampaignScope(state, 'warFronts', item)), meta: ['type', 'status', 'factionId', 'locationId', 'strength', 'timerIds'], hint: 'Add war fronts to track active conflicts across your realm.', onEdit: (plugin, key, item) => new WarFrontModal(plugin.app, plugin, item).open() });
 
   sectionHead(main, 'Realm Incursions');
-  itemCards(main, plugin, 'incursions', { meta: ['type', 'status', 'origin', 'threat'], hint: 'Track planar incursions and realm-scale threats.' });
+  itemCards(main, plugin, 'incursions', { items: safeArr(state.entities.incursions).filter(item => isInActiveCampaignScope(state, 'incursions', item)), meta: ['type', 'status', 'originId', 'threat', 'warFrontIds', 'timerIds'], hint: 'Track planar incursions and realm-scale threats.', onEdit: (plugin, key, item) => new IncursionModal(plugin.app, plugin, item).open() });
 
   sectionHead(main, 'Ending States & Consequences');
   itemCards(main, plugin, 'endgameStates', { meta: ['type', 'status', 'trigger', 'consequence'], hint: 'Define the possible endings and major consequences for your campaign.' });
@@ -9510,10 +9615,11 @@ class BBEGModal extends Modal {
     this.values = Object.assign({
       id: uid('bbeg'), name: '', title: '', status: 'Active',
       goals: [], methods: [], resources: '', lieutenants: [], motivation: '',
-      linkedNpcIds: [],
-      lairLocation: '', mythicPhases: '', escalationClocks: '',
+      linkedNpcIds: [], lieutenantIds: [], lieutenantRefs: [],
+      lairLocation: '', lairLocationType: 'locations', mythicPhases: '', escalationClocks: '', timerIds: [],
       secrets: '', finalConfrontation: '',
       linkedFactions: [], linkedQuests: [], visibility: 'dm-only', campaignId: '',
+      linkedFactionIds: [], linkedQuestIds: [],
     }, this.item);
   }
   onOpen() {
@@ -9533,14 +9639,17 @@ class BBEGModal extends Modal {
     chipField(s1, 'Resources', safeArr(this.values.resources), v => this.values.resources = v, { bank: 'factionResources' });
     addField(s1, 'Motivation / Backstory', this.values.motivation || '', v => this.values.motivation = v, 'textarea');
     addEntityMultiPicker(s1, 'Lieutenants (linked NPCs)', safeArr(this.values.lieutenantIds), this.plugin, 'npcs', v => this.values.lieutenantIds = v);
+    addTypedEntityMultiPicker(s1, 'Lieutenants (other linked actors)', safeArr(this.values.lieutenantRefs), this.plugin, BBEG_LIEUTENANT_ENTITY_TYPES, v => this.values.lieutenantRefs = v);
     chipField(s1, 'Lieutenants (legacy text)', safeArr(this.values.lieutenants), v => this.values.lieutenants = v);
-    addEntityPicker(s1, 'Lair Location (linked)', this.values.lairLocationId || '', this.plugin, 'locations', v => this.values.lairLocationId = v);
+    addTypedEntityPicker(s1, 'Lair Location (linked)', this.values.lairLocationType || 'locations', this.values.lairLocationId || '', this.plugin, v => this.values.lairLocationType = v, v => this.values.lairLocationId = v, LOCATION_LIKE_ENTITY_TYPES);
     addField(s1, 'Lair Location (text)', this.values.lairLocation, v => this.values.lairLocation = v);
 
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Campaign Arc' });
     addField(s2, 'Mythic Phases', this.values.mythicPhases, v => this.values.mythicPhases = v, 'textarea');
-    addField(s2, 'Escalation Clocks', this.values.escalationClocks, v => this.values.escalationClocks = v, 'textarea');
+    addEntityMultiPicker(s2, 'Escalation Timers', safeArr(this.values.timerIds), this.plugin, 'timers', v => this.values.timerIds = v);
+    btn(s2, '+ New Timer', 'te-btn is-sm', () => new TimerModal(this.plugin.app, this.plugin, { name: `${this.values.name || 'Villain'} Escalation`, bbegId: this.values.id || '', campaignId: this.values.campaignId || this.plugin.state.activeCampaignId || '' }).open());
+    chipField(s2, 'Escalation Clocks (legacy text)', safeArr(this.values.escalationClocks), v => this.values.escalationClocks = v);
     addField(s2, 'Final Confrontation Notes', this.values.finalConfrontation, v => this.values.finalConfrontation = v, 'textarea');
 
     const s3 = ce(contentEl, 'div', 'te-modal-section');
@@ -9553,6 +9662,11 @@ class BBEGModal extends Modal {
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Villain name is required.'); return; }
+      this.values.lairLocation = scrubLegacyPlaceholderText(this.values.lairLocation);
+      this.values.lieutenants = scrubLegacyPlaceholderArray(this.values.lieutenants);
+      this.values.escalationClocks = scrubLegacyPlaceholderArray(this.values.escalationClocks);
+      this.values.linkedFactions = scrubLegacyPlaceholderArray(this.values.linkedFactions);
+      this.values.linkedQuests = scrubLegacyPlaceholderArray(this.values.linkedQuests);
       upsert(this.plugin.state, 'bbegs', this.values);
       await this.plugin.saveState();
       new Notice(`BBEG "${this.values.name}" saved.`);
@@ -10097,7 +10211,7 @@ class ProjectModal extends Modal {
     this.item = item || {};
     this.values = Object.assign({
       id: uid('project'), name: '', projectType: 'Crafting',
-      progress: 0, total: 8, materials: '', cost: '', assignedTo: '', notes: '',
+      progress: 0, total: 8, materials: '', cost: '', assignedTo: '', assignedToType: 'characters', assignedToId: '', downtimeId: '', bastionId: '', questId: '', sessionId: '', notes: '',
     }, this.item);
   }
   onOpen() {
@@ -10111,14 +10225,191 @@ class ProjectModal extends Modal {
     addNumber(contentEl, 'Total Required (workdays)', this.values.total, v => this.values.total = v);
     addField(contentEl, 'Materials Required', this.values.materials, v => this.values.materials = v, 'textarea');
     addField(contentEl, 'Cost (gp)', this.values.cost, v => this.values.cost = v);
-    addField(contentEl, 'Assigned To', this.values.assignedTo, v => this.values.assignedTo = v);
+    addTypedEntityPicker(contentEl, 'Assigned To (linked)', this.values.assignedToType || 'characters', this.values.assignedToId || '', this.plugin, v => this.values.assignedToType = v, v => this.values.assignedToId = v, PROJECT_ASSIGNEE_ENTITY_TYPES);
+    addField(contentEl, 'Assigned To (legacy/custom)', this.values.assignedTo, v => this.values.assignedTo = v);
+    addEntityPicker(contentEl, 'Linked Downtime', this.values.downtimeId || '', this.plugin, 'downtime', v => this.values.downtimeId = v);
+    addEntityPicker(contentEl, 'Linked Bastion', this.values.bastionId || '', this.plugin, 'bastions', v => this.values.bastionId = v);
+    addEntityPicker(contentEl, 'Linked Quest', this.values.questId || '', this.plugin, 'quests', v => this.values.questId = v);
+    addEntityPicker(contentEl, 'Linked Session', this.values.sessionId || '', this.plugin, 'sessions', v => this.values.sessionId = v);
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Project name is required.'); return; }
       this.values.completed = this.values.progress >= this.values.total;
+      this.values.assignedTo = scrubLegacyPlaceholderText(this.values.assignedTo);
       upsert(this.plugin.state, 'projects', this.values);
       await this.plugin.saveState();
       new Notice(`Project "${this.values.name}" saved.`);
+      this.close();
+    });
+  }
+}
+
+class DowntimeModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('downtime'), name: '', activityType: 'Training', timeRequired: '', cost: '', outcomes: '',
+      complications: [], summary: '', assignedType: 'characters', assignedId: '', partyName: '',
+      settlementId: '', locationId: '', projectId: '', bastionId: '', sessionId: '', campaignId: plugin.state.activeCampaignId || '',
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl); contentEl.addClass('te-modal');
+    this.titleEl.setText(this.item.id ? 'Edit Downtime Activity' : 'New Downtime Activity');
+    addField(contentEl, 'Activity Name *', this.values.name, v => this.values.name = v);
+    addSelect(contentEl, 'Activity Type', this.values.activityType, ['Training','Crafting','Research','Carousing','Business','Relationship Building','Recuperation','Spell Research','Faction Work','Buying/Selling Magic Items','Other'], v => this.values.activityType = v);
+    addField(contentEl, 'Time Required', this.values.timeRequired, v => this.values.timeRequired = v);
+    addField(contentEl, 'Cost (gp)', this.values.cost, v => this.values.cost = v);
+    addTypedEntityPicker(contentEl, 'Assigned Character / NPC', this.values.assignedType || 'characters', this.values.assignedId || '', this.plugin, v => this.values.assignedType = v, v => this.values.assignedId = v, [{ key: 'characters', label: 'PC / Character' }, { key: 'npcs', label: 'NPC' }]);
+    addField(contentEl, 'Assigned Party / Group (custom)', this.values.partyName, v => this.values.partyName = v);
+    addEntityPicker(contentEl, 'Settlement', this.values.settlementId || '', this.plugin, 'settlements', v => this.values.settlementId = v);
+    addEntityPicker(contentEl, 'Location', this.values.locationId || '', this.plugin, 'locations', v => this.values.locationId = v);
+    addEntityPicker(contentEl, 'Linked Project', this.values.projectId || '', this.plugin, 'projects', v => this.values.projectId = v);
+    addEntityPicker(contentEl, 'Linked Bastion', this.values.bastionId || '', this.plugin, 'bastions', v => this.values.bastionId = v);
+    addEntityPicker(contentEl, 'Linked Session', this.values.sessionId || '', this.plugin, 'sessions', v => this.values.sessionId = v);
+    chipField(contentEl, 'Complications', safeArr(this.values.complications), v => this.values.complications = v, { suggestions: OPTION_BANKS.complicationTypes });
+    addField(contentEl, 'Outcomes', this.values.outcomes, v => this.values.outcomes = v, 'textarea');
+    addField(contentEl, 'Notes', this.values.summary, v => this.values.summary = v, 'textarea');
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Activity name is required.'); return; }
+      this.values.partyName = scrubLegacyPlaceholderText(this.values.partyName);
+      this.values.complications = scrubLegacyPlaceholderArray(this.values.complications);
+      upsert(this.plugin.state, 'downtime', this.values);
+      await this.plugin.saveState();
+      new Notice(`Downtime "${this.values.name}" saved.`);
+      this.close();
+    });
+  }
+}
+
+class BastionModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('bastion'), name: '', location: '', locationType: 'locations', locationId: '', linkedSettlement: '', linkedSettlementId: '',
+      rooms: [], facilities: [], staff: [], upgrades: [], income: '', maintenanceCost: '', defences: [], events: [],
+      projectIds: [], downtimeIds: [], timerIds: [], summary: '', campaignId: plugin.state.activeCampaignId || '',
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl); contentEl.addClass('te-modal');
+    this.titleEl.setText(this.item.id ? 'Edit Bastion' : 'New Bastion');
+    addField(contentEl, 'Bastion Name *', this.values.name, v => this.values.name = v);
+    addTypedEntityPicker(contentEl, 'Location (linked)', this.values.locationType || 'locations', this.values.locationId || '', this.plugin, v => this.values.locationType = v, v => this.values.locationId = v, LOCATION_LIKE_ENTITY_TYPES);
+    addField(contentEl, 'Location (legacy/custom)', this.values.location, v => this.values.location = v);
+    addEntityPicker(contentEl, 'Linked Settlement', this.values.linkedSettlementId || '', this.plugin, 'settlements', v => this.values.linkedSettlementId = v);
+    addField(contentEl, 'Linked Settlement (legacy/custom)', this.values.linkedSettlement, v => this.values.linkedSettlement = v);
+    chipField(contentEl, 'Rooms', safeArr(this.values.rooms), v => this.values.rooms = v);
+    chipField(contentEl, 'Facilities', safeArr(this.values.facilities), v => this.values.facilities = v, { suggestions: OPTION_BANKS.bastionFeatures });
+    chipField(contentEl, 'Staff', safeArr(this.values.staff), v => this.values.staff = v);
+    chipField(contentEl, 'Upgrades', safeArr(this.values.upgrades), v => this.values.upgrades = v);
+    addField(contentEl, 'Income (gp/period)', this.values.income, v => this.values.income = v);
+    addField(contentEl, 'Maintenance Cost', this.values.maintenanceCost, v => this.values.maintenanceCost = v);
+    chipField(contentEl, 'Defences', safeArr(this.values.defences), v => this.values.defences = v, { suggestions: ['Walls','Moat','Gatehouse','Watchtower','Guard Patrols','Wards','Ballistae','Traps','Hidden Exits','Custom'] });
+    chipField(contentEl, 'Events / Threats', safeArr(this.values.events), v => this.values.events = v, { suggestions: ['Raid','Fire','Political Pressure','Monster Attack','Sabotage','Supply Shortage','Festival','Visitor','Inspection','Custom'] });
+    addEntityMultiPicker(contentEl, 'Linked Projects', safeArr(this.values.projectIds), this.plugin, 'projects', v => this.values.projectIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Downtime', safeArr(this.values.downtimeIds), this.plugin, 'downtime', v => this.values.downtimeIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Timers', safeArr(this.values.timerIds), this.plugin, 'timers', v => this.values.timerIds = v);
+    addField(contentEl, 'Notes', this.values.summary, v => this.values.summary = v, 'textarea');
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Bastion name is required.'); return; }
+      this.values.location = scrubLegacyPlaceholderText(this.values.location);
+      this.values.linkedSettlement = scrubLegacyPlaceholderText(this.values.linkedSettlement);
+      this.values.defences = scrubLegacyPlaceholderArray(this.values.defences);
+      this.values.events = scrubLegacyPlaceholderArray(this.values.events);
+      upsert(this.plugin.state, 'bastions', this.values);
+      await this.plugin.saveState();
+      new Notice(`Bastion "${this.values.name}" saved.`);
+      this.close();
+    });
+  }
+}
+
+class WarFrontModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('warfront'), name: '', type: 'Active Front', status: 'Active', factionId: '', faction: '', locationType: 'locations', locationId: '', location: '',
+      strength: '', timerIds: [], incursionIds: [], questIds: [], summary: '', campaignId: plugin.state.activeCampaignId || '',
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl); contentEl.addClass('te-modal');
+    this.titleEl.setText(this.item.id ? 'Edit War Front' : 'New War Front');
+    addField(contentEl, 'War Front Name *', this.values.name, v => this.values.name = v);
+    addSelect(contentEl, 'Type', this.values.type, ['Active Front','Stalemate','Advance','Retreat','Siege','Guerrilla Campaign','Ceasefire','Other'], v => this.values.type = v);
+    addSelect(contentEl, 'Status', this.values.status, ['Active','Escalating','Stalemate','Cooling Down','Resolved'], v => this.values.status = v);
+    addEntityPicker(contentEl, 'Primary Faction', this.values.factionId || '', this.plugin, 'factions', v => this.values.factionId = v);
+    addField(contentEl, 'Primary Faction (legacy/custom)', this.values.faction, v => this.values.faction = v);
+    addTypedEntityPicker(contentEl, 'Location (linked)', this.values.locationType || 'locations', this.values.locationId || '', this.plugin, v => this.values.locationType = v, v => this.values.locationId = v, LOCATION_LIKE_ENTITY_TYPES);
+    addField(contentEl, 'Location (legacy/custom)', this.values.location, v => this.values.location = v);
+    chipField(contentEl, 'Strength', safeArr(this.values.strength), v => this.values.strength = v, { suggestions: ['Weak','Pressured','Evenly Matched','Strong','Overwhelming','Breaking','Custom'] });
+    addEntityMultiPicker(contentEl, 'Linked Timers', safeArr(this.values.timerIds), this.plugin, 'timers', v => this.values.timerIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Incursions', safeArr(this.values.incursionIds), this.plugin, 'incursions', v => this.values.incursionIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Quests', safeArr(this.values.questIds), this.plugin, 'quests', v => this.values.questIds = v);
+    addField(contentEl, 'Notes', this.values.summary, v => this.values.summary = v, 'textarea');
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('War Front name is required.'); return; }
+      this.values.faction = scrubLegacyPlaceholderText(this.values.faction);
+      this.values.location = scrubLegacyPlaceholderText(this.values.location);
+      this.values.strength = scrubLegacyPlaceholderArray(this.values.strength);
+      upsert(this.plugin.state, 'warFronts', this.values);
+      await this.plugin.saveState();
+      new Notice(`War Front "${this.values.name}" saved.`);
+      this.close();
+    });
+  }
+}
+
+class IncursionModal extends Modal {
+  constructor(app, plugin, item) {
+    super(app);
+    this.plugin = plugin;
+    this.item = item || {};
+    this.values = Object.assign({
+      id: uid('incursion'), name: '', type: 'Raid', status: 'Emerging', originType: 'realms', originId: '', origin: '',
+      threat: 'Low', progress: '', warFrontIds: [], timerIds: [], factionIds: [], locationIds: [], sessionIds: [], questIds: [], campaignThreats: [], summary: '', campaignId: plugin.state.activeCampaignId || '',
+    }, this.item);
+  }
+  onOpen() {
+    const { contentEl } = this;
+    clear(contentEl); contentEl.addClass('te-modal');
+    this.titleEl.setText(this.item.id ? 'Edit Incursion' : 'New Incursion');
+    addField(contentEl, 'Incursion Name *', this.values.name, v => this.values.name = v);
+    addSelect(contentEl, 'Type', this.values.type, ['Raid','Occupation','Corruption Spread','Portal Opening','Army Advance','Arcane Storm','Other'], v => this.values.type = v);
+    addSelect(contentEl, 'Status', this.values.status, ['Emerging','Active','Critical','Contained','Repelled'], v => this.values.status = v);
+    addTypedEntityPicker(contentEl, 'Origin (linked)', this.values.originType || 'realms', this.values.originId || '', this.plugin, v => this.values.originType = v, v => this.values.originId = v, INCURSION_ORIGIN_ENTITY_TYPES);
+    addField(contentEl, 'Origin (legacy/custom)', this.values.origin, v => this.values.origin = v);
+    addSelect(contentEl, 'Threat Level', this.values.threat, ['Low','Medium','High','Critical','Existential'], v => this.values.threat = v);
+    addField(contentEl, 'Current Progress', this.values.progress, v => this.values.progress = v);
+    addEntityMultiPicker(contentEl, 'Linked War Fronts', safeArr(this.values.warFrontIds), this.plugin, 'warFronts', v => this.values.warFrontIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Timers', safeArr(this.values.timerIds), this.plugin, 'timers', v => this.values.timerIds = v);
+    addEntityMultiPicker(contentEl, 'Active Factions', safeArr(this.values.factionIds), this.plugin, 'factions', v => this.values.factionIds = v);
+    addEntityMultiPicker(contentEl, 'Impacted Locations', safeArr(this.values.locationIds), this.plugin, 'locations', v => this.values.locationIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Sessions', safeArr(this.values.sessionIds), this.plugin, 'sessions', v => this.values.sessionIds = v);
+    addEntityMultiPicker(contentEl, 'Linked Quests', safeArr(this.values.questIds), this.plugin, 'quests', v => this.values.questIds = v);
+    chipField(contentEl, 'Campaign Threats', safeArr(this.values.campaignThreats), v => this.values.campaignThreats = v, { suggestions: ['Border Collapse','Crisis of Faith','Refugee Wave','Planar Breach','Supply Crisis','Political Panic','Custom'] });
+    addField(contentEl, 'Notes', this.values.summary, v => this.values.summary = v, 'textarea');
+    addCampaignPicker(contentEl, 'Campaign', this.values.campaignId, this.plugin, v => this.values.campaignId = v);
+    modalButtons(contentEl, this, async () => {
+      if (!this.values.name.trim()) { new Notice('Incursion name is required.'); return; }
+      this.values.origin = scrubLegacyPlaceholderText(this.values.origin);
+      this.values.campaignThreats = scrubLegacyPlaceholderArray(this.values.campaignThreats);
+      upsert(this.plugin.state, 'incursions', this.values);
+      await this.plugin.saveState();
+      new Notice(`Incursion "${this.values.name}" saved.`);
       this.close();
     });
   }
@@ -12155,7 +12446,7 @@ class TimerModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.item = item || {};
-    this.values = Object.assign({ id: uid('timer'), name: '', summary: '', faction: '', status: 'Active', maxTicks: 6, currentTick: 0, consequence: '', escalationSteps: [], notes: '' }, this.item);
+    this.values = Object.assign({ id: uid('timer'), name: '', summary: '', faction: '', factionId: '', questId: '', bbegId: '', warFrontId: '', incursionId: '', sessionId: '', locationType: 'locations', locationId: '', threatLabel: '', status: 'Active', maxTicks: 6, currentTick: 0, consequence: '', escalationSteps: [], notes: '' }, this.item);
   }
   onOpen() {
     const { contentEl } = this;
@@ -12163,7 +12454,15 @@ class TimerModal extends Modal {
     this.titleEl.setText(this.item.id ? 'Edit Escalation Timer' : 'New Escalation Timer');
     addField(contentEl, 'Timer Name *', this.values.name, v => this.values.name = v);
     addField(contentEl, 'Summary / What this represents', this.values.summary, v => this.values.summary = v, 'textarea');
-    addField(contentEl, 'Faction / Owner', this.values.faction, v => this.values.faction = v);
+    addEntityPicker(contentEl, 'Faction / Owner', this.values.factionId || '', this.plugin, 'factions', v => this.values.factionId = v);
+    addField(contentEl, 'Faction / Owner (legacy/custom)', this.values.faction, v => this.values.faction = v);
+    addEntityPicker(contentEl, 'Linked Quest', this.values.questId || '', this.plugin, 'quests', v => this.values.questId = v);
+    addEntityPicker(contentEl, 'Linked BBEG', this.values.bbegId || '', this.plugin, 'bbegs', v => this.values.bbegId = v);
+    addEntityPicker(contentEl, 'Linked War Front', this.values.warFrontId || '', this.plugin, 'warFronts', v => this.values.warFrontId = v);
+    addEntityPicker(contentEl, 'Linked Incursion', this.values.incursionId || '', this.plugin, 'incursions', v => this.values.incursionId = v);
+    addEntityPicker(contentEl, 'Linked Session', this.values.sessionId || '', this.plugin, 'sessions', v => this.values.sessionId = v);
+    addTypedEntityPicker(contentEl, 'Linked Location / Threat Source', this.values.locationType || 'locations', this.values.locationId || '', this.plugin, v => this.values.locationType = v, v => this.values.locationId = v, THREAT_LINK_ENTITY_TYPES);
+    addField(contentEl, 'Campaign-level Threat / Custom Label', this.values.threatLabel, v => this.values.threatLabel = v);
     addSelect(contentEl, 'Status', this.values.status, ['Active','Paused','Triggered','Complete'], v => this.values.status = v);
     addNumber(contentEl, 'Max Ticks (stages)', this.values.maxTicks, v => this.values.maxTicks = v);
     addNumber(contentEl, 'Current Tick', this.values.currentTick, v => this.values.currentTick = v);
@@ -12173,6 +12472,9 @@ class TimerModal extends Modal {
     addField(contentEl, 'Notes', this.values.notes, v => this.values.notes = v, 'textarea');
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Timer name is required.'); return; }
+      this.values.faction = scrubLegacyPlaceholderText(this.values.faction);
+      this.values.threatLabel = scrubLegacyPlaceholderText(this.values.threatLabel);
+      this.values.escalationSteps = scrubLegacyPlaceholderArray(this.values.escalationSteps);
       upsert(this.plugin.state, 'timers', this.values);
       await this.plugin.saveState();
       new Notice(`Timer "${this.values.name}" saved.`);
@@ -12208,7 +12510,7 @@ class EnemyTemplateModal extends Modal {
     const s2 = ce(contentEl, 'div', 'te-modal-section');
     s2.createEl('h3', { text: 'Faction & Role' });
     addEntityPicker(s2, 'Faction', this.values.factionId, this.plugin, 'factions', v => this.values.factionId = v);
-    addField(s2, 'Faction Tag (manual)', this.values.faction, v => this.values.faction = v);
+    ce(s2, 'p', 'te-progress-label', 'Enemy Templates are reusable encounter stat packages. Use faction links for ownership; legacy manual faction tags are preserved silently but no longer edited here.');
     addSelect(s2, 'Combat Role', this.values.role, OPTION_BANKS.combatRoles, v => this.values.role = v);
     chipField(s2, 'Tactics', safeArr(this.values.tactics), v => this.values.tactics = v, { bank: 'tactics' });
 
@@ -12222,6 +12524,8 @@ class EnemyTemplateModal extends Modal {
 
     modalButtons(contentEl, this, async () => {
       if (!this.values.name.trim()) { new Notice('Enemy name is required.'); return; }
+      this.values.faction = scrubLegacyPlaceholderText(this.values.faction);
+      this.values.tactics = scrubLegacyPlaceholderArray(this.values.tactics);
       upsert(this.plugin.state, 'enemyTemplates', this.values);
       await this.plugin.saveState();
       new Notice(`Enemy Template "${this.values.name}" saved.`);

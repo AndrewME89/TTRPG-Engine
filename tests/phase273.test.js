@@ -46,8 +46,8 @@ console.log('\nREF_TABS new entries:');
 assert('bestiary tab', src.includes("{ key:'bestiary',    label:'Bestiary'"));
 assert('classes tab', src.includes("{ key:'classes',     label:'Classes'"));
 assert('subclasses tab', src.includes("{ key:'subclasses',  label:'Subclasses'"));
-assert('adventures tab', src.includes("{ key:'adventures',  label:'Adventures'"));
-assert('books tab', src.includes("{ key:'books',       label:'Books'"));
+assert('adventures tab removed from REF_TABS', !src.includes("{ key:'adventures',  label:'Adventures'"));
+assert('books tab removed from REF_TABS', !src.includes("{ key:'books',       label:'Books'"));
 
 // ── Section 5: refItemMeta new cases ────────────────────────────────────────
 console.log('\nrefItemMeta new cases:');

@@ -298,8 +298,9 @@ test('renderAdventurePlanner includes war-machine sub-tab', () => {
   ok(src.includes("id: 'war-machine'"), 'Missing war-machine sub-tab');
 });
 
-test('renderCompendiumLibrary includes my-content sub-tab', () => {
-  ok(src.includes("id: 'my-content'"), 'Missing my-content sub-tab');
+test('renderCompendiumLibrary redirects my-content to compendium (tab removed)', () => {
+  const fn = src.slice(src.indexOf('function renderCompendiumLibrary('), src.indexOf('function renderMyContent('));
+  ok(fn.includes("'my-content'") && fn.includes("'compendium'"), 'Missing my-content redirect to compendium');
 });
 
 test('renderSettingsTools includes diagnostics sub-tab', () => {
