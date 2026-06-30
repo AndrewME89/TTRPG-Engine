@@ -133,9 +133,9 @@ test('DungeonModal sets bossRef with sourceType and source fields', () => {
 test('DungeonModal bossRef from bestiary has source: bestiary', () => {
   ok(dungeonBlock.includes("source: 'bestiary'"), 'DungeonModal bestiary bossRef missing source:bestiary');
 });
-test('legacy boss text field preserved', () => {
-  ok(dungeonBlock.includes("'Boss / Key Enemy (text)'") || dungeonBlock.includes("'boss'"),
-    'Legacy boss text field not preserved in DungeonModal');
+test('legacy boss text field is hidden from the primary DungeonModal UI', () => {
+  notOk(dungeonBlock.includes("'Boss / Key Enemy (text)'"),
+    'Legacy boss text field should not render in DungeonModal primary UI');
 });
 test('DungeonModal has linkedRoomIds for linking Room entities', () => {
   ok(dungeonBlock.includes('linkedRoomIds'), 'DungeonModal missing linkedRoomIds field');

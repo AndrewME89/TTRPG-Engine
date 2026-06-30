@@ -44,7 +44,7 @@ test('OPTION_BANKS factionResources expanded', () => assertContains("'Contraband
 test('NPCModal pronouns uses chipField with bank pronouns', () => assertContains("bank: 'pronouns'"));
 test('NPCModal role uses chipField with bank npcRoles', () => assertContains("bank: 'npcRoles'"));
 test('NPCModal occupation uses chipField with bank occupations', () => assertContains("bank: 'occupations'"));
-test('NPCModal has raceId entityRef for hybridAncestries', () => assertContains("Ancestry (linked)"));
+test('NPCModal has raceId entityRef for hybridAncestries', () => assertContains("Ancestry / Race (linked)"));
 test('NPCModal ideals uses bank ideals', () => assertContains("bank: 'ideals'"));
 test('NPCModal bonds uses bank bonds', () => assertContains("bank: 'bonds'"));
 test('NPCModal flaws uses bank flaws', () => assertContains("bank: 'flaws'"));
@@ -142,8 +142,22 @@ test('RelationshipModal has fearLeverage chip', () => {
   const snip = src.substring(idx, idx + 3000);
   assert(snip.includes("bank: 'fearLeverage'"), 'fearLeverage should use bank');
 });
-test('RelationshipModal has entityAId entityRef', () => assertContains("Entity A (linked NPC)"));
-test('RelationshipModal has entityBId entityRef', () => assertContains("Entity B (linked NPC)"));
+test('RelationshipModal uses canonical From typed entity picker', () => {
+  const idx = src.indexOf('class RelationshipModal extends Modal');
+  const snip = src.substring(idx, idx + 1400);
+  assert(snip.includes("addTypedEntityPicker(contentEl, 'From'"), 'RelationshipModal should render canonical From picker');
+});
+test('RelationshipModal uses canonical To typed entity picker', () => {
+  const idx = src.indexOf('class RelationshipModal extends Modal');
+  const snip = src.substring(idx, idx + 1400);
+  assert(snip.includes("addTypedEntityPicker(contentEl, 'To'"), 'RelationshipModal should render canonical To picker');
+});
+test('RelationshipModal no longer renders duplicate legacy Entity A/B linked pickers', () => {
+  const idx = src.indexOf('class RelationshipModal extends Modal');
+  const snip = src.substring(idx, idx + 1600);
+  assert(!snip.includes('Entity A (linked NPC)'), 'Legacy Entity A picker should not render');
+  assert(!snip.includes('Entity B (linked NPC)'), 'Legacy Entity B picker should not render');
+});
 
 // ── STEP 8: Faction Reputation ────────────────────────────────────────────────
 test('reputationFields factionId uses entityRef', () => {

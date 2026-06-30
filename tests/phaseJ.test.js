@@ -259,11 +259,11 @@ test('itemCards uses resolveEntityDisplay for all meta field values', () => {
 });
 
 test('route cards show fromRefId in meta (resolves to entity name)', () => {
-  includes(src, "'fromRefId', 'from', 'toRefId', 'to', 'travelTime'");
+  includes(src, "'fromRefId', 'toRefId', 'travelTime'");
 });
 
 test('loot cards show encounterId and claimedById in meta', () => {
-  includes(src, "'encounterId', 'claimedById', 'claimedBy'");
+  includes(src, "'encounterId', 'claimedById', 'claimedByType'");
 });
 
 test('resolveEntityDisplay is declared exactly once', () => {
